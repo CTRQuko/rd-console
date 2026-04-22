@@ -1,20 +1,18 @@
 """Public `/api/join/:token` — returns RustDesk client config for onboarding.
 
-No auth required. Tokens are single-use and opaque.
+No auth required. Tokens are strictly single-use and opaque.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel import select
 
 from ..config import get_settings
 from ..db import get_session
 from ..models.join_token import JoinToken
-from fastapi import Depends
+from ..security import utcnow_naive
 
 router = APIRouter(prefix="/api/join", tags=["public:join"])
 
@@ -29,17 +27,25 @@ class JoinConfig(BaseModel):
 
 @router.get("/{token}", response_model=JoinConfig)
 def get_join_config(token: str, session=Depends(get_session)) -> JoinConfig:
+    # Reject obviously malformed tokens early; secrets.token_urlsafe(32) is ~43 chars.
+    if not token or len(token) > 64:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Invalid or revoked token")
+
     row = session.exec(select(JoinToken).where(JoinToken.token == token)).first()
     if not row or row.revoked:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invalid or revoked token")
-    if row.expires_at and row.expires_at < datetime.utcnow():
+
+    now = utcnow_naive()
+    if row.expires_at and row.expires_at < now:
         raise HTTPException(status.HTTP_410_GONE, "Token expired")
 
-    # Mark as used on first fetch (but allow re-reads — UX over strict single-use).
-    if row.used_at is None:
-        row.used_at = datetime.utcnow()
-        session.add(row)
-        session.commit()
+    # Strict single-use: second fetch returns 410, not the config.
+    if row.used_at is not None:
+        raise HTTPException(status.HTTP_410_GONE, "Token already used")
+
+    row.used_at = now
+    session.add(row)
+    session.commit()
 
     s = get_settings()
     return JoinConfig(

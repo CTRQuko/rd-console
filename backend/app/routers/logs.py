@@ -6,6 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlmodel import select
 
 from ..deps import AdminUser, SessionDep
@@ -41,19 +42,28 @@ def list_logs(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> Paginated:
-    stmt = select(AuditLog)
-    if action:
-        stmt = stmt.where(AuditLog.action == action)
-    if since:
-        stmt = stmt.where(AuditLog.created_at >= since)
-    if until:
-        stmt = stmt.where(AuditLog.created_at <= until)
+    filters = []
+    if action is not None:
+        filters.append(AuditLog.action == action)
+    if since is not None:
+        filters.append(AuditLog.created_at >= since)
+    if until is not None:
+        filters.append(AuditLog.created_at <= until)
 
-    total = len(session.exec(stmt).all())
+    # Count in SQL (O(1) with index on created_at), not by materialising rows.
+    count_stmt = select(func.count()).select_from(AuditLog)
+    for f in filters:
+        count_stmt = count_stmt.where(f)
+    total = session.exec(count_stmt).one()
+
+    items_stmt = select(AuditLog)
+    for f in filters:
+        items_stmt = items_stmt.where(f)
     rows = session.exec(
-        stmt.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
+        items_stmt.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
     ).all()
+
     return Paginated(
-        total=total,
+        total=int(total),
         items=[AuditLogOut.model_validate(r, from_attributes=True) for r in rows],
     )

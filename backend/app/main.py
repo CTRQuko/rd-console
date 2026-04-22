@@ -20,16 +20,21 @@ log = logging.getLogger("rd_console")
 
 
 def _bootstrap_admin() -> None:
-    """Create the initial admin from env vars if no admin exists yet."""
+    """Create the initial admin from env vars if no admin exists yet.
+
+    This runs once on startup. It is strictly additive — existing admins are
+    never modified. To rotate the bootstrap admin password, use the panel.
+    """
     s = get_settings()
     if not s.admin_password:
         log.info("RD_ADMIN_PASSWORD not set — skipping bootstrap admin creation")
         return
     with Session(engine) as session:
-        has_admin = session.exec(
+        existing = session.exec(
             select(User).where(User.role == UserRole.ADMIN).limit(1)
         ).first()
-        if has_admin:
+        if existing:
+            log.info("Admin already exists — bootstrap password ignored")
             return
         admin = User(
             username=s.admin_username,
@@ -45,11 +50,26 @@ def _bootstrap_admin() -> None:
         )
 
 
+def _warn_startup(s) -> None:
+    """Log hard warnings for weak/unset security knobs."""
+    if s.environment != "prod":
+        return
+    if not s.client_shared_secret:
+        log.warning(
+            "RD_CLIENT_SHARED_SECRET is empty — /api/heartbeat, /api/sysinfo "
+            "and /api/audit/* are OPEN to the internet."
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     init_db()
     _bootstrap_admin()
+    _warn_startup(get_settings())
     yield
 
 
@@ -65,8 +85,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=s.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-RD-Secret"],
     )
 
     @app.get("/health", tags=["meta"])
@@ -83,7 +103,7 @@ def create_app() -> FastAPI:
     # Public
     app.include_router(join.router)
 
-    # RustDesk client protocol
+    # RustDesk client protocol (optionally gated by X-RD-Secret)
     app.include_router(rustdesk.router)
 
     return app

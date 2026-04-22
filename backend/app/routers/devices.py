@@ -7,10 +7,12 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import nulls_last, or_
 from sqlmodel import select
 
 from ..deps import AdminUser, SessionDep
 from ..models.device import Device
+from ..security import utcnow_naive
 
 router = APIRouter(prefix="/admin/api/devices", tags=["admin:devices"])
 
@@ -32,8 +34,9 @@ class DeviceOut(BaseModel):
     online: bool
 
     @classmethod
-    def from_model(cls, d: Device) -> "DeviceOut":
-        online = bool(d.last_seen_at and datetime.utcnow() - d.last_seen_at < ONLINE_WINDOW)
+    def from_model(cls, d: Device, *, now: datetime | None = None) -> "DeviceOut":
+        _now = now or utcnow_naive()
+        online = bool(d.last_seen_at and (_now - d.last_seen_at) < ONLINE_WINDOW)
         data = d.model_dump()
         data["online"] = online
         return cls.model_validate(data)
@@ -44,18 +47,24 @@ def list_devices(
     session: SessionDep,
     _: AdminUser,
     status_filter: Literal["all", "online", "offline"] = Query("all", alias="status"),
-    platform: str | None = None,
+    platform: str | None = Query(default=None, max_length=32),
 ) -> list[DeviceOut]:
+    now = utcnow_naive()
+    cutoff = now - ONLINE_WINDOW
+
     stmt = select(Device)
     if platform:
         stmt = stmt.where(Device.platform == platform)
-    rows = session.exec(stmt.order_by(Device.last_seen_at.desc())).all()
-    out = [DeviceOut.from_model(d) for d in rows]
     if status_filter == "online":
-        out = [d for d in out if d.online]
+        stmt = stmt.where(Device.last_seen_at >= cutoff)
     elif status_filter == "offline":
-        out = [d for d in out if not d.online]
-    return out
+        stmt = stmt.where(
+            or_(Device.last_seen_at.is_(None), Device.last_seen_at < cutoff)
+        )
+    stmt = stmt.order_by(nulls_last(Device.last_seen_at.desc()))
+
+    rows = session.exec(stmt).all()
+    return [DeviceOut.from_model(d, now=now) for d in rows]
 
 
 @router.get("/{device_id}", response_model=DeviceOut)

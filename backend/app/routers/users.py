@@ -6,6 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import func
 from sqlmodel import select
 
 from ..deps import AdminUser, SessionDep
@@ -40,6 +41,16 @@ class UserUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
+def _count_active_admins(session, exclude_user_id: int | None = None) -> int:
+    stmt = select(func.count()).select_from(User).where(
+        User.role == UserRole.ADMIN,
+        User.is_active == True,  # noqa: E712 - SQLAlchemy idiom
+    )
+    if exclude_user_id is not None:
+        stmt = stmt.where(User.id != exclude_user_id)
+    return session.exec(stmt).one()
+
+
 @router.get("", response_model=list[UserOut])
 def list_users(session: SessionDep, _: AdminUser) -> list[UserOut]:
     rows = session.exec(select(User).order_by(User.created_at.desc())).all()
@@ -57,8 +68,11 @@ def create_user(body: UserCreate, session: SessionDep, admin: AdminUser) -> User
         role=body.role,
     )
     session.add(user)
-    session.add(AuditLog(action=AuditAction.USER_CREATED, actor_user_id=admin.id,
-                         payload=f"username={body.username}"))
+    session.add(AuditLog(
+        action=AuditAction.USER_CREATED,
+        actor_user_id=admin.id,
+        payload=f"username={body.username}",
+    ))
     session.commit()
     session.refresh(user)
     return UserOut.model_validate(user, from_attributes=True)
@@ -71,14 +85,43 @@ def update_user(user_id: int, body: UserUpdate, session: SessionDep, admin: Admi
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
 
     data = body.model_dump(exclude_unset=True)
+
+    # Guardrail: do not let the caller delete the last active admin by either
+    # demoting them or deactivating them.
+    demoting = (
+        "role" in data
+        and data["role"] is not None
+        and user.role == UserRole.ADMIN
+        and data["role"] != UserRole.ADMIN
+    )
+    deactivating = (
+        "is_active" in data
+        and data["is_active"] is False
+        and user.role == UserRole.ADMIN
+        and user.is_active
+    )
+    if demoting or deactivating:
+        remaining = _count_active_admins(session, exclude_user_id=user.id)
+        if remaining == 0:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Cannot demote or deactivate the last active admin",
+            )
+
     if "password" in data and data["password"]:
         user.password_hash = hash_password(data.pop("password"))
+    else:
+        data.pop("password", None)
+
     for k, v in data.items():
         setattr(user, k, v)
 
     session.add(user)
-    session.add(AuditLog(action=AuditAction.USER_UPDATED, actor_user_id=admin.id,
-                         payload=f"user_id={user_id}"))
+    session.add(AuditLog(
+        action=AuditAction.USER_UPDATED,
+        actor_user_id=admin.id,
+        payload=f"user_id={user_id}",
+    ))
     session.commit()
     session.refresh(user)
     return UserOut.model_validate(user, from_attributes=True)
@@ -91,8 +134,17 @@ def disable_user(user_id: int, session: SessionDep, admin: AdminUser) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     if user.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot disable yourself")
+    if user.role == UserRole.ADMIN and user.is_active:
+        if _count_active_admins(session, exclude_user_id=user.id) == 0:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Cannot deactivate the last active admin",
+            )
     user.is_active = False
     session.add(user)
-    session.add(AuditLog(action=AuditAction.USER_DISABLED, actor_user_id=admin.id,
-                         payload=f"user_id={user_id}"))
+    session.add(AuditLog(
+        action=AuditAction.USER_DISABLED,
+        actor_user_id=admin.id,
+        payload=f"user_id={user_id}",
+    ))
     session.commit()

@@ -2,28 +2,32 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import select
 
 from ..deps import CurrentUser, SessionDep
 from ..models.audit_log import AuditAction, AuditLog
 from ..models.user import User
-from ..security import create_access_token, hash_password, needs_rehash, verify_password
+from ..security import (
+    create_access_token,
+    hash_password,
+    needs_rehash,
+    utcnow_naive,
+    verify_password,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
 
 
 class LoginResponse(BaseModel):
     access_token: str
-    token_type: str = "bearer"  # noqa: S105 - not a password, OAuth2 scheme label
+    token_type: str = "bearer"  # noqa: S105 - OAuth2 scheme label
 
 
 class MeResponse(BaseModel):
@@ -34,16 +38,22 @@ class MeResponse(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
 
 
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
     user = session.exec(select(User).where(User.username == body.username)).first()
-    if not user or not user.is_active or not verify_password(body.password, user.password_hash):
+    # Constant-ish branch: always hit verify_password when user exists to reduce
+    # user-enumeration timing skew.
+    password_ok = bool(user) and verify_password(body.password, user.password_hash)  # type: ignore[union-attr]
+    if not user or not user.is_active or not password_ok:
         session.add(
-            AuditLog(action=AuditAction.LOGIN_FAILED, payload=f"username={body.username}")
+            AuditLog(
+                action=AuditAction.LOGIN_FAILED,
+                payload=f"username={body.username[:64]}",
+            )
         )
         session.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
@@ -51,7 +61,7 @@ def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
 
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = utcnow_naive()
     session.add(user)
     session.add(AuditLog(action=AuditAction.LOGIN, actor_user_id=user.id))
     session.commit()
@@ -70,8 +80,8 @@ def me(user: CurrentUser) -> MeResponse:
 def change_password(body: ChangePasswordRequest, user: CurrentUser, session: SessionDep) -> None:
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
-    if len(body.new_password) < 8:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "New password must be at least 8 chars")
+    if body.new_password == body.current_password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "New password must differ")
     user.password_hash = hash_password(body.new_password)
     session.add(user)
     session.commit()
