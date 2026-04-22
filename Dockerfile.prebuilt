@@ -1,0 +1,56 @@
+# ─────────────────────────────────────────────────────────────
+# rd-console — runtime-only image.
+#
+# Use this Dockerfile when you cannot afford to run `npm run build`
+# on the target (e.g. LXC 105 with 256 MB RAM cgroup-OOMs every
+# vite build). The caller is expected to put a pre-built frontend
+# in `./frontend-dist/` inside the build context.
+#
+# See scripts/deployment/rdc-deploy-prebuilt.sh for the pipeline that
+# downloads the backend source + a prebuilt dist tarball and feeds
+# both into this Dockerfile.
+# ─────────────────────────────────────────────────────────────
+
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PORT=8080 \
+    RD_DB_PATH=/data/rd_console.sqlite3 \
+    RD_FRONTEND_DIST=/app/frontend
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+         build-essential \
+         libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/pyproject.toml backend/README.md ./backend/
+COPY backend/app ./backend/app
+RUN pip install ./backend
+
+RUN apt-get purge -y --auto-remove build-essential libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Caller-supplied prebuilt frontend. Must be the contents of
+# `frontend/dist/` (index.html at the top, assets/ subdir, etc).
+COPY frontend-dist/ /app/frontend/
+
+RUN mkdir -p /data
+VOLUME ["/data"]
+
+EXPOSE 8080
+
+RUN groupadd -r rdc && useradd -r -g rdc -d /app rdc \
+    && chown -R rdc:rdc /data /app
+USER rdc
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request, sys; \
+sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:' + __import__('os').environ.get('PORT', '8080') + '/health', timeout=2).status == 200 else 1)"
+
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
