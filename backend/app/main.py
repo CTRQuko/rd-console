@@ -17,6 +17,7 @@ from .config import get_settings
 from .db import engine, init_db
 from .models.user import User, UserRole
 from .routers import (
+    address_book,
     api_tokens,
     auth,
     devices,
@@ -198,6 +199,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_.router)
     app.include_router(tags.router)
     app.include_router(search.router)
+    app.include_router(address_book.router)
 
     # Public
     app.include_router(join.router)

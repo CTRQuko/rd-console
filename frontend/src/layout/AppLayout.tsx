@@ -10,6 +10,7 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/':         'Dashboard',
   '/users':    'Users',
   '/devices':  'Devices',
+  '/address-book': 'Address book',
   '/tags':     'Tags',
   '/logs':     'Audit logs',
   '/settings': 'Settings',
