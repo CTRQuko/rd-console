@@ -16,15 +16,22 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import select
 
 from ..config import get_settings
-from ..deps import ClientSecretDep, SessionDep
+from ..deps import ClientSecretDep, CurrentUser, SessionDep
 from ..models.audit_log import AuditAction, AuditLog
 from ..models.device import Device
-from ..security import utcnow_naive
+from ..models.user import User, UserRole
+from ..security import (
+    create_access_token,
+    hash_password,
+    needs_rehash,
+    utcnow_naive,
+    verify_password,
+)
 
 router = APIRouter(prefix="/api", tags=["rustdesk-client"])
 
@@ -150,6 +157,122 @@ def audit_conn(
     )
     session.commit()
     return {"ok": True}
+
+
+# ─── Legacy RustDesk client auth aliases ──────────────────────────────────────
+#
+# Native RustDesk (Flutter) clients call POST /api/login / /api/currentUser /
+# /api/logout to sign the user in before syncing the address book. The contract
+# mirrors kingmo888/rustdesk-api-server so the client behaves identically.
+#
+# Intentionally NOT gated by ClientSecretDep: the Flutter client never sends
+# X-RD-Secret on the auth flow, and gating it there would lock real users out.
+# The JWT minted here has the same shape as /api/auth/login (sub = user.id as
+# string, extra role claim), so the already-mounted /api/ab endpoints accept
+# it via the existing CurrentUser dep without any additional wiring.
+
+
+class LegacyLoginRequest(BaseModel):
+    # The Flutter client sends username/password plus a grab-bag of device
+    # fields we don't care about. Accept them silently so Pydantic doesn't
+    # 422 us on a new client build.
+    model_config = ConfigDict(extra="ignore")
+
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+    id: str | None = None  # client's RustDesk ID
+    uuid: str | None = None
+    autoLogin: bool | None = None  # noqa: N815 - wire format
+    type: str | None = None
+    deviceInfo: dict | None = None  # noqa: N815 - wire format
+
+
+def _user_payload(user: User) -> dict:
+    """Shape the `user` object that kingmo888 returns. We include a superset
+    of fields observed across Flutter client versions so newer builds that
+    read e.g. `is_admin` don't crash on a missing key."""
+    return {
+        "id": user.id,
+        "name": user.username,
+        "email": user.email or "",
+        "note": "",
+        "status": 1 if user.is_active else 0,
+        "is_admin": user.role == UserRole.ADMIN,
+        "grp": "",
+    }
+
+
+@router.post("/login")
+def legacy_login(body: LegacyLoginRequest, session: SessionDep) -> dict:
+    """kingmo888-compatible login for the native RustDesk client."""
+    user = session.exec(select(User).where(User.username == body.username)).first()
+    password_ok = bool(user) and verify_password(body.password, user.password_hash)  # type: ignore[union-attr]
+    if not user or not user.is_active or not password_ok:
+        session.add(
+            AuditLog(
+                action=AuditAction.LOGIN_FAILED,
+                payload=f"legacy username={body.username[:64]}",
+            )
+        )
+        session.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+
+    if needs_rehash(user.password_hash):
+        user.password_hash = hash_password(body.password)
+
+    user.last_login_at = utcnow_naive()
+    session.add(user)
+    session.add(
+        AuditLog(
+            action=AuditAction.LOGIN,
+            actor_user_id=user.id,
+            payload="legacy",
+        )
+    )
+    session.commit()
+    session.refresh(user)
+
+    token = create_access_token(
+        subject=user.id, extra_claims={"role": user.role.value}
+    )
+    return {
+        "access_token": token,
+        "type": "access_token",
+        "tfa_type": "",
+        "secret": "",
+        "user": _user_payload(user),
+    }
+
+
+@router.post("/currentUser")
+def legacy_current_user(user: CurrentUser) -> dict:
+    """Probe the current session. The client uses this to validate its
+    cached token on startup; if it fails the client drops the AB and asks
+    for a fresh login."""
+    return {
+        "id": user.id,
+        "name": user.username,
+        "email": user.email or "",
+        "note": "",
+        "status": 1 if user.is_active else 0,
+        "is_admin": user.role == UserRole.ADMIN,
+        "grp": "",
+    }
+
+
+class LegacyLogoutRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str | None = None
+    uuid: str | None = None
+
+
+@router.post("/logout")
+def legacy_logout(body: LegacyLogoutRequest) -> dict:  # noqa: ARG001 - body kept for wire compat
+    """Stateless JWT — we can't actually invalidate the token server-side
+    without a denylist, so this is a 200 ack. Returning kingmo888's shape
+    so the client flow completes cleanly."""
+    return {"data": "", "error": ""}
 
 
 @router.post("/audit/file")

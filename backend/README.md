@@ -78,14 +78,19 @@ environment side, un-prefixed inside `Settings`.
 | POST   | `/api/sysinfo`                    | client     | Device system info (stub)     |
 | POST   | `/api/audit/conn`                 | client     | Connection event (stub)        |
 | POST   | `/api/audit/file`                 | client     | File transfer event (stub)     |
+| POST   | `/api/login`                      | public     | Legacy client login (kingmo888 shape) |
+| POST   | `/api/currentUser`                | client JWT | Legacy client session probe    |
+| POST   | `/api/logout`                     | public     | Legacy client logout (stateless) |
+| POST   | `/api/ab`                         | user JWT   | Address book write (blob)      |
+| POST   | `/api/ab/get`                     | user JWT   | Address book read              |
 | GET    | `/health`                         | public     | Liveness probe                 |
 
 ## TODO
 
-- [ ] `/api/login`, `/api/currentUser`, `/api/logout` for the RustDesk client
-      (not the panel — shape differs from `/api/auth/login`)
-- [ ] Address book sync: `GET/POST /api/ab`
 - [ ] Issue bearer tokens for RustDesk clients (separate from panel JWTs)
+- [ ] Issue bearer tokens for RustDesk clients (separate from panel JWTs)
+- [x] `/api/login`, `/api/currentUser`, `/api/logout` for the RustDesk client
+- [x] Address book sync: `POST /api/ab` + `POST /api/ab/get`
 - [ ] Join-token creation endpoint for admins (`POST /admin/api/join-tokens`)
 - [ ] Rate limiting on `/api/auth/login` and `/api/join/:token`
 - [ ] Alembic migrations (currently `SQLModel.metadata.create_all`)

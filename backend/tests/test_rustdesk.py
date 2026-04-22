@@ -100,6 +100,109 @@ def test_audit_payload_is_truncated(client, session):
     assert len(row.payload) <= get_settings().max_audit_payload_bytes
 
 
+# ─── Legacy RustDesk client auth (kingmo888 /api/login contract) ──────────────
+#
+# These endpoints exist so the native Flutter client can sign in and sync the
+# address book the panel already stores. Shape mirrors kingmo888's response
+# closely enough that off-the-shelf client builds work without per-version
+# tweaks.
+
+
+def test_legacy_login_returns_kingmo_shape(client, make_user):
+    make_user(username="flutter", password="super-secret-pw", role=__import__(
+        "app.models.user", fromlist=["UserRole"]).UserRole.USER)
+    r = client.post(
+        "/api/login",
+        json={
+            "username": "flutter",
+            "password": "super-secret-pw",
+            # Client adds these; we must ignore rather than 422.
+            "id": "1779980041",
+            "uuid": "deadbeef",
+            "autoLogin": True,
+            "deviceInfo": {"os": "Windows"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["type"] == "access_token"
+    assert body["access_token"]
+    assert body["user"]["name"] == "flutter"
+    assert body["user"]["is_admin"] is False
+    assert body["user"]["status"] == 1
+    # Forward-compat fields expected by some client builds
+    assert "tfa_type" in body
+    assert "secret" in body
+
+
+def test_legacy_login_bad_password_401(client, make_user):
+    make_user(username="flutter", password="correct-one")
+    r = client.post(
+        "/api/login",
+        json={"username": "flutter", "password": "wrong"},
+    )
+    assert r.status_code == 401
+
+
+def test_legacy_login_token_composes_with_address_book(client, make_user):
+    """The JWT minted by /api/login must be accepted by /api/ab/get — that's
+    the whole point of the alias. Regression guard: if someone changes the
+    subject format, the Flutter client silently loses access to its own AB."""
+    make_user(username="flutter", password="pw-pw-pw-pw")
+    r = client.post(
+        "/api/login",
+        json={"username": "flutter", "password": "pw-pw-pw-pw"},
+    )
+    token = r.json()["access_token"]
+    # AB is empty for a fresh user — we just need to verify the dep chain
+    # accepts this token (a failed auth would 401, not 200).
+    r2 = client.post(
+        "/api/ab/get",
+        json={"id": "anything"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r2.status_code == 200, r2.text
+
+
+def test_legacy_current_user_echoes_identity(client, make_user):
+    make_user(username="flutter", password="pw-pw-pw-pw")
+    r = client.post(
+        "/api/login",
+        json={"username": "flutter", "password": "pw-pw-pw-pw"},
+    )
+    token = r.json()["access_token"]
+    r2 = client.post(
+        "/api/currentUser",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["name"] == "flutter"
+
+
+def test_legacy_current_user_requires_token(client):
+    r = client.post("/api/currentUser")
+    assert r.status_code == 401
+
+
+def test_legacy_logout_returns_200(client):
+    """Stateless JWT — logout is a client-side concern. We just 200 so the
+    client's sign-out flow completes cleanly."""
+    r = client.post("/api/logout", json={"id": "1779980041", "uuid": "x"})
+    assert r.status_code == 200
+    assert r.json() == {"data": "", "error": ""}
+
+
+def test_legacy_login_not_gated_by_client_secret(client, make_user, with_client_secret):
+    """Even with RD_CLIENT_SHARED_SECRET set, /api/login must remain open —
+    the Flutter client never sends X-RD-Secret on the auth flow."""
+    make_user(username="flutter", password="pw-pw-pw-pw")
+    r = client.post(
+        "/api/login",
+        json={"username": "flutter", "password": "pw-pw-pw-pw"},
+    )
+    assert r.status_code == 200
+
+
 def test_audit_payload_is_valid_json_string(client, session):
     r = client.post("/api/audit/file", json={"from_id": "a", "to_id": "b", "size": 10})
     assert r.status_code == 200

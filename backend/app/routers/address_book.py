@@ -1,9 +1,10 @@
 """Address book — legacy RustDesk-compatible contract.
 
-Scope: panel-UI-only for now. The routes below authenticate via the standard
-panel ``CurrentUser`` dep (JWT from ``/api/auth/login`` OR a Personal Access
-Token). Native RustDesk clients hit legacy ``/api/login`` which this
-backend does NOT expose yet — a follow-up PR will add that alias.
+Authenticates via the standard ``CurrentUser`` dep (JWT from
+``/api/auth/login``, the kingmo888-compat ``/api/login`` alias wired up in
+``rustdesk.py``, OR a Personal Access Token). The Flutter native client
+talks to the legacy alias; the panel UI and scripts use the panel JWT or a
+PAT. Same storage, same visibility.
 
 Contract (kingmo888-compat):
 
