@@ -483,3 +483,111 @@ body { margin: 0; }
   font-size: 13px;
   color: var(--fg);
 }
+
+/* ── v3: TagChip + TagInput ───────────────────────────────────── */
+.rd-tag-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 8px; border-radius: var(--radius-md);
+  font: 500 12px/1 var(--font-sans);
+  border: 1px solid transparent;
+  background: var(--bg-subtle);
+  color: var(--fg);
+  white-space: nowrap;
+}
+.rd-tag-chip--sm { height: 20px; font-size: 11px; padding: 0 6px; }
+.rd-tag-chip--clickable { cursor: pointer; }
+.rd-tag-chip--clickable:hover { filter: brightness(0.95); }
+.rd-tag-chip--selected { outline: 2px solid var(--primary); outline-offset: 1px; }
+.rd-tag-chip__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; opacity: .7;
+}
+.rd-tag-chip__name { color: var(--fg); }
+.rd-tag-chip__x {
+  background: transparent; border: none; color: var(--fg-muted);
+  cursor: pointer; padding: 0; display: inline-flex; align-items: center;
+  transition: color var(--dur-fast) var(--ease);
+}
+.rd-tag-chip__x:hover { color: var(--fg); }
+
+.rd-tag-chip--blue   { background: #eff6ff; border-color: #dbeafe; color: #1d4ed8; }
+.rd-tag-chip--green  { background: #f0fdf4; border-color: #dcfce7; color: #15803d; }
+.rd-tag-chip--amber  { background: #fffbeb; border-color: #fef3c7; color: #b45309; }
+.rd-tag-chip--red    { background: #fef2f2; border-color: #fee2e2; color: #b91c1c; }
+.rd-tag-chip--violet { background: #f5f3ff; border-color: #ede9fe; color: #6d28d9; }
+.rd-tag-chip--zinc   { background: #f4f4f5; border-color: #e4e4e7; color: #3f3f46; }
+.dark .rd-tag-chip--blue   { background: #172554; border-color: #1e3a8a; color: #93c5fd; }
+.dark .rd-tag-chip--green  { background: #052e16; border-color: #14532d; color: #86efac; }
+.dark .rd-tag-chip--amber  { background: #451a03; border-color: #78350f; color: #fcd34d; }
+.dark .rd-tag-chip--red    { background: #450a0a; border-color: #7f1d1d; color: #fca5a5; }
+.dark .rd-tag-chip--violet { background: #2e1065; border-color: #4c1d95; color: #c4b5fd; }
+.dark .rd-tag-chip--zinc   { background: #27272a; border-color: #3f3f46; color: #d4d4d8; }
+
+.rd-tag-list {
+  display: inline-flex; flex-wrap: wrap; gap: 4px;
+  max-width: 260px;
+}
+
+.rd-tag-input {
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 240px;
+}
+.rd-tag-input__search {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--card); color: var(--fg-muted);
+}
+.rd-tag-input__search input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font: 400 13px/1 var(--font-sans); color: var(--fg);
+}
+.rd-tag-input__list {
+  list-style: none; margin: 0; padding: 0;
+  max-height: 240px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--card);
+}
+.rd-tag-input__item { display: block; }
+.rd-tag-input__row {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 6px 10px; border: none; background: transparent;
+  font: 400 13px/1 var(--font-sans); color: var(--fg);
+  cursor: pointer; text-align: left;
+  transition: background var(--dur-fast) var(--ease);
+}
+.rd-tag-input__row:hover { background: var(--bg-subtle); }
+.rd-tag-input__row[aria-pressed="true"] { background: var(--bg-subtle); }
+.rd-tag-input__row--create { color: var(--primary); gap: 8px; }
+.rd-tag-input__row:disabled { opacity: .5; cursor: not-allowed; }
+.rd-tag-input__empty {
+  padding: 14px 10px; color: var(--fg-muted); font-size: 13px;
+  text-align: center;
+}
+
+/* ── v3: star button (favorite) ────────────────────────────── */
+.rd-star {
+  background: transparent; border: none; padding: 2px;
+  color: var(--fg-subtle); cursor: pointer; border-radius: var(--radius-sm);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.rd-star:hover { color: var(--amber-500); background: var(--bg-subtle); }
+.rd-star.active { color: var(--amber-500); }
+
+/* ── v3: bulk action bar ───────────────────────────────────── */
+.rd-bulk-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 10px 16px;
+  background: var(--bg-subtle); border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+}
+.rd-bulk-bar__count { font-size: 13px; color: var(--fg); font-weight: 500; }
+.rd-bulk-bar__actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── v3: selectable checkbox in DataTable ─────────────────── */
+.rd-table__checkbox {
+  width: 16px; height: 16px; accent-color: var(--primary);
+  cursor: pointer; vertical-align: middle;
+}
+.rd-table__check-cell { width: 32px; padding-right: 0 !important; }

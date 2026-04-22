@@ -8,6 +8,7 @@ import { JoinPage } from '@/pages/JoinPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { TagsPage } from '@/pages/TagsPage';
 import { UsersPage } from '@/pages/UsersPage';
 import { useAuthHasHydrated, useAuthStore } from '@/store/authStore';
 
@@ -52,6 +53,7 @@ function HydrationGate() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/devices" element={<DevicesPage />} />
+        <Route path="/tags" element={<TagsPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

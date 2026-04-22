@@ -42,6 +42,10 @@ const DEVICES_SEED: ApiDevice[] = [
     last_seen_at: new Date().toISOString(),
     created_at: '2025-01-12T10:00:00',
     online: true,
+    // v3 fields — present but unused in v2 tests.
+    note: null,
+    is_favorite: false,
+    tags: [],
   },
   {
     id: 11,
@@ -56,6 +60,9 @@ const DEVICES_SEED: ApiDevice[] = [
     last_seen_at: '2025-01-20T09:00:00',
     created_at: '2025-01-15T10:00:00',
     online: false,
+    note: null,
+    is_favorite: false,
+    tags: [],
   },
 ];
 
@@ -63,6 +70,7 @@ function installHappyPath() {
   let devices = [...DEVICES_SEED];
   mockRoute('GET', rx('/admin/api/users'), () => ({ status: 200, data: USERS }));
   mockRoute('GET', rx('/admin/api/devices'), () => ({ status: 200, data: devices }));
+  mockRoute('GET', rx('/admin/api/tags'), () => ({ status: 200, data: [] }));
   mockRoute('GET', rx('/admin/api/logs'), () => ({ status: 200, data: { total: 0, items: [] } }));
   mockRoute('PATCH', /^\/admin\/api\/devices\/(\d+)$/, (cfg) => {
     const id = Number(cfg.url?.match(/devices\/(\d+)/)?.[1]);

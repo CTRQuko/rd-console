@@ -4,13 +4,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { ApiDevice } from '@/types/api';
 
-export const devicesKey = ['devices'] as const;
+export const devicesKey = ['admin', 'devices'] as const;
 
-export function useDevices() {
+export interface DevicesQuery {
+  status?: 'all' | 'online' | 'offline';
+  platform?: string;
+  tag_id?: number | null;
+  favorite?: boolean | null;
+}
+
+export function useDevices(q: DevicesQuery = {}) {
   return useQuery({
-    queryKey: devicesKey,
+    // Key includes the query so React Query caches per filter permutation.
+    queryKey: [...devicesKey, q],
     queryFn: async () => {
-      const r = await api.get<ApiDevice[]>('/admin/api/devices');
+      const params: Record<string, string> = {};
+      if (q.status && q.status !== 'all') params.status = q.status;
+      if (q.platform && q.platform !== 'All') params.platform = q.platform;
+      if (q.tag_id != null) params.tag_id = String(q.tag_id);
+      if (q.favorite != null) params.favorite = String(q.favorite);
+      const r = await api.get<ApiDevice[]>('/admin/api/devices', { params });
       return r.data;
     },
     // Devices page header copy promises a 30s refresh.
@@ -21,6 +34,9 @@ export function useDevices() {
 export interface DeviceUpdateBody {
   hostname?: string | null;
   owner_user_id?: number | null;
+  // v3
+  note?: string | null;
+  is_favorite?: boolean;
 }
 
 export function useUpdateDevice() {
