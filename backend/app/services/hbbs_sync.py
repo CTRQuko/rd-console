@@ -61,6 +61,49 @@ def _open_hbbs(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _open_hbbs_rw(db_path: Path) -> sqlite3.Connection:
+    """Open the hbbs SQLite file in read-write mode.
+
+    Used only by the coordinated-forget path: when an admin deletes a device
+    from the panel we also want the row gone from hbbs, otherwise the next
+    sync tick re-creates it. We do NOT write anywhere else — hbbs_sync stays
+    strictly read-only.
+
+    The compose mount must allow RW for this to succeed. If the mount is
+    read-only the INSERT/DELETE raises OperationalError and the caller
+    surfaces a 500 without corrupting anything.
+    """
+    uri = f"file:{db_path.resolve()}?mode=rw"
+    conn = sqlite3.connect(uri, uri=True, timeout=5.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def delete_hbbs_peer(rustdesk_id: str) -> bool:
+    """Remove a peer row from hbbs by RustDesk ID.
+
+    Returns True if the row existed and was deleted, False if it wasn't
+    there (or the DB file is absent — same effect from the caller's view).
+    Raises on DB errors so the forget endpoint can roll back its own write.
+    """
+    s = get_settings()
+    db_path = Path(s.hbbs_db_path)
+    if not db_path.is_file():
+        log.warning(
+            "delete_hbbs_peer: %s not present, skipping hbbs-side delete", db_path
+        )
+        return False
+
+    with closing(_open_hbbs_rw(db_path)) as hb:
+        cur = hb.execute("DELETE FROM peer WHERE id = ?", (rustdesk_id,))
+        hb.commit()
+        removed = cur.rowcount > 0
+
+    if removed:
+        log.info("delete_hbbs_peer: removed rustdesk_id=%s from hbbs", rustdesk_id)
+    return removed
+
+
 def _parse_info(raw: str | None) -> dict[str, Any]:
     """Best-effort parse of the JSON blob in hbbs.peer.info. Returns `{}`
     rather than raising — a malformed row should not block the whole sync."""

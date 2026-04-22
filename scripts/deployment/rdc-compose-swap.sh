@@ -158,9 +158,12 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ./data/rdc:/data
-      # hbbs SQLite mounted read-only: metadata sync only, never writes.
-      # Online state comes from the hbbs-watcher → /api/heartbeat pipeline.
-      - ./data:/hbbs-data:ro
+      # hbbs SQLite mounted read-write. Read path: metadata sync loop.
+      # Write path: the coordinated-forget endpoint (DELETE FROM peer
+      # WHERE id = ?) so the UI can actually remove a device instead of
+      # watching the next sync tick resurrect it. Every other code path
+      # keeps opening in ?mode=ro — see services/hbbs_sync.py.
+      - ./data:/hbbs-data
     depends_on:
       - hbbs
     restart: unless-stopped
