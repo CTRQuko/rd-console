@@ -35,7 +35,7 @@ fi
 
 echo ""
 echo "=== 2. Login ==="
-TOKEN=$(curl -s -X POST "$API/admin/api/auth/login" \
+TOKEN=$(curl -s -X POST "$API/api/auth/login" \
     -H 'Content-Type: application/json' \
     -d "{\"username\":\"$USER\",\"password\":\"$PASS\"}" \
     | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
