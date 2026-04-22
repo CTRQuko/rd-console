@@ -3,11 +3,11 @@ import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Monitor } from 'lucide-react';
 import { Button } from '@/components/Button';
-import { mockApi } from '@/mock/mockApi';
+import { apiErrorMessage, login as apiLogin } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 
 export function LoginPage() {
-  const login = useAuthStore((s) => s.login);
+  const setSession = useAuthStore((s) => s.login);
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -17,13 +17,19 @@ export function LoginPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setErr('');
+    if (!username || !password) {
+      // Client-side guard so the real API doesn't have to bounce an empty
+      // form. The backend rejects these too but this avoids the round trip.
+      setErr('Missing credentials');
+      return;
+    }
     setLoading(true);
     try {
-      const { user, token } = await mockApi.login(username, password);
-      login(user, token);
+      const { user, token } = await apiLogin(username, password);
+      setSession(user, token);
       navigate('/', { replace: true });
     } catch (ex) {
-      setErr((ex as Error).message || 'Sign-in failed');
+      setErr(apiErrorMessage(ex, 'Sign-in failed'));
     } finally {
       setLoading(false);
     }
