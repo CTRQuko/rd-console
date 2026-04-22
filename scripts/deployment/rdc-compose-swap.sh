@@ -38,11 +38,19 @@ EOF
     echo "Generated /opt/rustdesk/rdc.env (secret key + client shared secret rotated)"
 fi
 
-# Lay down the hbbs-watcher build context. Inlining the Dockerfile+entrypoint
-# here keeps the deploy as a single script — no separate `scp` step.
+# hbbs-watcher runs as a systemd service on the host (see
+# scripts/hbbs-watcher/install-systemd.sh). It is *not* a compose service
+# because the Docker Hub blob storage used to build the sidecar image is
+# unreliable from this environment — running directly on the host removes
+# the failure mode and has a smaller surface anyway.
+#
+# We still drop the container-flavoured entrypoint next to the compose
+# file so it's discoverable and the two paths stay in sync.
 mkdir -p ./hbbs-watcher
 
 cat > ./hbbs-watcher/Dockerfile <<'DOCKERFILE'
+# Alt path: container sidecar. Only used when Docker Hub is reachable.
+# In production we run install-systemd.sh instead.
 FROM docker:24-cli
 RUN apk add --no-cache bash curl
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -157,29 +165,10 @@ services:
       - hbbs
     restart: unless-stopped
 
-  # hbbs-watcher: tails rustdesk-hbbs-1 stdout and forwards each
-  # `update_pk` line to rd-console's heartbeat endpoint. This is the only
-  # reliable online-presence signal hbbs-free exposes — see
-  # scripts/hbbs-watcher/ in the rd-console repo for the rationale.
-  hbbs-watcher:
-    build: ./hbbs-watcher
-    image: hbbs-watcher:latest
-    container_name: rustdesk-hbbs-watcher
-    environment:
-      HBBS_CONTAINER: rustdesk-hbbs-1
-      RDC_URL: http://rustdesk-api:8080
-    env_file:
-      - ./rdc.env
-    volumes:
-      # Docker socket is read-only: the watcher only needs `docker logs`.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    depends_on:
-      - rustdesk-api
-      - hbbs
-    restart: unless-stopped
-    # read-only rootfs + drop caps would be ideal, but the docker CLI needs
-    # to write its config cache. Leaving defaults; surface is still small:
-    # one bash process + curl + docker-cli, no inbound listeners.
+  # NOTE: hbbs-watcher is NOT a compose service. It runs as a systemd unit
+  # on the host (scripts/hbbs-watcher/install-systemd.sh). It tails
+  # rustdesk-hbbs-1 stdout and POSTs /api/heartbeat — the only reliable
+  # online-presence signal hbbs-free exposes. See the repo for rationale.
 YAML
 
 echo "Wrote new docker-compose.yml"
