@@ -37,6 +37,9 @@ class AuditAction(str, Enum):
     DEVICE_TAGGED = "device_tagged"
     DEVICE_UNTAGGED = "device_untagged"
     DEVICE_BULK_UPDATED = "device_bulk_updated"
+    # v4: personal access tokens
+    API_TOKEN_CREATED = "api_token_created"
+    API_TOKEN_REVOKED = "api_token_revoked"
 
 
 # Category grouping used by /admin/api/logs?category=...
@@ -53,6 +56,8 @@ AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
     "auth": (
         AuditAction.LOGIN,
         AuditAction.LOGIN_FAILED,
+        AuditAction.API_TOKEN_CREATED,
+        AuditAction.API_TOKEN_REVOKED,
     ),
     "user_management": (
         AuditAction.USER_CREATED,
