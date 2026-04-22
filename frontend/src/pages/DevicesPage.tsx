@@ -15,6 +15,7 @@
 
 import { useMemo, useState } from 'react';
 import type { ChangeEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { MoreHorizontal, Star, Tag as TagIcon } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
@@ -66,13 +67,51 @@ function relativeLastSeen(iso: string | null): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+// Normalise a URL search-param value against a whitelist so a bogus value
+// (?status=pony) doesn't break rendering.
+function clampFilter<T extends string>(
+  raw: string | null,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  if (!raw) return fallback;
+  return (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback;
+}
+
+const STATUS_VALUES = ['All', 'Online', 'Offline'] as const;
+const PLATFORM_VALUES = ['All', 'Windows', 'macOS', 'Linux', 'Android'] as const;
+
 export function DevicesPage() {
+  // Seed filters from the URL on mount so Dashboard links like
+  // /devices?status=online actually land with the filter applied. After
+  // mount we just keep local state — we don't push back to the URL because
+  // the filter UI is ephemeral and URL-sync would fight React Router's
+  // history model for no real benefit.
+  const [searchParams] = useSearchParams();
+  const initStatus = clampFilter<StatusFilter>(
+    searchParams.get('status')?.replace(/^./, (c) => c.toUpperCase()) ?? null,
+    STATUS_VALUES,
+    'All',
+  );
+  const initPlatform = clampFilter<PlatformFilter>(
+    searchParams.get('platform'),
+    PLATFORM_VALUES,
+    'All',
+  );
+  const initTag = (() => {
+    const raw = searchParams.get('tag_id');
+    if (!raw) return 'all' as const;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : ('all' as const);
+  })();
+  const initFav = searchParams.get('favorite') === 'true';
+
   // Client-side filters (status / platform) for UX parity with v2. Tag + fav
   // filters are pushed to the server so the dataset can stay small.
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
-  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>('All');
-  const [tagFilter, setTagFilter] = useState<number | 'all'>('all');
-  const [favoriteOnly, setFavoriteOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initStatus);
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>(initPlatform);
+  const [tagFilter, setTagFilter] = useState<number | 'all'>(initTag);
+  const [favoriteOnly, setFavoriteOnly] = useState(initFav);
 
   const { data: rows = [], isLoading } = useDevices({
     tag_id: tagFilter === 'all' ? null : tagFilter,

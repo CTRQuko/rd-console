@@ -12,6 +12,7 @@
 
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Download, FileJson } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
@@ -58,11 +59,48 @@ function sinceFromRange(range: RangeKey): string | undefined {
 
 const PAGE_SIZE = 25;
 
+const VALID_RANGES: readonly RangeKey[] = ['today', '7d', '30d', 'all'];
+const VALID_CATEGORIES: readonly AuditCategory[] = [
+  'session',
+  'auth',
+  'user_management',
+  'config',
+];
+const VALID_ACTIONS: readonly AuditActionValue[] = [
+  'connect',
+  'disconnect',
+  'file_transfer',
+  'close',
+  'login',
+  'login_failed',
+  'user_created',
+  'user_updated',
+  'user_disabled',
+  'settings_changed',
+  'device_updated',
+  'device_forgotten',
+  'device_disconnect_requested',
+];
+
 export function LogsPage() {
-  const [range, setRange] = useState<RangeKey>('7d');
-  const [category, setCategory] = useState<'' | AuditCategory>('');
-  const [action, setAction] = useState<'' | AuditActionValue>('');
-  const [actor, setActor] = useState('');
+  // Seed filters from the URL so Dashboard links like /logs?category=session
+  // or /logs?actor=<id> land with the filter applied.
+  const [searchParams] = useSearchParams();
+  const initRange = (searchParams.get('range') ?? '') as RangeKey;
+  const initCategory = (searchParams.get('category') ?? '') as AuditCategory;
+  const initAction = (searchParams.get('action') ?? '') as AuditActionValue;
+  const initActor = searchParams.get('actor') ?? '';
+
+  const [range, setRange] = useState<RangeKey>(
+    VALID_RANGES.includes(initRange) ? initRange : '7d',
+  );
+  const [category, setCategory] = useState<'' | AuditCategory>(
+    VALID_CATEGORIES.includes(initCategory) ? initCategory : '',
+  );
+  const [action, setAction] = useState<'' | AuditActionValue>(
+    VALID_ACTIONS.includes(initAction) ? initAction : '',
+  );
+  const [actor, setActor] = useState(initActor);
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [toast, setToast] = useState<ToastValue | null>(null);
