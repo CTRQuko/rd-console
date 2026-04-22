@@ -31,6 +31,12 @@ class AuditAction(str, Enum):
     DEVICE_UPDATED = "device_updated"
     DEVICE_FORGOTTEN = "device_forgotten"
     DEVICE_DISCONNECT_REQUESTED = "device_disconnect_requested"
+    # v3: tagging + bulk device ops
+    TAG_CREATED = "tag_created"
+    TAG_DELETED = "tag_deleted"
+    DEVICE_TAGGED = "device_tagged"
+    DEVICE_UNTAGGED = "device_untagged"
+    DEVICE_BULK_UPDATED = "device_bulk_updated"
 
 
 # Category grouping used by /admin/api/logs?category=...
@@ -58,6 +64,11 @@ AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
         AuditAction.DEVICE_UPDATED,
         AuditAction.DEVICE_FORGOTTEN,
         AuditAction.DEVICE_DISCONNECT_REQUESTED,
+        AuditAction.DEVICE_BULK_UPDATED,
+        AuditAction.TAG_CREATED,
+        AuditAction.TAG_DELETED,
+        AuditAction.DEVICE_TAGGED,
+        AuditAction.DEVICE_UNTAGGED,
     ),
 }
 
