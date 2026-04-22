@@ -16,7 +16,17 @@ from . import __version__
 from .config import get_settings
 from .db import engine, init_db
 from .models.user import User, UserRole
-from .routers import auth, devices, join, logs, rustdesk, settings_, tags, users
+from .routers import (
+    auth,
+    devices,
+    join,
+    logs,
+    rustdesk,
+    search,
+    settings_,
+    tags,
+    users,
+)
 from .security import hash_password
 
 log = logging.getLogger("rd_console")
@@ -169,6 +179,7 @@ def create_app() -> FastAPI:
     app.include_router(logs.router)
     app.include_router(settings_.router)
     app.include_router(tags.router)
+    app.include_router(search.router)
 
     # Public
     app.include_router(join.router)
