@@ -93,6 +93,33 @@ export interface ApiUser {
   last_login_at: string | null;
 }
 
+export type TagColor = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'zinc';
+
+export const TAG_COLORS: readonly TagColor[] = [
+  'blue',
+  'green',
+  'amber',
+  'red',
+  'violet',
+  'zinc',
+] as const;
+
+/** Admin-authored tag label attached to devices for filtering. */
+export interface Tag {
+  id: number;
+  name: string;
+  color: TagColor;
+  created_at: string;
+  device_count: number;
+}
+
+/** Short tag reference embedded in ApiDevice.tags. */
+export interface TagSummary {
+  id: number;
+  name: string;
+  color: TagColor;
+}
+
 /** What /admin/api/devices returns per row. */
 export interface ApiDevice {
   id: number;
@@ -107,7 +134,26 @@ export interface ApiDevice {
   last_seen_at: string | null;
   created_at: string;
   online: boolean;
+  // v3
+  note: string | null;
+  is_favorite: boolean;
+  tags: TagSummary[];
 }
+
+/** Result from POST /admin/api/devices/bulk. */
+export interface BulkResult {
+  affected: number;
+  skipped: number;
+  action: string;
+}
+
+export type BulkAction =
+  | 'assign_tag'
+  | 'unassign_tag'
+  | 'assign_owner'
+  | 'forget'
+  | 'favorite'
+  | 'unfavorite';
 
 export type AuditActionValue =
   | 'connect'

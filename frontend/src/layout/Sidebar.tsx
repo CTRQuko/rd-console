@@ -5,6 +5,7 @@ import {
   LogOut,
   Monitor,
   Settings as SettingsIcon,
+  Tag as TagIcon,
   Users as UsersIcon,
 } from 'lucide-react';
 import type { AuthUser } from '@/types/api';
@@ -13,6 +14,7 @@ const NAV_ITEMS = [
   { to: '/',         label: 'Dashboard', Icon: LayoutDashboard },
   { to: '/users',    label: 'Users',     Icon: UsersIcon },
   { to: '/devices',  label: 'Devices',   Icon: Monitor },
+  { to: '/tags',     label: 'Tags',      Icon: TagIcon },
   { to: '/logs',     label: 'Logs',      Icon: FileText },
   { to: '/settings', label: 'Settings',  Icon: SettingsIcon },
 ] as const;
