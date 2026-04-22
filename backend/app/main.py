@@ -142,6 +142,10 @@ def _mount_frontend(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    import asyncio
+
+    from .services.hbbs_sync import run_sync_loop
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -149,7 +153,19 @@ async def lifespan(_: FastAPI):
     init_db()
     _bootstrap_admin()
     _warn_startup(get_settings())
-    yield
+    # Kick off the hbbs → devices sync in the background. If the hbbs DB
+    # isn't mounted (dev env) the task just no-ops every tick.
+    import contextlib
+
+    sync_task = asyncio.create_task(run_sync_loop(), name="hbbs-sync")
+    try:
+        yield
+    finally:
+        sync_task.cancel()
+        # Swallow both the CancelledError we just triggered and any
+        # tick-level exception — a shutdown hook should never raise.
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await sync_task
 
 
 def create_app() -> FastAPI:

@@ -71,6 +71,12 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ./data/rdc:/data
+      # Mount hbbs's state dir read-only so the sync worker can read
+      # /hbbs-data/db_v2.sqlite3. Keeping it ro means a panel bug can never
+      # corrupt hbbs's DB.
+      - ./data:/hbbs-data:ro
+    depends_on:
+      - hbbs
     restart: unless-stopped
 YAML
 
