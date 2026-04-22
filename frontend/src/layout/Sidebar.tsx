@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
+  BookUser,
   FileText,
   KeyRound,
   LayoutDashboard,
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
   { to: '/',         label: 'Dashboard', Icon: LayoutDashboard },
   { to: '/users',    label: 'Users',     Icon: UsersIcon },
   { to: '/devices',  label: 'Devices',   Icon: Monitor },
+  { to: '/address-book', label: 'Address book', Icon: BookUser },
   { to: '/tags',     label: 'Tags',      Icon: TagIcon },
   { to: '/logs',     label: 'Logs',      Icon: FileText },
   { to: '/settings', label: 'Settings',  Icon: SettingsIcon },

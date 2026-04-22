@@ -40,6 +40,9 @@ class AuditAction(str, Enum):
     # v4: personal access tokens
     API_TOKEN_CREATED = "api_token_created"
     API_TOKEN_REVOKED = "api_token_revoked"
+    # v4: address book (per-user blob)
+    ADDRESS_BOOK_UPDATED = "address_book_updated"
+    ADDRESS_BOOK_CLEARED = "address_book_cleared"
 
 
 # Category grouping used by /admin/api/logs?category=...
@@ -74,6 +77,10 @@ AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
         AuditAction.TAG_DELETED,
         AuditAction.DEVICE_TAGGED,
         AuditAction.DEVICE_UNTAGGED,
+    ),
+    "address_book": (
+        AuditAction.ADDRESS_BOOK_UPDATED,
+        AuditAction.ADDRESS_BOOK_CLEARED,
     ),
 }
 
