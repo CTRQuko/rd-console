@@ -182,7 +182,7 @@ export function AddressBookPage() {
           {(r.tags ?? []).length === 0 ? (
             <span style={{ color: 'var(--fg-muted)' }}>—</span>
           ) : (
-            (r.tags ?? []).map((t) => <TagChip key={t} label={t} />)
+            (r.tags ?? []).map((t) => <TagChip key={t} name={t} color="blue" size="sm" />)
           )}
         </div>
       ),
@@ -261,7 +261,7 @@ export function AddressBookPage() {
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {knownTags.map((t) => (
-              <TagChip key={t} label={t} />
+              <TagChip key={t} name={t} color="blue" size="sm" />
             ))}
           </div>
         </section>
