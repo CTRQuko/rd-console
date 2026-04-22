@@ -38,7 +38,7 @@ echo "Seeded ids: $IDS_JSON"
 
 echo ""
 echo "=== 2. Baseline audit count for device_bulk_updated ==="
-AUDIT_PRE=$(sqlite3 "$RDC_DB" "SELECT COUNT(*) FROM audit_logs WHERE action='device_bulk_updated';")
+AUDIT_PRE=$(sqlite3 "$RDC_DB" "SELECT COUNT(*) FROM audit_logs WHERE action='DEVICE_BULK_UPDATED';")
 echo "Pre-count: $AUDIT_PRE"
 
 echo ""
@@ -73,7 +73,7 @@ HBBS_REMAIN=$(sqlite3 "$HBBS_DB" "SELECT COUNT(*) FROM peer WHERE id LIKE '$PREF
 
 echo ""
 echo "=== 7. Exactly ONE device_bulk_updated audit row added ==="
-AUDIT_POST=$(sqlite3 "$RDC_DB" "SELECT COUNT(*) FROM audit_logs WHERE action='device_bulk_updated';")
+AUDIT_POST=$(sqlite3 "$RDC_DB" "SELECT COUNT(*) FROM audit_logs WHERE action='DEVICE_BULK_UPDATED';")
 DELTA=$((AUDIT_POST - AUDIT_PRE))
 [ "$DELTA" = "1" ] || fail "audit delta=$DELTA expected 1 (one per bulk op, not per device)"
 

@@ -59,7 +59,7 @@ echo ""
 echo "=== 6. Verify audit row has cleanup=panel-only ==="
 AUDIT_PAYLOAD=$(sqlite3 "$RDC_DB" \
     "SELECT payload FROM audit_logs
-     WHERE action='device_forgotten' AND from_id='$PANEL_ONLY_ID'
+     WHERE action='DEVICE_FORGOTTEN' AND from_id='$PANEL_ONLY_ID'
      ORDER BY id DESC LIMIT 1;")
 echo "audit payload: $AUDIT_PAYLOAD"
 echo "$AUDIT_PAYLOAD" | grep -q '"cleanup": "panel-only"' \
