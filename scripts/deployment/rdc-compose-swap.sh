@@ -19,6 +19,18 @@ echo "Backup: /opt/rustdesk/docker-compose.yml.bak-${TS}"
 # rd-console uses /data inside the container, mapped to ./data/rdc here).
 mkdir -p ./data/rdc
 
+# PR #12 (coordinated forget) needs rd-console's non-root `rdc` user to be
+# able to DELETE FROM peer on hbbs's own SQLite. hbbs writes those files as
+# root:root 644, which blocks us. Relax perms here so a fresh deploy picks
+# it up; hbbs itself doesn't care (it opens rw always). If hbbs recreates
+# the file these perms are reset — run this script again or add a systemd
+# path unit if it becomes a recurring pain.
+if [ -f ./data/db_v2.sqlite3 ]; then
+    chmod 666 ./data/db_v2.sqlite3 ./data/db_v2.sqlite3-shm ./data/db_v2.sqlite3-wal 2>/dev/null || true
+    chmod 777 ./data
+    echo "Relaxed hbbs SQLite perms for coordinated-forget write path"
+fi
+
 # Generate secret key if no .env exists yet.
 if [ ! -f ./rdc.env ]; then
     SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | base64)
