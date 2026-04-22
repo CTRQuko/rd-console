@@ -45,6 +45,9 @@ Thumbs.db
 .next/
 .turbo/
 
+# ───── Staging / imports (not part of the project) ─────
+_design-import/
+
 # ───── Logs ─────
 *.log
 npm-debug.log*
