@@ -21,6 +21,10 @@ RUN npm ci --no-audit --no-fund
 
 # Copy the rest and build.
 COPY frontend/ ./
+# Cap Node's heap so the build fits in memory-constrained LXCs (LXC 105
+# on pve2 runs with 256 MB RAM + 512 MB swap — a default Node heap OOMs
+# the cgroup). 420 MB leaves ~350 MB for the rest of the container.
+ENV NODE_OPTIONS="--max-old-space-size=420"
 RUN npm run build
 
 # ═══════════════════════════════════════════════════════════════════════════
