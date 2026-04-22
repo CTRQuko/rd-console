@@ -31,7 +31,7 @@ echo ""
 echo "=== 2. Fetch prebuilt frontend from $DIST_URL ==="
 curl -fsSL "$DIST_URL" -o /tmp/frontend-dist.tar.gz
 mkdir -p frontend-dist
-tar xzf /tmp/frontend-dist.tar.gz -C frontend-dist --strip-components=1
+tar xzf /tmp/frontend-dist.tar.gz -C frontend-dist --strip-components=1 --no-same-owner --no-same-permissions
 echo "dist contents:"
 ls frontend-dist | head -5
 
