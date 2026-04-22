@@ -103,8 +103,10 @@ def test_sync_inserts_new_peer(hbbs_db, session):
     assert dev.platform == "Windows"
     # IPv4-mapped IPv6 gets unwrapped.
     assert dev.last_ip == "10.0.0.5"
-    # status == 1 → online → last_seen_at populated.
-    assert dev.last_seen_at is not None
+    # Sync is metadata-only: last_seen_at is owned by the heartbeat endpoint
+    # (fed by hbbs-watcher), NOT by hbbs.peer.status. hbbs free never writes
+    # a real status value so trusting it here would always lie.
+    assert dev.last_seen_at is None
 
 
 def test_sync_skips_when_db_missing(tmp_path, monkeypatch):
@@ -122,7 +124,7 @@ def test_sync_updates_changed_fields(hbbs_db, session):
         info={"ip": "::ffff:10.0.0.6", "hostname": "old-name"},
     )
     _sync_once()
-    # Now hbbs sees the peer with a new hostname + online state.
+    # Now hbbs sees the peer with a new hostname + (fake) online state.
     _seed_peer(
         hbbs_db,
         rd_id="444 555 666",
@@ -138,7 +140,8 @@ def test_sync_updates_changed_fields(hbbs_db, session):
     ).first()
     assert dev.hostname == "renamed"
     assert dev.platform == "Linux"
-    assert dev.last_seen_at is not None  # online bumps it
+    # last_seen_at is still None: sync never writes it, regardless of status.
+    assert dev.last_seen_at is None
 
 
 def test_sync_offline_does_not_bump_last_seen(hbbs_db, session):
@@ -153,6 +156,26 @@ def test_sync_offline_does_not_bump_last_seen(hbbs_db, session):
     dev = session.exec(
         select(Device).where(Device.rustdesk_id == "777 888 999")
     ).first()
-    # Offline peer: we inserted the row but last_seen_at stays None so the
-    # "online within 5 min" heuristic doesn't lie.
+    # last_seen_at stays None so the "online within 5 min" heuristic
+    # doesn't lie about a peer that isn't heartbeating.
+    assert dev.last_seen_at is None
+
+
+def test_sync_ignores_fake_status_one(hbbs_db, session):
+    """Guard test: even if hbbs somehow writes status=1 (it doesn't in
+    practice — issue #263), sync must NOT bump last_seen_at. The heartbeat
+    endpoint is the only writer for that column."""
+    _seed_peer(
+        hbbs_db,
+        rd_id="status1-ghost",
+        status=1,
+        info={"ip": "::ffff:10.0.0.8", "hostname": "ghost"},
+    )
+    _sync_once()
+    session.expire_all()
+    dev = session.exec(
+        select(Device).where(Device.rustdesk_id == "status1-ghost")
+    ).first()
+    assert dev is not None
+    assert dev.hostname == "ghost"
     assert dev.last_seen_at is None
