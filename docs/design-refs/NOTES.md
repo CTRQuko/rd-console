@@ -69,6 +69,21 @@ Marcar ✅ cuando el resultado se parezca, ❌ cuando falle.
 
 ---
 
+## 🔤 Tipografía — estado
+
+**Self-hosted en `frontend/public/fonts/`** (no Google Fonts, no CDN).
+
+| Familia | Tipo | Uso | Tailwind utility |
+|---------|------|-----|------------------|
+| `InterVariable` | Variable (1 file 100-900 + 1 italic) | Body, UI, tablas | `font-sans` (default) |
+| `InterDisplay` | 18 static (9 weights × 2 styles) | Headings, page titles, stat numbers | `font-display` |
+
+Preload en `index.html`: `InterVariable.woff2` + `InterDisplay-SemiBold.woff2` (peso más usado en headings).
+
+Licencia: OFL — `public/fonts/Inter-LICENSE.txt`.
+
+---
+
 ## 🎨 Paleta — verificar
 
 | Elemento | Target | OK? |

@@ -23,6 +23,14 @@ export default {
           'Roboto',
           'sans-serif',
         ],
+        display: [
+          'InterDisplay',
+          'InterVariable',
+          'system-ui',
+          '-apple-system',
+          'Segoe UI',
+          'sans-serif',
+        ],
       },
       colors: {
         border: "hsl(var(--border))",
