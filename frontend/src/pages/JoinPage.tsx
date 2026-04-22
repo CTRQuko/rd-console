@@ -9,17 +9,15 @@ import type { ServerInfo } from '@/types/api';
 export function JoinPage() {
   const { token } = useParams<{ token: string }>();
   const [server, setServer] = useState<ServerInfo | null>(null);
-  const [invalid, setInvalid] = useState(false);
+
+  // Derived from the URL — no extra state needed. In real integration this
+  // check will move into the API call's error branch (404 → invalid).
+  const invalid = !token || token === 'invalid';
 
   useEffect(() => {
-    // In real integration this will fetch /api/join/:token from the backend.
-    // The mock accepts any non-empty token; "invalid" surfaces the error state.
-    if (!token || token === 'invalid') {
-      setInvalid(true);
-      return;
-    }
+    if (invalid) return;
     mockApi.server().then(setServer);
-  }, [token]);
+  }, [invalid]);
 
   if (invalid) {
     return (

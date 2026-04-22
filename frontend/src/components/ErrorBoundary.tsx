@@ -22,7 +22,6 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     // Intentionally console.error — no remote reporting wired yet.
-    // eslint-disable-next-line no-console
     console.error('rd-console ErrorBoundary caught:', error, info);
   }
 

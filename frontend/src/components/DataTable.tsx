@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -23,12 +23,17 @@ export function DataTable<T extends { id?: number | string }>({
   pageSize = 10,
 }: DataTableProps<T>) {
   const [page, setPage] = useState(0);
+  const [prevTotal, setPrevTotal] = useState(rows.length);
   const total = rows.length;
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
-  useEffect(() => {
+  // Reset to page 0 when the row count changes (e.g. a filter narrowed the
+  // list). This runs during render — the React-recommended pattern for
+  // "reset state on prop change" without an extra useEffect pass.
+  if (prevTotal !== total) {
+    setPrevTotal(total);
     setPage(0);
-  }, [total]);
+  }
 
   const start = page * pageSize;
   const slice = rows.slice(start, start + pageSize);
