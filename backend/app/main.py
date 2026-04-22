@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
 
 from . import __version__
@@ -61,6 +64,72 @@ def _warn_startup(s) -> None:
         )
 
 
+# ─── Frontend static serving ────────────────────────────────────────────────
+# When packaged with Docker, the built Vite frontend lands at /app/frontend.
+# In dev you can override via RD_FRONTEND_DIST. If the directory does not
+# exist (e.g. backend-only dev run), the SPA mount is skipped and the API
+# still works as before.
+_DEFAULT_DIST_CANDIDATES = (
+    Path("/app/frontend"),
+    Path(__file__).resolve().parent.parent.parent / "frontend" / "dist",
+)
+
+# Routes that must NEVER be intercepted by the SPA fallback. Anything else
+# that is a GET and is not an API route is treated as a client-side route
+# and returns index.html so React Router can take over.
+_API_PREFIXES = ("/api/", "/admin/api/", "/openapi", "/docs", "/redoc", "/health")
+
+
+def _find_frontend_dist() -> Path | None:
+    from os import environ
+
+    override = environ.get("RD_FRONTEND_DIST")
+    if override:
+        p = Path(override)
+        if p.is_dir():
+            return p
+    for candidate in _DEFAULT_DIST_CANDIDATES:
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    dist = _find_frontend_dist()
+    if dist is None:
+        log.info("No frontend build found — serving API only")
+        return
+
+    index_html = dist / "index.html"
+    if not index_html.is_file():
+        log.warning("Frontend dist %s missing index.html — skipping mount", dist)
+        return
+
+    log.info("Serving frontend from %s", dist)
+
+    # Hashed assets + fonts — long-cache by filename.
+    if (dist / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+    if (dist / "fonts").is_dir():
+        app.mount("/fonts", StaticFiles(directory=dist / "fonts"), name="fonts")
+
+    # SPA fallback: every non-API GET returns index.html and React Router
+    # handles the path client-side.
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str) -> FileResponse:
+        lead = "/" + full_path
+        if any(lead.startswith(p) for p in _API_PREFIXES):
+            # If an API route reached here, it's because the router didn't match
+            # — return a proper 404 instead of silently serving HTML.
+            raise HTTPException(status_code=404, detail="Not found")
+        # Serve the specific file if it exists at the dist root (favicon.svg,
+        # icons.svg, etc.); otherwise fall back to index.html.
+        candidate = dist / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(index_html)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     logging.basicConfig(
@@ -105,6 +174,9 @@ def create_app() -> FastAPI:
 
     # RustDesk client protocol (optionally gated by X-RD-Secret)
     app.include_router(rustdesk.router)
+
+    # Frontend LAST so the catch-all doesn't shadow API routes.
+    _mount_frontend(app)
 
     return app
 
