@@ -21,3 +21,11 @@ class Device(SQLModel, table=True):
     last_ip: str | None = Field(default=None, max_length=45)  # v6-sized
     last_seen_at: datetime | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # v3: admin-authored per-device metadata. `note` is free-form (max 500
+    # chars) and `is_favorite` is a panel-wide pin so admins can surface the
+    # devices they touch daily. Both default to "no value" so existing rows
+    # after SQLModel.metadata.create_all() on a v2 DB stay valid — SQLite
+    # fills NULL / 0 for the new columns.
+    note: str | None = Field(default=None, max_length=500)
+    is_favorite: bool = Field(default=False, index=True)

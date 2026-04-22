@@ -170,3 +170,207 @@ def test_devices_endpoints_require_auth(client, session):
     assert client.get("/admin/api/devices").status_code == 401
     assert client.delete("/admin/api/devices/1").status_code == 401
     assert client.post("/admin/api/devices/1/disconnect").status_code == 401
+
+
+# ─── v3: note + is_favorite on PATCH ────────────────────────────────────────
+
+def test_patch_sets_note_and_favorite(client, auth_headers, session):
+    d = _seed_device(session)
+    r = client.patch(
+        f"/admin/api/devices/{d.id}",
+        json={"note": "Juan's laptop — weekly patch", "is_favorite": True},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["note"] == "Juan's laptop — weekly patch"
+    assert body["is_favorite"] is True
+
+
+def test_list_devices_filters_by_favorite(client, auth_headers, session):
+    _seed_device(session, rustdesk_id="111")
+    d2 = _seed_device(session, rustdesk_id="222")
+    client.patch(
+        f"/admin/api/devices/{d2.id}",
+        json={"is_favorite": True},
+        headers=auth_headers,
+    )
+    r = client.get("/admin/api/devices?favorite=true", headers=auth_headers)
+    assert r.status_code == 200
+    ids = [row["rustdesk_id"] for row in r.json()]
+    assert ids == ["222"]
+
+
+# ─── v3: tag assignment ─────────────────────────────────────────────────────
+
+def test_assign_and_unassign_tag(client, auth_headers, session):
+    d = _seed_device(session)
+    tag_resp = client.post(
+        "/admin/api/tags", json={"name": "lab"}, headers=auth_headers
+    )
+    tag_id = tag_resp.json()["id"]
+
+    r = client.post(
+        f"/admin/api/devices/{d.id}/tags/{tag_id}", headers=auth_headers
+    )
+    assert r.status_code == 200
+    names = [t["name"] for t in r.json()["tags"]]
+    assert names == ["lab"]
+
+    # Re-assigning is a no-op — still 200, still one tag.
+    r = client.post(
+        f"/admin/api/devices/{d.id}/tags/{tag_id}", headers=auth_headers
+    )
+    assert r.status_code == 200
+    assert len(r.json()["tags"]) == 1
+
+    r = client.delete(
+        f"/admin/api/devices/{d.id}/tags/{tag_id}", headers=auth_headers
+    )
+    assert r.status_code == 200
+    assert r.json()["tags"] == []
+
+    actions = [
+        row.action
+        for row in session.exec(
+            select(AuditLog).where(
+                AuditLog.action.in_(
+                    [AuditAction.DEVICE_TAGGED, AuditAction.DEVICE_UNTAGGED]
+                )
+            )
+        ).all()
+    ]
+    assert AuditAction.DEVICE_TAGGED in actions
+    assert AuditAction.DEVICE_UNTAGGED in actions
+
+
+def test_list_devices_filters_by_tag(client, auth_headers, session):
+    d1 = _seed_device(session, rustdesk_id="111")
+    _seed_device(session, rustdesk_id="222")
+    tag_id = client.post(
+        "/admin/api/tags", json={"name": "lab"}, headers=auth_headers
+    ).json()["id"]
+    client.post(f"/admin/api/devices/{d1.id}/tags/{tag_id}", headers=auth_headers)
+
+    r = client.get(
+        f"/admin/api/devices?tag_id={tag_id}", headers=auth_headers
+    )
+    assert r.status_code == 200
+    ids = [row["rustdesk_id"] for row in r.json()]
+    assert ids == ["111"]
+
+
+def test_forget_device_cleans_up_tag_links(client, auth_headers, session):
+    d = _seed_device(session)
+    device_id = d.id
+    tag_id = client.post(
+        "/admin/api/tags", json={"name": "t"}, headers=auth_headers
+    ).json()["id"]
+    client.post(f"/admin/api/devices/{device_id}/tags/{tag_id}", headers=auth_headers)
+    # Detach only the rows the router will delete so we keep the rest of the
+    # session (e.g. admin_user) bound.
+    from app.models.tag import DeviceTag
+    for link in session.exec(
+        select(DeviceTag).where(DeviceTag.device_id == device_id)
+    ).all():
+        session.expunge(link)
+    session.expunge(d)
+
+    r = client.delete(f"/admin/api/devices/{device_id}", headers=auth_headers)
+    assert r.status_code == 204
+
+    assert (
+        session.exec(select(DeviceTag).where(DeviceTag.device_id == device_id)).all()
+        == []
+    )
+
+
+# ─── v3: bulk operations ────────────────────────────────────────────────────
+
+def test_bulk_favorite_sets_flag_and_writes_one_audit(client, auth_headers, session):
+    d1 = _seed_device(session, rustdesk_id="111")
+    d2 = _seed_device(session, rustdesk_id="222")
+    d3 = _seed_device(session, rustdesk_id="333")
+
+    r = client.post(
+        "/admin/api/devices/bulk",
+        json={"device_ids": [d1.id, d2.id, d3.id], "action": "favorite"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["affected"] == 3
+    assert body["skipped"] == 0
+    assert body["action"] == "favorite"
+
+    # Exactly one bulk audit row despite 3 affected devices.
+    rows = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DEVICE_BULK_UPDATED)
+    ).all()
+    assert len(rows) == 1
+
+
+def test_bulk_forget_removes_rows_and_skips_missing(client, auth_headers, session):
+    d1 = _seed_device(session, rustdesk_id="111")
+    d2 = _seed_device(session, rustdesk_id="222")
+    id1, id2 = d1.id, d2.id
+    # Detach only the device rows that the router will delete so session.get
+    # below doesn't try to refresh a stale instance.
+    session.expunge(d1)
+    session.expunge(d2)
+
+    r = client.post(
+        "/admin/api/devices/bulk",
+        json={"device_ids": [id1, id2, 9999], "action": "forget"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["affected"] == 2
+    assert body["skipped"] == 1
+
+    assert session.get(Device, id1) is None
+    assert session.get(Device, id2) is None
+
+
+def test_bulk_assign_tag_is_idempotent(client, auth_headers, session):
+    d1 = _seed_device(session, rustdesk_id="111")
+    d2 = _seed_device(session, rustdesk_id="222")
+    tag_id = client.post(
+        "/admin/api/tags", json={"name": "lab"}, headers=auth_headers
+    ).json()["id"]
+    # Already assign d1 manually so the bulk op has a no-op for that device.
+    client.post(f"/admin/api/devices/{d1.id}/tags/{tag_id}", headers=auth_headers)
+
+    r = client.post(
+        "/admin/api/devices/bulk",
+        json={
+            "device_ids": [d1.id, d2.id],
+            "action": "assign_tag",
+            "tag_id": tag_id,
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    # Only d2 was newly tagged; d1 was already tagged.
+    assert body["affected"] == 1
+
+
+def test_bulk_assign_tag_requires_tag_id(client, auth_headers, session):
+    d = _seed_device(session)
+    r = client.post(
+        "/admin/api/devices/bulk",
+        json={"device_ids": [d.id], "action": "assign_tag"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 400
+    assert "tag_id" in r.json()["detail"]
+
+
+def test_bulk_requires_auth(client):
+    r = client.post(
+        "/admin/api/devices/bulk",
+        json={"device_ids": [1], "action": "favorite"},
+    )
+    assert r.status_code == 401
