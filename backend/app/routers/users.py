@@ -134,12 +134,15 @@ def disable_user(user_id: int, session: SessionDep, admin: AdminUser) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     if user.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot disable yourself")
-    if user.role == UserRole.ADMIN and user.is_active:
-        if _count_active_admins(session, exclude_user_id=user.id) == 0:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                "Cannot deactivate the last active admin",
-            )
+    if (
+        user.role == UserRole.ADMIN
+        and user.is_active
+        and _count_active_admins(session, exclude_user_id=user.id) == 0
+    ):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Cannot deactivate the last active admin",
+        )
     user.is_active = False
     session.add(user)
     session.add(AuditLog(

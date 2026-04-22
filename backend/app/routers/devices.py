@@ -34,7 +34,7 @@ class DeviceOut(BaseModel):
     online: bool
 
     @classmethod
-    def from_model(cls, d: Device, *, now: datetime | None = None) -> "DeviceOut":
+    def from_model(cls, d: Device, *, now: datetime | None = None) -> DeviceOut:
         _now = now or utcnow_naive()
         online = bool(d.last_seen_at and (_now - d.last_seen_at) < ONLINE_WINDOW)
         data = d.model_dump()

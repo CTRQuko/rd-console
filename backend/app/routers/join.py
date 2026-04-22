@@ -5,12 +5,12 @@ No auth required. Tokens are strictly single-use and opaque.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel import select
 
 from ..config import get_settings
-from ..db import get_session
+from ..deps import SessionDep
 from ..models.join_token import JoinToken
 from ..security import utcnow_naive
 
@@ -26,7 +26,7 @@ class JoinConfig(BaseModel):
 
 
 @router.get("/{token}", response_model=JoinConfig)
-def get_join_config(token: str, session=Depends(get_session)) -> JoinConfig:
+def get_join_config(token: str, session: SessionDep) -> JoinConfig:
     # Reject obviously malformed tokens early; secrets.token_urlsafe(32) is ~43 chars.
     if not token or len(token) > 64:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invalid or revoked token")

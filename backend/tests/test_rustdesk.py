@@ -39,6 +39,7 @@ def test_audit_payload_is_truncated(client, session):
     assert r.status_code == 200
 
     from sqlmodel import select
+
     from app.models.audit_log import AuditAction, AuditLog
     row = session.exec(select(AuditLog).where(AuditLog.action == AuditAction.CONNECT)).first()
     assert row is not None
@@ -51,6 +52,7 @@ def test_audit_payload_is_valid_json_string(client, session):
     r = client.post("/api/audit/file", json={"from_id": "a", "to_id": "b", "size": 10})
     assert r.status_code == 200
     from sqlmodel import select
+
     from app.models.audit_log import AuditAction, AuditLog
     row = session.exec(select(AuditLog).where(AuditLog.action == AuditAction.FILE_TRANSFER)).first()
     assert row.payload and row.payload.startswith("{") and row.payload.endswith("}")

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-import pytest
 from sqlmodel import select
 
 from app.models.audit_log import AuditAction, AuditLog

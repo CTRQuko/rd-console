@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from argon2 import PasswordHasher
@@ -18,7 +18,7 @@ _hasher = PasswordHasher()
 
 def utcnow_naive() -> datetime:
     """UTC now, naive. Matches SQLModel columns that store naive UTC."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 # ─── Passwords ───
@@ -55,7 +55,7 @@ def create_access_token(
 ) -> str:
     """Create a signed JWT for a given subject (typically the user id)."""
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     exp_delta = expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     payload: dict[str, Any] = {
         "sub": str(subject),

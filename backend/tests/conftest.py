@@ -15,7 +15,7 @@ os.environ.setdefault("RD_ENVIRONMENT", "dev")
 os.environ.setdefault("RD_SECRET_KEY", "test-secret-key-that-is-sufficiently-long-xx")
 
 from app import db as db_module  # noqa: E402
-from app.deps import get_current_user, get_session, require_admin  # noqa: E402
+from app.deps import get_session  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models.user import User, UserRole  # noqa: E402
 from app.security import hash_password  # noqa: E402

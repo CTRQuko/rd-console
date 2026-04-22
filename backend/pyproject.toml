@@ -37,7 +37,17 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
-ignore = ["E501"]
+ignore = [
+    # Long lines — we break at natural boundaries; sometimes a URL/SQL
+    # fragment exceeds 100 chars and wrapping hurts readability.
+    "E501",
+    # "Class inherits from both str and Enum" — upstream Ruff wants StrEnum.
+    # We stick with `class X(str, Enum)` because StrEnum changes `str(X.FOO)`
+    # behavior (returns the value instead of "X.FOO"), which is a silent
+    # semantic change for anything that logs enums. The current form is
+    # supported on Python 3.11+ and works fine with SQLModel + Pydantic v2.
+    "UP042",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

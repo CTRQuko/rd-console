@@ -16,13 +16,12 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from sqlmodel import select
 
 from ..config import get_settings
-from ..db import get_session
-from ..deps import ClientSecretDep
+from ..deps import ClientSecretDep, SessionDep
 from ..models.audit_log import AuditAction, AuditLog
 from ..models.device import Device
 from ..security import utcnow_naive
@@ -75,8 +74,8 @@ def _client_ip(request: Request) -> str | None:
 def heartbeat(
     body: HeartbeatPayload,
     request: Request,
+    session: SessionDep,
     _: ClientSecretDep,
-    session=Depends(get_session),
 ) -> dict:
     """Update last_seen_at on heartbeat. Creates the device row if unknown.
 
@@ -115,8 +114,8 @@ def heartbeat(
 @router.post("/sysinfo")
 def sysinfo(
     body: SysinfoPayload,
+    session: SessionDep,
     _: ClientSecretDep,
-    session=Depends(get_session),
 ) -> dict:
     device = session.exec(select(Device).where(Device.rustdesk_id == body.id)).first()
     if not device:
@@ -135,8 +134,8 @@ def sysinfo(
 @router.post("/audit/conn")
 def audit_conn(
     payload: dict,
+    session: SessionDep,
     _: ClientSecretDep,
-    session=Depends(get_session),
 ) -> dict:
     """Connection start/stop events from clients."""
     session.add(
@@ -156,8 +155,8 @@ def audit_conn(
 @router.post("/audit/file")
 def audit_file(
     payload: dict,
+    session: SessionDep,
     _: ClientSecretDep,
-    session=Depends(get_session),
 ) -> dict:
     session.add(
         AuditLog(
