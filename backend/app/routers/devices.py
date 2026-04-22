@@ -17,6 +17,7 @@ from ..models.device import Device
 from ..models.tag import DeviceTag, Tag
 from ..models.user import User
 from ..security import utcnow_naive
+from ..services.hbbs_sync import delete_hbbs_peer
 
 router = APIRouter(prefix="/admin/api/devices", tags=["admin:devices"])
 
@@ -234,6 +235,20 @@ def forget_device(device_id: int, session: SessionDep, admin: AdminUser) -> None
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Device not found")
 
     rd_id = d.rustdesk_id
+
+    # Coordinated delete: remove from hbbs FIRST so a sync tick between our
+    # local delete and the hbbs delete can't re-insert the row. If the hbbs
+    # delete fails (permission, missing file) we bubble a 500 and leave
+    # everything untouched — DELETE FROM peer is cheap and idempotent, so
+    # the operator can simply retry.
+    try:
+        hbbs_removed = delete_hbbs_peer(rd_id)
+    except Exception as exc:  # noqa: BLE001 — any sqlite/OS error goes here
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"Failed to remove peer from hbbs: {exc}",
+        ) from exc
+
     # Remove any tag links first so foreign-key orphans don't survive.
     for link in session.exec(select(DeviceTag).where(DeviceTag.device_id == device_id)).all():
         session.delete(link)
@@ -243,7 +258,16 @@ def forget_device(device_id: int, session: SessionDep, admin: AdminUser) -> None
             action=AuditAction.DEVICE_FORGOTTEN,
             actor_user_id=admin.id,
             from_id=rd_id,
-            payload=json.dumps({"device_id": device_id, "rustdesk_id": rd_id}),
+            payload=json.dumps(
+                {
+                    "device_id": device_id,
+                    "rustdesk_id": rd_id,
+                    # Tells post-mortem readers the forget actually reached
+                    # hbbs, not just the panel DB.
+                    "hbbs_removed": hbbs_removed,
+                    "cleanup": "both" if hbbs_removed else "panel-only",
+                }
+            ),
         )
     )
     session.commit()
@@ -434,13 +458,30 @@ def bulk_update(
                 affected += 1
 
     elif body.action == "forget":
+        # Mirror the single-device forget: remove from hbbs first so the
+        # next sync tick can't resurrect the row. A partial failure halts
+        # the bulk op — safer than leaving half-deleted state.
+        hbbs_failures: list[str] = []
         for d in device_rows:
+            try:
+                delete_hbbs_peer(d.rustdesk_id)
+            except Exception as exc:  # noqa: BLE001
+                hbbs_failures.append(f"{d.rustdesk_id}: {exc}")
+                continue
             for link in session.exec(
                 select(DeviceTag).where(DeviceTag.device_id == d.id)
             ).all():
                 session.delete(link)
             session.delete(d)
             affected += 1
+        if hbbs_failures:
+            # Commit whatever succeeded so partial progress is durable,
+            # then surface the failures.
+            session.commit()
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Failed to remove some peers from hbbs: " + "; ".join(hbbs_failures),
+            )
 
     elif body.action in ("favorite", "unfavorite"):
         target = body.action == "favorite"

@@ -260,6 +260,94 @@ def test_list_devices_filters_by_tag(client, auth_headers, session):
     assert ids == ["111"]
 
 
+def test_forget_device_also_removes_hbbs_row(client, auth_headers, session, tmp_path, monkeypatch):
+    """Coordinated forget: deleting a device via the panel must also wipe
+    the corresponding row from hbbs's SQLite so the sync loop can't
+    resurrect it on the next tick."""
+    import sqlite3 as _sqlite3
+
+    from app.config import get_settings
+
+    # Build a throw-away hbbs DB with one matching peer row.
+    hbbs_path = tmp_path / "db_v2.sqlite3"
+    conn = _sqlite3.connect(hbbs_path)
+    conn.executescript(
+        """
+        CREATE TABLE peer (
+            guid blob primary key not null,
+            id varchar(100) not null,
+            uuid blob not null,
+            pk blob not null,
+            created_at datetime not null default(current_timestamp),
+            user blob,
+            status tinyint,
+            note varchar(300),
+            info text not null
+        ) without rowid;
+        """
+    )
+    conn.execute(
+        "INSERT INTO peer (guid, id, uuid, pk, status, info) VALUES (?, ?, ?, ?, ?, ?)",
+        (b"\x01", "forget-me", b"\x02", b"\x03", 0, '{"ip":"::ffff:10.0.0.1"}'),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(get_settings(), "hbbs_db_path", hbbs_path)
+
+    d = _seed_device(session, rustdesk_id="forget-me")
+    device_id = d.id
+
+    r = client.delete(f"/admin/api/devices/{device_id}", headers=auth_headers)
+    assert r.status_code == 204
+
+    # Panel row gone.
+    session.expire_all()
+    assert session.get(Device, device_id) is None
+
+    # hbbs row gone too.
+    rows = _sqlite3.connect(hbbs_path).execute(
+        "SELECT id FROM peer WHERE id = ?", ("forget-me",)
+    ).fetchall()
+    assert rows == []
+
+    # Audit trail records the coordinated cleanup.
+    audit = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DEVICE_FORGOTTEN)
+    ).first()
+    import json as _json
+    payload = _json.loads(audit.payload)
+    assert payload["hbbs_removed"] is True
+    assert payload["cleanup"] == "both"
+
+
+def test_forget_device_tolerates_missing_hbbs_file(
+    client, auth_headers, session, tmp_path, monkeypatch
+):
+    """If the hbbs DB file is missing (e.g. sync mount not wired up),
+    forget should still succeed on the panel side and flag the audit."""
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "hbbs_db_path", tmp_path / "missing.sqlite3")
+
+    d = _seed_device(session, rustdesk_id="panel-only")
+    device_id = d.id
+
+    r = client.delete(f"/admin/api/devices/{device_id}", headers=auth_headers)
+    assert r.status_code == 204
+
+    session.expire_all()
+    assert session.get(Device, device_id) is None
+
+    audit = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DEVICE_FORGOTTEN)
+    ).first()
+    import json as _json
+    payload = _json.loads(audit.payload)
+    assert payload["hbbs_removed"] is False
+    assert payload["cleanup"] == "panel-only"
+
+
 def test_forget_device_cleans_up_tag_links(client, auth_headers, session):
     d = _seed_device(session)
     device_id = d.id
