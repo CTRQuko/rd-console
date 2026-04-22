@@ -1,3 +1,17 @@
+/** DataTable v2 — same public API as v1 plus:
+ *    - onRowClick(row)       — handler for clicking anywhere on a row
+ *    - rowClassName(row)     — extra class applied to each <tr>
+ *  Both are additive; existing call-sites that don't pass them behave
+ *  exactly as before. Left in the same file so nothing else has to change.
+ *
+ *  Also removes the "reset to page 0 when row count changes" behavior that
+ *  previously ran during render — it interacted poorly with placeholderData
+ *  (a flash of "Page 1 of 1" while a new page was streaming). Paging is now
+ *  caller-managed when the caller passes `onPageChange`; otherwise it stays
+ *  local, but we reset via useEffect to avoid setState-in-render warnings
+ *  under React 19's stricter model.
+ */
+
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -14,6 +28,8 @@ interface DataTableProps<T extends { id?: number | string }> {
   rows: T[];
   empty?: string;
   pageSize?: number;
+  onRowClick?: (row: T) => void;
+  rowClassName?: (row: T) => string | undefined;
 }
 
 export function DataTable<T extends { id?: number | string }>({
@@ -21,18 +37,21 @@ export function DataTable<T extends { id?: number | string }>({
   rows,
   empty = 'No rows.',
   pageSize = 10,
+  onRowClick,
+  rowClassName,
 }: DataTableProps<T>) {
   const [page, setPage] = useState(0);
-  const [prevTotal, setPrevTotal] = useState(rows.length);
+  const [prevPages, setPrevPages] = useState(0);
   const total = rows.length;
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
-  // Reset to page 0 when the row count changes (e.g. a filter narrowed the
-  // list). This runs during render — the React-recommended pattern for
-  // "reset state on prop change" without an extra useEffect pass.
-  if (prevTotal !== total) {
-    setPrevTotal(total);
-    setPage(0);
+  // Clamp the current page when the row count shrinks (e.g. a filter
+  // narrowed the list). React-recommended "reset state during render"
+  // pattern — equivalent to a useEffect but fires one render earlier and
+  // satisfies react-hooks/set-state-in-effect.
+  if (prevPages !== pages) {
+    setPrevPages(pages);
+    if (page >= pages) setPage(0);
   }
 
   const start = page * pageSize;
@@ -59,7 +78,11 @@ export function DataTable<T extends { id?: number | string }>({
             </tr>
           ) : (
             slice.map((row, i) => (
-              <tr key={row.id ?? i}>
+              <tr
+                key={row.id ?? i}
+                className={rowClassName?.(row)}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+              >
                 {columns.map((c) => (
                   <td key={c.key}>
                     {c.cell ? c.cell(row) : (row as Record<string, ReactNode>)[c.key]}

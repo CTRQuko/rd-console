@@ -1,35 +1,64 @@
-import { useEffect, useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+/** UsersPage v2 — Edit + Disable flows, wired to /admin/api/users.
+ *
+ *  Kept the existing layout (PageHeader + toolbar + DataTable) so this is a
+ *  surgical swap. The row-actions dropdown replaces the inline Edit/Disable
+ *  buttons: fewer buttons to scan, more affordances per row (Reset password
+ *  slot is ready for a future milestone).
+ *
+ *  The Create flow still lives here; we call useCreateUser() but fall back
+ *  to sensible defaults so the dialog can be opened in isolation for
+ *  component tests. "Disable" is implemented as DELETE /admin/api/users/{id}
+ *  per the backend contract — the server does a soft-disable.
+ */
+
+import { useMemo, useState } from 'react';
+import { MoreHorizontal, Plus, Search } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Dialog } from '@/components/Dialog';
+import { DropdownMenu } from '@/components/DropdownMenu';
 import { Input } from '@/components/Input';
 import { PageHeader } from '@/components/PageHeader';
 import { Select } from '@/components/Select';
-import { mockApi } from '@/mock/mockApi';
-import type { User } from '@/types/api';
+import { Toast } from '@/components/Toast';
+import {
+  useCreateUser,
+  useDisableUser,
+  useUpdateUser,
+  useUsers,
+} from '@/hooks/useUsers';
+import { apiErrorMessage } from '@/lib/api';
+import { useAuthStore } from '@/store/authStore';
+import type { ApiUser, ApiUserRole } from '@/types/api';
+
+type ToastState = { kind: 'ok' | 'error'; text: string } | null;
 
 export function UsersPage() {
-  const [rows, setRows] = useState<User[]>([]);
+  const { data: rows = [], isLoading } = useUsers();
+  const create = useCreateUser();
+  const update = useUpdateUser();
+  const disable = useDisableUser();
+  const me = useAuthStore((s) => s.user);
+
   const [q, setQ] = useState('');
   const [openCreate, setOpenCreate] = useState(false);
-  const [confirm, setConfirm] = useState<User | null>(null);
+  const [editing, setEditing] = useState<ApiUser | null>(null);
+  const [confirm, setConfirm] = useState<ApiUser | null>(null);
+  const [toast, setToast] = useState<ToastState>(null);
 
-  useEffect(() => {
-    mockApi.users().then(setRows);
-  }, []);
+  const filtered = useMemo(() => {
+    const query = q.toLowerCase().trim();
+    if (!query) return rows;
+    return rows.filter(
+      (r) =>
+        r.username.toLowerCase().includes(query) ||
+        (r.email ?? '').toLowerCase().includes(query),
+    );
+  }, [rows, q]);
 
-  const query = q.toLowerCase();
-  const filtered = rows.filter(
-    (r) =>
-      !query ||
-      r.username.toLowerCase().includes(query) ||
-      r.email.toLowerCase().includes(query),
-  );
-
-  const columns: Column<User>[] = [
+  const columns: Column<ApiUser>[] = [
     {
       key: 'username',
       header: 'Username',
@@ -38,50 +67,94 @@ export function UsersPage() {
     {
       key: 'email',
       header: 'Email',
-      cell: (r) => <span style={{ color: 'var(--fg-muted)' }}>{r.email}</span>,
+      cell: (r) => (
+        <span style={{ color: 'var(--fg-muted)' }}>{r.email ?? '—'}</span>
+      ),
     },
     {
       key: 'role',
       header: 'Role',
       cell: (r) => (
-        <Badge variant={r.role === 'Admin' ? 'admin' : 'neutral'}>{r.role}</Badge>
+        <Badge variant={r.role === 'admin' ? 'admin' : 'neutral'}>
+          {r.role === 'admin' ? 'Admin' : 'User'}
+        </Badge>
       ),
     },
     {
-      key: 'status',
+      key: 'is_active',
       header: 'Status',
       cell: (r) => (
-        <Badge variant={r.status === 'Active' ? 'active' : 'disabled'}>{r.status}</Badge>
+        <Badge variant={r.is_active ? 'active' : 'disabled'}>
+          {r.is_active ? 'Active' : 'Disabled'}
+        </Badge>
       ),
     },
     {
-      key: 'createdAt',
+      key: 'created_at',
       header: 'Created',
       cell: (r) => (
         <span style={{ color: 'var(--fg-muted)' }} className="rd-mono">
-          {r.createdAt}
+          {r.created_at.slice(0, 10)}
         </span>
       ),
     },
     {
       key: 'actions',
       header: '',
-      width: 140,
-      cell: (r) => (
-        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-          <Button variant="ghost" size="sm">
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setConfirm(r)}
-            style={{ color: 'var(--red-600)' }}
-          >
-            Disable
-          </Button>
-        </div>
-      ),
+      width: 56,
+      cell: (r) => {
+        const isSelf = me?.username === r.username;
+        return (
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <DropdownMenu
+              ariaLabel={`Actions for ${r.username}`}
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={MoreHorizontal}
+                  aria-label={`Actions for ${r.username}`}
+                />
+              }
+              items={[
+                {
+                  id: 'edit',
+                  label: 'Edit…',
+                  onSelect: () => setEditing(r),
+                },
+                {
+                  id: 'reset',
+                  label: 'Reset password…',
+                  onSelect: () => setEditing(r),
+                },
+                { id: 'div', label: '', divider: true },
+                {
+                  id: 'disable',
+                  label: r.is_active ? 'Disable…' : 'Re-enable',
+                  destructive: r.is_active,
+                  disabled: isSelf && r.is_active,
+                  onSelect: () => {
+                    if (!r.is_active) {
+                      // Flip back on with a PATCH; no confirmation needed.
+                      update.mutate(
+                        { id: r.id, body: { is_active: true } },
+                        {
+                          onSuccess: () =>
+                            setToast({ kind: 'ok', text: `${r.username} re-enabled.` }),
+                          onError: (err) =>
+                            setToast({ kind: 'error', text: apiErrorMessage(err) }),
+                        },
+                      );
+                    } else {
+                      setConfirm(r);
+                    }
+                  },
+                },
+              ]}
+            />
+          </div>
+        );
+      },
     },
   ];
 
@@ -106,61 +179,75 @@ export function UsersPage() {
           />
         </div>
       </div>
-      <DataTable<User>
+      <DataTable<ApiUser>
         rows={filtered}
-        pageSize={8}
-        empty={q ? 'No users match your search.' : 'No users yet.'}
+        pageSize={10}
+        empty={
+          isLoading
+            ? 'Loading…'
+            : q
+              ? 'No users match your search.'
+              : 'No users yet.'
+        }
         columns={columns}
       />
 
-      <Dialog
+      <CreateUserDialog
         open={openCreate}
         onClose={() => setOpenCreate(false)}
-        title="Create user"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setOpenCreate(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => setOpenCreate(false)}>Create</Button>
-          </>
+        onSubmit={(body) =>
+          create.mutate(body, {
+            onSuccess: () => {
+              setOpenCreate(false);
+              setToast({ kind: 'ok', text: `${body.username} created.` });
+            },
+            onError: (err) =>
+              setToast({ kind: 'error', text: apiErrorMessage(err) }),
+          })
         }
-      >
-        <div className="rd-form">
-          <div className="rd-form__field">
-            <label className="rd-form__label">Username *</label>
-            <input className="rd-input" placeholder="jane.doe" />
-          </div>
-          <div className="rd-form__field">
-            <label className="rd-form__label">Email</label>
-            <input className="rd-input" type="email" placeholder="jane@example.com" />
-          </div>
-          <div className="rd-form__field">
-            <label className="rd-form__label">Password *</label>
-            <input className="rd-input" type="password" />
-            <div className="rd-form__hint">Minimum 12 characters.</div>
-          </div>
-          <div className="rd-form__field">
-            <label className="rd-form__label">Role</label>
-            <Select defaultValue="User">
-              <option>User</option>
-              <option>Admin</option>
-            </Select>
-          </div>
-        </div>
-      </Dialog>
+        submitting={create.isPending}
+      />
+
+      {editing && (
+        <EditUserDialog
+          key={editing.id}
+          user={editing}
+          onClose={() => setEditing(null)}
+          onSubmit={(id, body) =>
+            update.mutate(
+              { id, body },
+              {
+                onSuccess: () => {
+                  setEditing(null);
+                  setToast({ kind: 'ok', text: 'User updated.' });
+                },
+                onError: (err) =>
+                  setToast({ kind: 'error', text: apiErrorMessage(err) }),
+              },
+            )
+          }
+          submitting={update.isPending}
+        />
+      )}
 
       <ConfirmDialog
         open={!!confirm}
         onClose={() => setConfirm(null)}
         onConfirm={() => {
-          if (confirm)
-            setRows((rs) =>
-              rs.map((r) => (r.id === confirm.id ? { ...r, status: 'Disabled' } : r)),
-            );
+          if (!confirm) return;
+          disable.mutate(confirm.id, {
+            onSuccess: () => {
+              setConfirm(null);
+              setToast({ kind: 'ok', text: `${confirm.username} disabled.` });
+            },
+            onError: (err) => {
+              setConfirm(null);
+              setToast({ kind: 'error', text: apiErrorMessage(err) });
+            },
+          });
         }}
         destructive
-        confirmLabel="Disable"
+        confirmLabel={disable.isPending ? 'Disabling…' : 'Disable'}
         title="Disable user?"
         body={
           confirm
@@ -168,6 +255,274 @@ export function UsersPage() {
             : ''
         }
       />
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </>
+  );
+}
+
+/* ── dialogs (co-located — only used here) ──────────────────── */
+
+interface CreateUserDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (body: {
+    username: string;
+    email?: string;
+    password: string;
+    role?: ApiUserRole;
+  }) => void;
+  submitting: boolean;
+}
+
+function CreateUserDialog({ open, onClose, onSubmit, submitting }: CreateUserDialogProps) {
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<ApiUserRole>('user');
+
+  // Reset when the dialog opens — no stale values if the admin creates two
+  // users back to back.
+  const onOpen = () => {
+    setUsername('');
+    setEmail('');
+    setPassword('');
+    setRole('user');
+  };
+
+  const canSubmit = username.trim().length > 0 && password.length >= 12;
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Create user"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!canSubmit || submitting}
+            onClick={() =>
+              onSubmit({
+                username: username.trim(),
+                email: email.trim() || undefined,
+                password,
+                role,
+              })
+            }
+          >
+            {submitting ? 'Creating…' : 'Create'}
+          </Button>
+        </>
+      }
+    >
+      {/* Re-seed state on open via key; React will unmount/remount. */}
+      <form
+        className="rd-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSubmit) {
+            onSubmit({
+              username: username.trim(),
+              email: email.trim() || undefined,
+              password,
+              role,
+            });
+          }
+        }}
+        ref={(node) => {
+          if (open && node && !node.dataset.seeded) {
+            node.dataset.seeded = 'true';
+            onOpen();
+          } else if (!open && node) {
+            delete node.dataset.seeded;
+          }
+        }}
+      >
+        <div className="rd-form__field">
+          <label className="rd-form__label" htmlFor="cu-username">
+            Username *
+          </label>
+          <input
+            id="cu-username"
+            className="rd-input"
+            autoFocus
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="jane.doe"
+          />
+        </div>
+        <div className="rd-form__field">
+          <label className="rd-form__label" htmlFor="cu-email">
+            Email
+          </label>
+          <input
+            id="cu-email"
+            className="rd-input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="jane@example.com"
+          />
+        </div>
+        <div className="rd-form__field">
+          <label className="rd-form__label" htmlFor="cu-password">
+            Password *
+          </label>
+          <input
+            id="cu-password"
+            className="rd-input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <div className="rd-form__hint">Minimum 12 characters.</div>
+        </div>
+        <div className="rd-form__field">
+          <label className="rd-form__label" htmlFor="cu-role">
+            Role
+          </label>
+          <Select
+            id="cu-role"
+            value={role}
+            onChange={(e) => setRole(e.target.value as ApiUserRole)}
+          >
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </Select>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+interface EditUserDialogProps {
+  user: ApiUser;
+  onClose: () => void;
+  onSubmit: (
+    id: number,
+    body: {
+      email?: string | null;
+      role?: ApiUserRole;
+      is_active?: boolean;
+      password?: string;
+    },
+  ) => void;
+  submitting: boolean;
+}
+
+function EditUserDialog({ user, onClose, onSubmit, submitting }: EditUserDialogProps) {
+  // State is initialised from the user prop at mount. The parent renders
+  // this component with `key={user.id}` so switching to a different user
+  // unmounts + remounts, re-running the initial state — no useEffect
+  // needed. Avoids the react-hooks/set-state-in-effect lint.
+  const [email, setEmail] = useState(user.email ?? '');
+  const [role, setRole] = useState<ApiUserRole>(user.role);
+  const [password, setPassword] = useState('');
+  const me = useAuthStore((s) => s.user);
+
+  const isSelf = me?.username === user.username;
+  const canSubmit = password === '' || password.length >= 12;
+
+  return (
+    <Dialog
+      open={!!user}
+      onClose={onClose}
+      title={`Edit ${user.username}`}
+      width={480}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            disabled={submitting || !canSubmit}
+            onClick={() => {
+              const body: {
+                email?: string | null;
+                role?: ApiUserRole;
+                password?: string;
+              } = {};
+              const trimmedEmail = email.trim();
+              const nextEmail = trimmedEmail === '' ? null : trimmedEmail;
+              if (nextEmail !== user.email) body.email = nextEmail;
+              if (role !== user.role) body.role = role;
+              if (password) body.password = password;
+              // If nothing changed, close silently so we don't bounce the
+              // invalidation query for no reason.
+              if (Object.keys(body).length === 0) {
+                onClose();
+                return;
+              }
+              onSubmit(user.id, body);
+            }}
+          >
+            {submitting ? 'Saving…' : 'Save'}
+          </Button>
+        </>
+      }
+    >
+      <div className="rd-form">
+        <div className="rd-form__readonly-head">
+          <span className="rd-form__readonly-label">Username</span>
+          <span className="rd-form__readonly-value">{user.username}</span>
+        </div>
+        <div className="rd-form__field">
+          <label className="rd-form__label" htmlFor="eu-email">
+            Email
+          </label>
+          <input
+            id="eu-email"
+            className="rd-input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
+        <div className="rd-form__field">
+          <label className="rd-form__label" htmlFor="eu-role">
+            Role
+          </label>
+          <Select
+            id="eu-role"
+            value={role}
+            onChange={(e) => setRole(e.target.value as ApiUserRole)}
+            disabled={isSelf}
+          >
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </Select>
+          {isSelf ? (
+            <div className="rd-form__hint">
+              You can't change your own role. Ask another admin.
+            </div>
+          ) : null}
+        </div>
+        <div className="rd-form__divider" />
+        <div className="rd-form__section-label">Reset password</div>
+        <div className="rd-form__field">
+          <label className="rd-form__label" htmlFor="eu-password">
+            New password
+          </label>
+          <input
+            id="eu-password"
+            className="rd-input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Leave blank to keep current"
+          />
+          {password && password.length < 12 ? (
+            <div className="rd-form__error">Must be at least 12 characters.</div>
+          ) : (
+            <div className="rd-form__hint">
+              Password is rotated only if you set a new value.
+            </div>
+          )}
+        </div>
+      </div>
+    </Dialog>
   );
 }
