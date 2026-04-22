@@ -129,6 +129,17 @@ body { margin: 0; }
   50% { transform: scale(1.7); opacity: 0; }
 }
 
+/* Respect users who asked the OS to reduce motion. */
+@media (prefers-reduced-motion: reduce) {
+  .rd-online__dot.on::after { animation: none; }
+  .rd-dialog-backdrop { animation: none; }
+  .rd-btn,
+  .rd-iconbtn,
+  .rd-input,
+  .rd-toggle,
+  .rd-pager__ctrls button { transition: none; }
+}
+
 /* ── Platform ──────────────────────────────────────────────── */
 .rd-platform { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-size: 13px; }
 .rd-platform > svg { color: var(--fg-muted); }

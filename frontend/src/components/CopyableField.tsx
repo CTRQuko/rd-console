@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { AlertCircle, Check, Copy } from 'lucide-react';
+
+type CopyState = 'idle' | 'copied' | 'error';
 
 interface CopyableFieldProps {
   label?: string;
@@ -7,26 +9,57 @@ interface CopyableFieldProps {
   mono?: boolean;
 }
 
+async function copyToClipboard(value: string): Promise<void> {
+  // Prefer the async Clipboard API; fall back to the legacy execCommand path
+  // for insecure contexts (http://) where the modern API is blocked.
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'absolute';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    const ok = document.execCommand('copy');
+    if (!ok) throw new Error('copy command rejected');
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
 export function CopyableField({ label, value, mono = true }: CopyableFieldProps) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<CopyState>('idle');
 
   const onCopy = async () => {
     try {
-      await navigator.clipboard.writeText(value);
+      await copyToClipboard(value);
+      setState('copied');
     } catch {
-      /* ignore — clipboard permissions may block us; UX still shows Copied briefly */
+      setState('error');
     }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
+    setTimeout(() => setState('idle'), 1600);
   };
 
-  const Ic = copied ? Check : Copy;
+  const Ic = state === 'copied' ? Check : state === 'error' ? AlertCircle : Copy;
+  const title =
+    state === 'copied' ? 'Copied' : state === 'error' ? 'Copy failed — select manually' : 'Copy';
+
   return (
     <div className="rd-field">
       {label ? <div className="rd-field__label">{label}</div> : null}
-      <div className={`rd-field__box ${copied ? 'copied' : ''}`}>
+      <div className={`rd-field__box ${state === 'copied' ? 'copied' : ''}`}>
         <input readOnly value={value} className={mono ? 'rd-mono' : ''} />
-        <button type="button" onClick={onCopy} title={copied ? 'Copied' : 'Copy'}>
+        <button
+          type="button"
+          onClick={onCopy}
+          title={title}
+          aria-label={title}
+          style={state === 'error' ? { color: 'var(--red-600)' } : undefined}
+        >
           <Ic size={14} />
         </button>
       </div>

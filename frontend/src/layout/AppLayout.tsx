@@ -1,8 +1,8 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { useAuthStore } from '@/store/authStore';
+import { useTheme } from '@/store/themeStore';
 
 const TITLE_BY_PATH: Record<string, string> = {
   '/':         'Dashboard',
@@ -12,30 +12,15 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/settings': 'Settings',
 };
 
-type Theme = 'light' | 'dark';
-
-function readInitialTheme(): Theme {
-  if (typeof window === 'undefined') return 'light';
-  const stored = localStorage.getItem('rd:theme');
-  if (stored === 'dark' || stored === 'light') return stored;
-  return 'light';
-}
-
 export function AppLayout() {
-  const { user, logout } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const [theme, setTheme] = useState<Theme>(readInitialTheme);
+  const [theme, , toggleTheme] = useTheme();
 
-  useEffect(() => {
-    localStorage.setItem('rd:theme', theme);
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, [theme]);
-
-  // Gate: if no session, bounce to /login.
-  useEffect(() => {
-    if (!user) navigate('/login', { replace: true });
-  }, [user, navigate]);
+  // Authentication gating is handled by <AuthedShell> in App.tsx; this layout
+  // can assume a user exists by the time it renders.
 
   const title = TITLE_BY_PATH[pathname] ?? 'rd-console';
 
@@ -52,7 +37,7 @@ export function AppLayout() {
           title={title}
           breadcrumb="rd-console"
           theme={theme}
-          onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+          onToggleTheme={toggleTheme}
           user={user}
         />
         <div className="rd-content">

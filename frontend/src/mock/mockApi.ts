@@ -109,6 +109,8 @@ const STATS: DashboardStats = {
 
 const SERVER: ServerInfo = {
   url: 'https://console.example.com',
+  idServer: 'rd.example.com',
+  relayServer: 'rd.example.com',
   publicKey: 'OeVuKk5nlHiXp+APNn0Y3pC1Iw3NuS6Km2n0kQR6Y=',
   version: '0.1.0-rc.4',
   name: 'Homelab Console',

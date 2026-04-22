@@ -55,7 +55,13 @@ export interface DashboardStats {
 }
 
 export interface ServerInfo {
+  /** Public URL of the panel itself (`RD_PANEL_URL`). */
   url: string;
+  /** Hostname clients point to for ID/relay (`RD_SERVER_HOST`). */
+  idServer: string;
+  /** Same as idServer by default; exposed separately so operators can split them. */
+  relayServer: string;
+  /** Contents of `/opt/rustdesk/data/id_ed25519.pub` on the hbbs host. */
   publicKey: string;
   version: string;
   name: string;

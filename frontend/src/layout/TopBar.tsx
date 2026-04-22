@@ -1,4 +1,4 @@
-import { ChevronDown, Moon, Sun } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import type { AuthUser } from '@/types/api';
 
 interface TopBarProps {
@@ -10,6 +10,7 @@ interface TopBarProps {
 }
 
 export function TopBar({ title, breadcrumb, theme, onToggleTheme, user }: TopBarProps) {
+  const initial = (user?.username?.[0] ?? 'A').toUpperCase();
   return (
     <div className="rd-topbar">
       <div className="rd-topbar__crumb">
@@ -23,19 +24,24 @@ export function TopBar({ title, breadcrumb, theme, onToggleTheme, user }: TopBar
       </div>
       <div className="rd-topbar__actions">
         <button
+          type="button"
           className="rd-iconbtn"
           onClick={onToggleTheme}
-          title="Toggle theme"
+          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           aria-label="Toggle theme"
         >
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
-        <div className="rd-topbar__user">
+        {/* Read-only identity chip. When a user menu ships, replace with a real dropdown. */}
+        <div
+          className="rd-topbar__user"
+          title={user ? `Signed in as ${user.username}` : undefined}
+          style={{ cursor: 'default' }}
+        >
           <div className="rd-avatar" style={{ width: 28, height: 28, fontSize: 11 }}>
-            {(user?.username?.[0] ?? 'A').toUpperCase()}
+            {initial}
           </div>
           <span className="rd-topbar__user-name">{user?.username ?? 'admin'}</span>
-          <ChevronDown size={14} style={{ color: 'var(--fg-muted)' }} />
         </div>
       </div>
     </div>

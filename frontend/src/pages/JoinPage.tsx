@@ -66,8 +66,8 @@ export function JoinPage() {
             Connection settings
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <CopyableField label="ID server" value="rd.example.com" />
-            <CopyableField label="Relay server" value="rd.example.com" />
+            <CopyableField label="ID server" value={server.idServer} />
+            <CopyableField label="Relay server" value={server.relayServer} />
             <CopyableField label="API server" value={server.url} />
             <CopyableField label="Public key" value={server.publicKey} />
           </div>
