@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -69,6 +72,48 @@ def create_access_token(
             extra_claims.pop(reserved, None)
         payload.update(extra_claims)
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+
+
+# ─── Personal Access Tokens ───
+#
+# PAT format on the wire: ``rdcp_<43 urlsafe-base64 chars>``.
+# 43 chars of urlsafe-b64 == 32 random bytes == 256 bits of entropy, so we
+# can skip argon2 and just SHA-256 the whole thing; birthday-bound a hash
+# collision would need 2^128 tokens. The prefix is constant so it doesn't
+# reduce entropy — it just makes tokens grep-able in logs and commits.
+
+API_TOKEN_PREFIX = "rdcp_"  # noqa: S105 - not a password, a namespace marker
+_API_TOKEN_RANDOM_BYTES = 32
+# First 12 chars shown in the UI so users can tell their tokens apart
+# without us storing plaintext. 12 chars = prefix (5) + 7 of tail.
+_API_TOKEN_DISPLAY_LEN = 12
+
+
+def generate_api_token() -> str:
+    """Return a fresh plaintext PAT. Caller must store only the hash."""
+    return f"{API_TOKEN_PREFIX}{secrets.token_urlsafe(_API_TOKEN_RANDOM_BYTES)}"
+
+
+def hash_api_token(plain: str) -> str:
+    """Hex SHA-256 of a PAT. Deterministic — same input, same output,
+    which is exactly what we want for the DB lookup path."""
+    return hashlib.sha256(plain.encode("utf-8")).hexdigest()
+
+
+def api_token_display_prefix(plain: str) -> str:
+    """First 12 chars of the plaintext token — safe to persist for UI."""
+    return plain[:_API_TOKEN_DISPLAY_LEN]
+
+
+def looks_like_api_token(candidate: str) -> bool:
+    """Cheap prefix check used to route Authorization headers to the PAT
+    path instead of the JWT path. Does NOT validate the token."""
+    return candidate.startswith(API_TOKEN_PREFIX)
+
+
+def constant_time_equals(a: str, b: str) -> bool:
+    """Timing-safe string comparison exposed for tests/callers that need it."""
+    return hmac.compare_digest(a, b)
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:

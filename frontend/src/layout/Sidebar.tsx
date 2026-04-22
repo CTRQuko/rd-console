@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   FileText,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Monitor,
@@ -17,6 +18,7 @@ const NAV_ITEMS = [
   { to: '/tags',     label: 'Tags',      Icon: TagIcon },
   { to: '/logs',     label: 'Logs',      Icon: FileText },
   { to: '/settings', label: 'Settings',  Icon: SettingsIcon },
+  { to: '/account',  label: 'Account',   Icon: KeyRound },
 ] as const;
 
 interface SidebarProps {

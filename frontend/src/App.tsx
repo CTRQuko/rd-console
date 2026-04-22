@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/layout/AppLayout';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { AccountPage } from '@/pages/AccountPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { DevicesPage } from '@/pages/DevicesPage';
 import { JoinPage } from '@/pages/JoinPage';
@@ -56,6 +57,7 @@ function HydrationGate() {
         <Route path="/tags" element={<TagsPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/account" element={<AccountPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

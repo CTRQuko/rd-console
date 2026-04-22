@@ -13,6 +13,7 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/tags':     'Tags',
   '/logs':     'Audit logs',
   '/settings': 'Settings',
+  '/account':  'Account',
 };
 
 /** Cmd+K (macOS) / Ctrl+K (other) opens the global search palette,

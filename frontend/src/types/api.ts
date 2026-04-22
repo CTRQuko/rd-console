@@ -189,3 +189,25 @@ export interface PaginatedLogs {
   total: number;
   items: ApiAuditLog[];
 }
+
+// ─── Personal Access Tokens (PR #14) ────────────────────────────────────────
+
+/** Token metadata — never contains the plaintext secret. */
+export interface ApiTokenMeta {
+  id: number;
+  name: string;
+  /** First 12 chars of the plaintext ("rdcp_abcd123") — safe to render. */
+  token_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+}
+
+/** One-shot response returned by POST /api/auth/tokens. `token` is the
+ *  plaintext — the only time it's ever available; persist or surface to
+ *  the user immediately. */
+export interface ApiTokenCreated {
+  token: string;
+  metadata: ApiTokenMeta;
+}

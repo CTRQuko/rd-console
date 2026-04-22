@@ -17,6 +17,7 @@ from .config import get_settings
 from .db import engine, init_db
 from .models.user import User, UserRole
 from .routers import (
+    api_tokens,
     auth,
     devices,
     join,
@@ -190,6 +191,7 @@ def create_app() -> FastAPI:
 
     # Panel (JWT-authenticated)
     app.include_router(auth.router)
+    app.include_router(api_tokens.router)
     app.include_router(users.router)
     app.include_router(devices.router)
     app.include_router(logs.router)
