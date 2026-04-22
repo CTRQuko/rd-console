@@ -48,6 +48,7 @@ Thumbs.db
 # ───── Staging / imports (not part of the project) ─────
 _design-import/
 _design-import-fixes/
+_design-import-pages/
 
 # ───── Logs ─────
 *.log

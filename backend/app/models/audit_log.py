@@ -1,4 +1,10 @@
-"""Audit events — panel actions + RustDesk client protocol events."""
+"""Audit events — panel actions + RustDesk client protocol events.
+
+v2 note: new DEVICE_* values added for the device admin actions (update /
+forget / disconnect-requested). The values are plain strings so existing
+rows in the database remain valid — we never rename an enum member once
+it has been persisted.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +27,39 @@ class AuditAction(str, Enum):
     USER_UPDATED = "user_updated"
     USER_DISABLED = "user_disabled"
     SETTINGS_CHANGED = "settings_changed"
+    # v2: panel-initiated device actions
+    DEVICE_UPDATED = "device_updated"
+    DEVICE_FORGOTTEN = "device_forgotten"
+    DEVICE_DISCONNECT_REQUESTED = "device_disconnect_requested"
+
+
+# Category grouping used by /admin/api/logs?category=...
+#
+# Keeping this map next to the enum (rather than in the router) means any new
+# action must consciously choose a category — the keys are the ground truth.
+AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
+    "session": (
+        AuditAction.CONNECT,
+        AuditAction.DISCONNECT,
+        AuditAction.FILE_TRANSFER,
+        AuditAction.CLOSE,
+    ),
+    "auth": (
+        AuditAction.LOGIN,
+        AuditAction.LOGIN_FAILED,
+    ),
+    "user_management": (
+        AuditAction.USER_CREATED,
+        AuditAction.USER_UPDATED,
+        AuditAction.USER_DISABLED,
+    ),
+    "config": (
+        AuditAction.SETTINGS_CHANGED,
+        AuditAction.DEVICE_UPDATED,
+        AuditAction.DEVICE_FORGOTTEN,
+        AuditAction.DEVICE_DISCONNECT_REQUESTED,
+    ),
+}
 
 
 class AuditLog(SQLModel, table=True):
