@@ -1,4 +1,4 @@
-"""Sync peers from hbbs's own SQLite into our `devices` table.
+"""Sync peer metadata from hbbs's own SQLite into our `devices` table.
 
 hbbs (rustdesk/rustdesk-server) is the source of truth for which RustDesk IDs
 have ever registered against this relay. It stores them in
@@ -6,15 +6,25 @@ have ever registered against this relay. It stores them in
 into the rd-console container at ``/hbbs-data/``.
 
 We run a background task on app startup that polls that DB every
-``RD_HBBS_SYNC_INTERVAL`` seconds, maps each peer row to our Device schema,
-and upserts it. The device is considered **online** if hbbs.status == 1.
+``RD_HBBS_SYNC_INTERVAL`` seconds and upserts the *metadata* fields
+(hostname / platform / cpu / version / last_ip / first-seen ``created_at``)
+of each peer into our Device schema.
 
-Why this design (not "let the client POST us heartbeats"):
-  - The real RustDesk client only POSTs to the configured API server with a
-    specific format that varies across versions. Stubbing that protocol
-    ourselves and hoping the shape matches has been fragile.
-  - hbbs already does peer discovery robustly — we just mirror what it knows.
-  - The sync is one-way (hbbs → rd-console); we never write back.
+**Important — online tracking is NOT done here.**
+
+In rustdesk-server (free tier) the ``peer.status`` column on disk is always
+empty: the online bitmap lives in the hbbs process's memory and is never
+flushed to SQLite. See rustdesk/rustdesk-server#263 (``wontfix``).
+
+Instead, online presence is derived from ``Device.last_seen_at`` being within
+``ONLINE_WINDOW`` (see ``routers/devices.py``), and that column is bumped by
+real-time heartbeats arriving on ``POST /api/heartbeat`` — which in turn are
+fed by the ``hbbs-watcher`` sidecar that tails ``hbbs`` stdout and parses
+``update_pk`` log lines (see ``scripts/hbbs-watcher/``).
+
+So this sync keeps the catalogue fresh (every peer ever registered shows up
+in the UI, with correct hostname and platform) while the sidecar keeps the
+online/offline signal honest.
 
 Failure mode: if the DB file is missing or unreadable the task logs a warning
 and retries on the next tick. It never crashes the app.
@@ -74,9 +84,14 @@ def _extract_ip(info: dict[str, Any]) -> str | None:
 
 
 def _sync_once() -> tuple[int, int]:
-    """Read every peer row from hbbs and upsert into Device.
+    """Read every peer row from hbbs and upsert metadata into Device.
 
     Returns (inserted, updated) counts for logging.
+
+    Note: this function never touches ``last_seen_at``. That column is owned
+    exclusively by the heartbeat endpoint so the "online within 5 min"
+    heuristic reflects real liveness rather than whatever stale flag hbbs
+    happens to have persisted.
     """
     s = get_settings()
     db_path = Path(s.hbbs_db_path)
@@ -92,7 +107,7 @@ def _sync_once() -> tuple[int, int]:
     # ``db_module.engine`` pick up their in-memory SQLite.
     with closing(_open_hbbs(db_path)) as hb, Session(db_module.engine) as sess:
         rows = hb.execute(
-            "SELECT id, status, note, info, created_at FROM peer"
+            "SELECT id, note, info, created_at FROM peer"
         ).fetchall()
 
         for row in rows:
@@ -100,8 +115,6 @@ def _sync_once() -> tuple[int, int]:
             if not rustdesk_id:
                 continue
             info = _parse_info(row["info"])
-            status = row["status"]
-            is_online = status == 1
             ip = _extract_ip(info)
             hostname = info.get("hostname") or info.get("host")
             os_ = info.get("os") or info.get("platform")
@@ -127,7 +140,8 @@ def _sync_once() -> tuple[int, int]:
                     cpu=(cpu[:128] if isinstance(cpu, str) else None),
                     version=(str(version)[:32] if version else None),
                     last_ip=ip,
-                    last_seen_at=now if is_online else None,
+                    # last_seen_at intentionally left None; heartbeats set it.
+                    last_seen_at=None,
                     created_at=first_seen,
                 )
                 sess.add(dev)
@@ -149,12 +163,8 @@ def _sync_once() -> tuple[int, int]:
                 if ip and existing.last_ip != ip:
                     existing.last_ip = ip
                     changed = True
-                # last_seen_at: bump when hbbs says the peer is online right
-                # now. Leaving it alone when offline means our "online within
-                # 5 min" heuristic stays honest for peers that drop off.
-                if is_online:
-                    existing.last_seen_at = now
-                    changed = True
+                # last_seen_at is NOT touched here. The heartbeat endpoint
+                # (fed by the hbbs-watcher sidecar) is the single writer.
                 if changed:
                     sess.add(existing)
                     updated += 1
