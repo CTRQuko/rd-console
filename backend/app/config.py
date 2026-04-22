@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     # ─── Database ───
     db_path: Path = Field(default=Path("/data/rd_console.sqlite3"))
 
+    # Path to the hbbs SQLite we mount read-only as a sidecar. When the file
+    # exists, a background task syncs its `peer` table into our `devices`
+    # table. Default points at the in-container mount defined in the
+    # production docker-compose.
+    hbbs_db_path: Path = Field(default=Path("/hbbs-data/db_v2.sqlite3"))
+    # Seconds between hbbs sync ticks. Clamped to ≥ 5s at use-site so a
+    # misconfigured "0" doesn't peg the CPU.
+    hbbs_sync_interval: int = Field(default=30, ge=5, le=3600)
+
     # ─── Bootstrap admin (created on first start if no admin exists) ───
     admin_username: str = "admin"
     admin_password: str = ""  # if empty, admin is NOT auto-created
