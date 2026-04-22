@@ -14,6 +14,16 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: [
+          'InterVariable',
+          'system-ui',
+          '-apple-system',
+          'Segoe UI',
+          'Roboto',
+          'sans-serif',
+        ],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
