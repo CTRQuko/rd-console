@@ -14,13 +14,14 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlmodel import select
 
 from ..deps import AdminUser, SessionDep
 from ..models.audit_log import AUDIT_CATEGORIES, AuditAction, AuditLog
 from ..models.user import User
+from ..security import utcnow_naive
 
 router = APIRouter(prefix="/admin/api/logs", tags=["admin:logs"])
 
@@ -76,6 +77,11 @@ def _apply_filters(
     can't drift. Passed `session` so the actor/device_id resolution can do
     lookups without the caller reaching into the router.
     """
+    # Soft-deleted rows are invisible by default — the panel should not
+    # surface rows an admin already purged. A future hard-delete cron
+    # removes them entirely.
+    stmt = stmt.where(AuditLog.deleted_at.is_(None))  # type: ignore[attr-defined]
+
     if action is not None:
         stmt = stmt.where(AuditLog.action == action)
 
@@ -264,3 +270,100 @@ def list_logs(
         total=int(total),
         items=[_to_out(r, username_by_id=usernames) for r in rows],
     )
+
+
+# ─── Soft delete ────────────────────────────────────────────────────────────
+
+
+class DeleteLogsBody(BaseModel):
+    """IDs of log rows to purge. Capped at 500/request so a misclick on
+    'select all + delete' can't wipe a year of history in one shot."""
+    ids: list[int] = Field(min_length=1, max_length=500)
+
+
+class DeleteLogsResult(BaseModel):
+    affected: int
+    skipped: list[dict]  # {id, reason}
+
+
+# Retention floor (days). Rows younger than this cannot be soft-deleted
+# — the goal is that "a thing happened recently" is always findable in
+# the log, even if an admin panics and hits Delete. Documented in the
+# UI. Keep aligned with the copy there.
+_MIN_RETENTION_DAYS = 30
+
+
+@router.delete("", response_model=DeleteLogsResult)
+def delete_logs(
+    body: DeleteLogsBody,
+    session: SessionDep,
+    admin: AdminUser,
+) -> DeleteLogsResult:
+    """Soft-delete audit rows by id.
+
+    Guardrails:
+      * Retention: rows newer than 30 days are NEVER deletable — recent
+        activity must stay visible for investigation.
+      * Self-shield: the ``LOGS_DELETED`` audit entry that represents the
+        purge itself is not delete-target-eligible. An admin cannot hide
+        the fact that they deleted things.
+      * Cap: max 500 ids per request (enforced at Pydantic level).
+      * Idempotent: rows already soft-deleted skip silently with
+        reason ``already_deleted`` — retrying a failed batch is safe.
+    """
+    now = utcnow_naive()
+    retention_cutoff = now - _timedelta(days=_MIN_RETENTION_DAYS)
+
+    ids = list(dict.fromkeys(body.ids))  # de-dup, preserve order
+    rows = session.exec(
+        select(AuditLog).where(AuditLog.id.in_(ids))  # type: ignore[attr-defined]
+    ).all()
+    found = {r.id: r for r in rows}
+
+    skipped: list[dict] = []
+    affected = 0
+
+    def skip(rid: int, reason: str) -> None:
+        skipped.append({"id": rid, "reason": reason})
+
+    for rid in ids:
+        row = found.get(rid)
+        if row is None:
+            skip(rid, "not_found")
+            continue
+        if row.deleted_at is not None:
+            skip(rid, "already_deleted")
+            continue
+        if row.action == AuditAction.LOGS_DELETED:
+            # The self-audit of a previous purge is immutable — otherwise
+            # an admin could launder a suspicious delete by deleting the
+            # record of the delete.
+            skip(rid, "self_audit_protected")
+            continue
+        if row.created_at and row.created_at >= retention_cutoff:
+            skip(rid, "within_retention")
+            continue
+        row.deleted_at = now
+        session.add(row)
+        affected += 1
+
+    if affected > 0:
+        # The payload records the actual IDs purged, not the requested
+        # ones — skipped rows don't show up. Capped payload length so a
+        # 500-id delete doesn't blow up an arbitrary row string column.
+        affected_ids = [rid for rid in ids if rid in found and rid not in {s["id"] for s in skipped}]
+        payload = "ids=" + ",".join(str(rid) for rid in affected_ids[:200])
+        if len(affected_ids) > 200:
+            payload += f",...(+{len(affected_ids) - 200} more)"
+        session.add(AuditLog(
+            action=AuditAction.LOGS_DELETED,
+            actor_user_id=admin.id,
+            payload=payload,
+        ))
+
+    session.commit()
+    return DeleteLogsResult(affected=affected, skipped=skipped)
+
+
+# local import to keep the top of the module tidy
+from datetime import timedelta as _timedelta  # noqa: E402

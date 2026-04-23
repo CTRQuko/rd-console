@@ -30,6 +30,7 @@ class AuditAction(str, Enum):
     USER_DELETED = "user_deleted"
     SETTINGS_CHANGED = "settings_changed"
     SETTINGS_EXPORTED = "settings_exported"
+    LOGS_DELETED = "logs_deleted"
     # v2: panel-initiated device actions
     DEVICE_UPDATED = "device_updated"
     DEVICE_FORGOTTEN = "device_forgotten"
@@ -80,6 +81,7 @@ AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
     "config": (
         AuditAction.SETTINGS_CHANGED,
         AuditAction.SETTINGS_EXPORTED,
+        AuditAction.LOGS_DELETED,
         AuditAction.DEVICE_UPDATED,
         AuditAction.DEVICE_FORGOTTEN,
         AuditAction.DEVICE_DISCONNECT_REQUESTED,
@@ -108,3 +110,10 @@ class AuditLog(SQLModel, table=True):
     actor_user_id: int | None = Field(default=None, foreign_key="users.id")
     payload: str | None = Field(default=None)  # free-form JSON blob
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    # Soft-delete timestamp. Queries default to `WHERE deleted_at IS NULL`
+    # so purged rows stop appearing in the UI; a separate cron (future
+    # work) will hard-delete after N days. Kept here so a recently-purged
+    # admin-misclick can be reverted by a direct UPDATE. The LOGS_DELETED
+    # audit row that represents the purge is itself never soft-deleted —
+    # enforced at the router.
+    deleted_at: datetime | None = Field(default=None, index=True)

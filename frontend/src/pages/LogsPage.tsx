@@ -13,16 +13,23 @@
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Download, FileJson } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, FileJson, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import type { Column } from '@/components/DataTable';
+import { Dialog } from '@/components/Dialog';
 import { DropdownMenu } from '@/components/DropdownMenu';
 import { Input } from '@/components/Input';
 import { PageHeader } from '@/components/PageHeader';
 import { Select } from '@/components/Select';
 import { Toast, type ToastValue } from '@/components/Toast';
-import { downloadLogs, formatAction, useLogs, type LogsQuery } from '@/hooks/useLogs';
+import {
+  downloadLogs,
+  formatAction,
+  useDeleteLogs,
+  useLogs,
+  type LogsQuery,
+} from '@/hooks/useLogs';
 import { apiErrorMessage } from '@/lib/api';
 import type { ApiAuditLog, AuditActionValue, AuditCategory } from '@/types/api';
 
@@ -103,6 +110,12 @@ export function LogsPage() {
   const [actor, setActor] = useState(initActor);
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  // "Type DELETE to confirm" — the high-friction gate on a destructive bulk
+  // action. Cleared whenever the dialog opens fresh.
+  const [confirmText, setConfirmText] = useState('');
+  const deleteMut = useDeleteLogs();
   const [toast, setToast] = useState<ToastValue | null>(null);
 
   // Debounce the actor text so we don't thrash the backend on every keystroke.
@@ -134,6 +147,63 @@ export function LogsPage() {
     });
   };
 
+  const toggleSelect = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Leader checkbox covers the CURRENT page only — crossing pages would
+  // silently select rows the admin can't see, which is exactly the kind
+  // of footgun the "type DELETE" gate is there to avoid, but let's not
+  // tempt it by also leaking selection across pages.
+  const pageIds = rows.map((r) => r.id);
+  const allSelectedOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const someSelectedOnPage =
+    !allSelectedOnPage && pageIds.some((id) => selected.has(id));
+
+  const toggleSelectPage = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelectedOnPage) {
+        // Deselect everything on this page.
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const openConfirm = () => {
+    setConfirmText('');
+    setConfirmOpen(true);
+  };
+
+  const submitDelete = () => {
+    if (confirmText !== 'DELETE') return;
+    const ids = Array.from(selected);
+    deleteMut.mutate(ids, {
+      onSuccess: (result) => {
+        setConfirmOpen(false);
+        setSelected(new Set());
+        const skipped = result.skipped.length;
+        const msg =
+          skipped === 0
+            ? `${result.affected} log entr${result.affected === 1 ? 'y' : 'ies'} deleted.`
+            : `${result.affected} deleted, ${skipped} skipped (${result.skipped
+                .map((s) => s.reason)
+                .join(', ')}).`;
+        setToast({ kind: skipped === 0 ? 'ok' : 'error', text: msg });
+      },
+      onError: (err) =>
+        setToast({ kind: 'error', text: apiErrorMessage(err) }),
+    });
+  };
+
   const resetPageOnFilter = <T,>(fn: (v: T) => void) => (v: T) => {
     setPage(0);
     fn(v);
@@ -146,6 +216,34 @@ export function LogsPage() {
   };
 
   const columns: Column<ApiAuditLog>[] = [
+    {
+      key: 'select',
+      header: (
+        <input
+          type="checkbox"
+          aria-label="Select all on this page"
+          checked={allSelectedOnPage}
+          ref={(el) => {
+            // React has no native "indeterminate" attribute — poke the DOM
+            // directly. Doesn't trigger a re-render since it's a prop on the
+            // raw element, not a React-managed state.
+            if (el) el.indeterminate = someSelectedOnPage;
+          }}
+          onChange={toggleSelectPage}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+      width: 28,
+      cell: (r) => (
+        <input
+          type="checkbox"
+          aria-label={`Select log ${r.id}`}
+          checked={selected.has(r.id)}
+          onChange={() => toggleSelect(r.id)}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+    },
     {
       key: 'expand',
       header: '',
@@ -276,6 +374,16 @@ export function LogsPage() {
           <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
             {isFetching ? 'Loading…' : `${total.toLocaleString()} event${total === 1 ? '' : 's'}`}
           </span>
+          {selected.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              icon={Trash2}
+              onClick={openConfirm}
+            >
+              Delete {selected.size}
+            </Button>
+          )}
           <DropdownMenu
             ariaLabel="Export menu"
             trigger={
@@ -320,6 +428,62 @@ export function LogsPage() {
         pageSize={PAGE_SIZE}
         onPage={(p) => setPage(p)}
       />
+
+      <Dialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={`Delete ${selected.size} log entr${selected.size === 1 ? 'y' : 'ies'}?`}
+        width={480}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={submitDelete}
+              disabled={confirmText !== 'DELETE' || deleteMut.isPending}
+            >
+              {deleteMut.isPending ? 'Deleting…' : 'Delete'}
+            </Button>
+          </>
+        }
+      >
+        <div className="rd-form">
+          <div
+            role="alert"
+            style={{
+              display: 'flex', gap: 10, alignItems: 'flex-start',
+              padding: '10px 12px', borderRadius: 8,
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              color: 'var(--fg)', fontSize: 13, lineHeight: 1.45,
+            }}
+          >
+            <div>
+              Audit entries are the forensic record of actions on this panel.
+              Deletion is <strong>soft</strong> — a <code>LOGS_DELETED</code>
+              entry is written showing which IDs were purged, and rows
+              created in the last <strong>30 days</strong> can never be
+              deleted regardless of selection.
+            </div>
+          </div>
+          <div className="rd-form__field" style={{ marginTop: 12 }}>
+            <label className="rd-form__label" htmlFor="delete-confirm">
+              Type <code>DELETE</code> to confirm
+            </label>
+            <input
+              id="delete-confirm"
+              className="rd-input"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+              autoFocus
+            />
+          </div>
+        </div>
+      </Dialog>
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </>

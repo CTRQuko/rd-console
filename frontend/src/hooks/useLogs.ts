@@ -7,7 +7,7 @@
  *  the point of streaming.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import type {
@@ -111,4 +111,29 @@ export async function downloadLogs(
  */
 export function formatAction(row: ApiAuditLog): string {
   return row.action.replace(/_/g, ' ');
+}
+
+export interface DeleteLogsResult {
+  affected: number;
+  skipped: { id: number; reason: string }[];
+}
+
+/** Soft-delete audit rows by id. The backend enforces retention + self-
+ *  audit guards — the UI doesn't need to pre-filter the ids but surfaces
+ *  `skipped` so the admin sees exactly what was and wasn't purged.
+ */
+export function useDeleteLogs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: number[]) => {
+      const r = await api.delete<DeleteLogsResult>('/admin/api/logs', {
+        data: { ids },
+      });
+      return r.data;
+    },
+    onSuccess: () => {
+      // Any cached logs pages are stale after a purge.
+      qc.invalidateQueries({ queryKey: ['logs'] });
+    },
+  });
 }
