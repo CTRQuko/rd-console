@@ -1,73 +1,79 @@
-# React + TypeScript + Vite
+# rd-console — frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 18 + Vite + TypeScript admin panel.
 
-Currently, two official plugins are available:
+> **Status:** v6 — 100+ Vitest cases, all green. Ship-ready.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Quickstart
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd frontend
+npm install
+npm run dev           # http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The dev server proxies `/api/*` and `/admin/api/*` to `http://localhost:8080`
+so the SPA can hit a local backend.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+For split deploys (UI and API on different hosts), set `VITE_API_BASE` at
+build time:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+VITE_API_BASE=https://rustdesk.casaredes.cc npm run build
+# or via docker:
+docker build \
+  --build-arg VITE_API_BASE=https://rustdesk.casaredes.cc \
+  -f ../Dockerfile.frontend \
+  -t rd-console-ui:latest ..
 ```
+
+Axios picks the value up in `src/lib/api.ts:resolveBaseUrl()`.
+
+## Layout
+
+```
+frontend/src/
+├── App.tsx                        routes
+├── main.tsx                       entrypoint + pre-hydration prefs IIFE
+├── index.css                      shadcn HSL vars + sidebar follow-theme rule
+├── design/
+│   ├── tokens.css                 FLAT design tokens (consumed by .rd-*)
+│   ├── components.css             .rd-btn, .rd-table, .rd-stat, etc
+│   └── layout.css                 sidebar, topbar, tabs, settings sections, join
+├── components/                    DataTable, Dialog, Tabs, ConfirmDialog, QRCode…
+├── layout/                        AppLayout + Sidebar + TopBar
+├── hooks/                         React Query wrappers (useUsers, useDevices,
+│                                  useJoinTokens, useLogs, useServerInfo…)
+├── store/
+│   ├── authStore.ts               Zustand — JWT + user, persisted
+│   ├── themeStore.ts              light/dark
+│   └── prefsStore.ts              accent + fontScale + sidebarStyle (v6 slim)
+├── pages/                         one file per route. Tabs live under settings/
+└── types/api.ts                   backend response shapes
+```
+
+## Design system notes
+
+The repo runs TWO token systems in parallel for historical reasons:
+
+- **`index.css` shadcn HSL** — `--primary: 221 83% 53%`, consumed only via
+  Tailwind's `bg-primary` etc. No components use it today.
+- **`design/tokens.css` flat hex** — `--primary: var(--blue-600)`, consumed by
+  every `.rd-*` class in components.css + layout.css.
+
+Accent customisation in Settings → Appearance overrides the FLAT tokens via
+`:root[data-accent="X"]` selectors (tokens.css). Font-scale applies through
+`html { font-size: calc(14px * var(--rd-font-scale, 1)) }`, and every
+`font-size` in components.css + layout.css is in `rem` so the slider scales
+the UI uniformly.
+
+## Testing
+
+```bash
+npx tsc --noEmit       # types
+npx vitest run         # test suite
+```
+
+Co-located `*.test.tsx` next to the component/page it covers. `test/apiMock.ts`
+fakes axios with route-table dispatch (honours `validateStatus` → AxiosError
+on 4xx/5xx).

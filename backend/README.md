@@ -2,32 +2,48 @@
 
 FastAPI + SQLModel + SQLite backend powering the rd-console admin panel.
 
-> **Status:** scaffold (F3). Routers are wired with a minimal happy path; the
-> RustDesk client-protocol endpoints are stubs that will need tightening when
-> the real client starts talking to them in F4.
+> **Status:** v6 shipping. All routers wired against the real RustDesk client
+> protocol (Flutter + free clients), plus the admin surfaces mature enough to
+> drive the UI end-to-end. 192+ pytest suite.
 
 ## Layout
 
 ```
 backend/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py           ← FastAPI app + lifespan + bootstrap admin
-│   ├── config.py         ← pydantic-settings (reads RD_* env vars)
-│   ├── db.py             ← SQLModel engine + session
-│   ├── security.py       ← argon2id + JWT
-│   ├── deps.py           ← get_current_user / require_admin
-│   ├── models/           ← User, Device, AuditLog, JoinToken
-│   └── routers/
-│       ├── auth.py       ← /api/auth/{login,me,change-password}
-│       ├── users.py      ← /admin/api/users  (admin only)
-│       ├── devices.py    ← /admin/api/devices
-│       ├── logs.py       ← /admin/api/logs
-│       ├── settings_.py  ← /admin/api/settings/server-info
-│       ├── join.py       ← /api/join/:token  (public)
-│       └── rustdesk.py   ← /api/heartbeat, /api/sysinfo, /api/audit/*
-├── tests/                ← pytest suite (to be filled)
-└── pyproject.toml
+│   ├── main.py                    FastAPI app + lifespan + bootstrap admin
+│   ├── config.py                  pydantic-settings (reads RD_* env vars)
+│   ├── db.py                      SQLModel engine, session, additive migrations
+│   ├── security.py                argon2id + JWT + PAT hashing
+│   ├── deps.py                    current-user, admin, client-secret deps
+│   ├── models/
+│   │   ├── address_book.py
+│   │   ├── api_token.py           PAT (per-user) schema
+│   │   ├── audit_log.py           AuditAction enum + AUDIT_CATEGORIES
+│   │   ├── device.py
+│   │   ├── join_token.py          single-use invite
+│   │   ├── runtime_setting.py     k/v overrides for env settings
+│   │   ├── tag.py                 now with auto + auto_source (v6)
+│   │   └── user.py
+│   ├── routers/
+│   │   ├── address_book.py        per-user blob, matches RustDesk client API
+│   │   ├── api_tokens.py          /api/auth/tokens — PATs
+│   │   ├── auth.py                /api/auth/{login,me,change-password}
+│   │   ├── devices.py             /admin/api/devices + PATCH + bulk
+│   │   ├── join.py                /api/join/:token  (public)
+│   │   ├── join_tokens.py         /admin/api/join-tokens + bulk
+│   │   ├── logs.py                /admin/api/logs + soft-delete
+│   │   ├── rustdesk.py            /api/heartbeat, /api/sysinfo, /api/audit/*
+│   │   ├── search.py              cross-entity admin search
+│   │   ├── settings_.py           /admin/api/settings/{server-info,export}
+│   │   ├── tags.py                /admin/api/tags (CRUD; auto-tags read-only)
+│   │   └── users.py               /admin/api/users + bulk + hard-delete
+│   └── services/
+│       ├── auto_tags.py           v6: tags synthesised from device attrs
+│       ├── hbbs_sync.py           background loop: hbbs SQLite → devices
+│       ├── rate_limit.py          in-process fixed-window limiter
+│       └── server_info.py         env + runtime_setting override merge
+└── tests/                         192+ pytest cases
 ```
 
 ## Dev quickstart
@@ -35,67 +51,78 @@ backend/
 Requires Python 3.11+. Recommended: [uv](https://github.com/astral-sh/uv).
 
 ```bash
-# From repo root:
 cd backend
 uv venv
 uv pip install -e ".[dev]"
 
-# Copy root .env.example to .env and fill it in
+# .env at the repo root:
 cp ../.env.example ../.env
-#   — RD_SECRET_KEY: openssl rand -hex 32
-#   — RD_ADMIN_PASSWORD: strong password for the first login
-#   — RD_DB_PATH: e.g. ./rd_console.sqlite3 in dev
+#   RD_SECRET_KEY: openssl rand -hex 32
+#   RD_ADMIN_PASSWORD: the first-login password
+#   RD_DB_PATH: e.g. ./rd_console.sqlite3
 
 uv run uvicorn app.main:app --reload --port 8080
 ```
 
-Open:
-- API docs: http://localhost:8080/docs
-- Health:   http://localhost:8080/health
+- API docs:    http://localhost:8080/docs
+- Health:      http://localhost:8080/health
 
 ## Environment variables
 
-See `.env.example` at the repo root. All variables are prefixed `RD_` on the
-environment side, un-prefixed inside `Settings`.
+All `RD_`-prefixed. The ones you'll touch most:
 
-## Routes
+| Name | Role |
+|------|------|
+| `RD_ENVIRONMENT` | `dev` / `prod` — stricter secret validation in prod |
+| `RD_DISABLE_FRONTEND` | `true` when this container runs as a headless API (UI lives elsewhere) |
+| `RD_SECRET_KEY` | JWT signing key — 32+ chars in prod |
+| `RD_CLIENT_SHARED_SECRET` | Gates `/api/heartbeat`, `/api/sysinfo`, `/api/audit/*` |
+| `RD_ADMIN_USERNAME` / `RD_ADMIN_PASSWORD` | Bootstrap admin on first start (once) |
+| `RD_SERVER_HOST` / `RD_PANEL_URL` / `RD_HBBS_PUBLIC_KEY` | Values the `/join/:token` page surfaces. Overridable at runtime from Settings → Server |
+| `RD_DB_PATH` | SQLite path; defaults to `/data/rd_console.sqlite3` |
+| `RD_HBBS_DB_PATH` | Read-mount of the hbbs SQLite for metadata sync |
+| `RD_HBBS_SYNC_INTERVAL` | Seconds between sync ticks (≥5) |
+| `RD_CORS_ORIGINS` | JSON array. Required in split deploys where the UI lives on a different origin |
 
-| Method | Path                              | Auth       | Purpose                        |
-|--------|-----------------------------------|------------|--------------------------------|
-| POST   | `/api/auth/login`                 | public     | Panel login, returns JWT       |
-| GET    | `/api/auth/me`                    | user       | Current user info              |
-| POST   | `/api/auth/change-password`       | user       | Change own password            |
-| GET    | `/admin/api/users`                | admin      | List panel users               |
-| POST   | `/admin/api/users`                | admin      | Create user                    |
-| PATCH  | `/admin/api/users/{id}`           | admin      | Update user                    |
-| DELETE | `/admin/api/users/{id}`           | admin      | Disable user                   |
-| GET    | `/admin/api/devices`              | admin      | List devices (filters)         |
-| GET    | `/admin/api/devices/{id}`         | admin      | Device detail                  |
-| GET    | `/admin/api/logs`                 | admin      | Audit log (paginated)          |
-| GET    | `/admin/api/settings/server-info` | admin      | Server host / public key       |
-| GET    | `/api/join/{token}`               | public     | Fetch RustDesk client config   |
-| POST   | `/admin/api/join-tokens`          | admin      | Mint a new invite token        |
-| GET    | `/admin/api/join-tokens`          | admin      | List invite tokens + status    |
-| DELETE | `/admin/api/join-tokens/{id}`     | admin      | Revoke an invite token         |
-| POST   | `/api/heartbeat`                  | client     | Device heartbeat (stub)        |
-| POST   | `/api/sysinfo`                    | client     | Device system info (stub)     |
-| POST   | `/api/audit/conn`                 | client     | Connection event (stub)        |
-| POST   | `/api/audit/file`                 | client     | File transfer event (stub)     |
-| POST   | `/api/login`                      | public     | Legacy client login (kingmo888 shape) |
-| POST   | `/api/currentUser`                | client JWT | Legacy client session probe    |
-| POST   | `/api/logout`                     | public     | Legacy client logout (stateless) |
-| POST   | `/api/ab`                         | user JWT   | Address book write (blob)      |
-| POST   | `/api/ab/get`                     | user JWT   | Address book read              |
-| GET    | `/health`                         | public     | Liveness probe                 |
+## Routes (abridged — see OpenAPI for full contract)
 
-## TODO
+Panel (JWT):
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST   | `/api/auth/login` | Sign-in → JWT. Rate-limited 10/min/IP |
+| GET    | `/api/auth/me` | Who-am-I |
+| POST   | `/api/auth/change-password` | Rotate own password |
+| GET/POST/DELETE | `/api/auth/tokens` | Personal Access Tokens |
+| GET/POST/PATCH/DELETE | `/admin/api/users` + `/bulk` | Users + bulk; id=1 protected |
+| GET/POST/PATCH/DELETE | `/admin/api/devices` + `/bulk` | Devices |
+| GET/POST/DELETE | `/admin/api/join-tokens` + `/bulk` | Invites; `?hard=true` for delete |
+| GET/DELETE | `/admin/api/logs` | Audit log + soft-delete (30d retention floor) |
+| GET | `/admin/api/tags` + CRUD | Tags; auto-tags read-only |
+| GET/PATCH | `/admin/api/settings/server-info` | Runtime-overridable values |
+| GET | `/admin/api/settings/export` | `.env`-style dump (no secrets) |
 
-- [ ] Issue bearer tokens for RustDesk clients (separate from panel JWTs)
-- [ ] Issue bearer tokens for RustDesk clients (separate from panel JWTs)
-- [x] `/api/login`, `/api/currentUser`, `/api/logout` for the RustDesk client
-- [x] Address book sync: `POST /api/ab` + `POST /api/ab/get`
-- [x] Join-token creation endpoint for admins (`POST /admin/api/join-tokens`)
-- [ ] Rate limiting on `/api/auth/login` and `/api/join/:token`
-- [ ] Alembic migrations (currently `SQLModel.metadata.create_all`)
-- [ ] Prometheus metrics on `/metrics`
-- [ ] pytest suite covering the routers
+Public + client protocol:
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/join/:token` | Single-use invite redemption. Rate-limited 30/min/IP |
+| POST | `/api/heartbeat` | Fed by hbbs-watcher sidecar; bumps Device.last_seen_at |
+| POST | `/api/sysinfo` | Client-sourced metadata; triggers auto-tag reconciliation |
+| POST | `/api/audit/conn` / `/audit/file` | Client-emitted audit events |
+| POST | `/api/login` / `/api/currentUser` / `/api/logout` | kingmo888-shape aliases for the Flutter client |
+| POST | `/api/ab` / `/api/ab/get` | Address book blob sync |
+
+## Migrations
+
+Schema evolves via `_ADDITIVE_COLUMNS` in `db.py` — plain `ALTER TABLE ADD COLUMN`
+guarded by `pragma_table_info`. No Alembic yet; keep changes strictly additive.
+
+## Testing
+
+```bash
+.venv/Scripts/python -m ruff check .
+.venv/Scripts/python -m pytest -q
+```
+
+Structured around the router shape: every router has a matching `test_*.py`
+covering guardrails, admin-only access, bulk edge cases, rate-limits, and
+audit stamps.
