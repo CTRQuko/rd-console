@@ -1,0 +1,71 @@
+{
+  "title": "Paramètres",
+  "tabs": {
+    "general": "Général",
+    "server": "Serveur",
+    "users": "Utilisateurs",
+    "apiTokens": "Jetons API",
+    "appearance": "Apparence",
+    "security": "Sécurité",
+    "advanced": "Avancé"
+  },
+  "general": {
+    "landing": {
+      "title": "Page d'accueil par défaut",
+      "description": "Où l'application vous emmène après la connexion. Les changements s'appliquent à la prochaine connexion."
+    },
+    "language": {
+      "title": "Langue",
+      "description": "Préférence de langue de l'interface."
+    },
+    "dateTime": {
+      "title": "Date, heure et fuseau horaire",
+      "description": "Comment les horodatages s'affichent dans le panneau (journaux, appareils, jetons). Le serveur stocke toujours en UTC ; l'interface convertit vers votre fuseau et format choisis.",
+      "format": "Format",
+      "timezone": "Fuseau horaire",
+      "livePreview": "Aperçu en direct"
+    }
+  },
+  "server": {
+    "title": "Serveur RustDesk",
+    "description": "Les valeurs affichées sur la page publique /join/:token pour que les utilisateurs les collent dans leur client RustDesk. Les valeurs enregistrées remplacent l'env du conteneur. Laissez un champ vide pour utiliser la valeur par défaut de l'env.",
+    "idRelay": "Serveur ID / Relay (hôte[:port])",
+    "idRelayHint": "Nom d'hôte (et port optionnel) où tournent vos hbbs + hbbr. Les champs ID server et Relay server du client utiliseront cette valeur.",
+    "panelUrl": "URL publique du panneau",
+    "panelUrlHint": "URL publique utilisée lors de l'affichage des liens d'invitation. Doit inclure le schéma (https:// ou http://).",
+    "publicKey": "Clé publique hbbs",
+    "publicKeyHint": "Contenu de id_ed25519.pub sur l'hôte hbbs. Les utilisateurs le collent dans le champ « Key » des paramètres du client pour authentifier le serveur."
+  },
+  "security": {
+    "changePassword": "Changer le mot de passe",
+    "changePasswordDescription": "Les changements prennent effet à la prochaine connexion. Votre session actuelle reste valide jusqu'à l'expiration du JWT.",
+    "currentPassword": "Mot de passe actuel",
+    "newPassword": "Nouveau mot de passe",
+    "newPasswordHint": "Minimum 8 caractères.",
+    "confirmNewPassword": "Confirmer le nouveau mot de passe",
+    "updatePassword": "Mettre à jour le mot de passe",
+    "guardrails": "Garde-fous",
+    "guardrailsDescription": "Résumé en lecture seule des limites d'authentification et de prévention des abus en vigueur. Les modifier nécessite un redéploiement avec les variables d'env correspondantes."
+  },
+  "advanced": {
+    "exportTitle": "Exporter la configuration",
+    "exportDescription": "Téléchargez les paramètres modifiables au format .env. Utile lors d'une migration. Les secrets (RD_SECRET_KEY, RD_ADMIN_PASSWORD, RD_CLIENT_SHARED_SECRET) ne sont jamais inclus — copiez-les depuis votre env source.",
+    "downloadEnv": "Télécharger rd-console.env",
+    "buildInfo": "Infos de build",
+    "version": "Version",
+    "frontend": "Frontend"
+  },
+  "appearance": {
+    "theme": "Thème",
+    "themeDescription": "Basculez entre clair et sombre. La valeur enregistrée suit ce navigateur — les autres administrateurs du serveur ont leurs propres préférences.",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "accent": "Couleur d'accentuation",
+    "accentDescription": "Appliquée aux boutons primaires, aux liens et aux anneaux de focus dans toute l'application.",
+    "fontSize": "Taille de police",
+    "fontSizeDescription": "Mettre à l'échelle toute l'interface. 100 % est la valeur par défaut.",
+    "preview": "Aperçu",
+    "previewDescription": "Réagit en temps réel lorsque vous modifiez les paramètres ci-dessus.",
+    "resetDefaults": "Réinitialiser aux valeurs par défaut"
+  }
+}

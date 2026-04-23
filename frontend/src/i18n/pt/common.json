@@ -1,0 +1,38 @@
+{
+  "actions": {
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "saveChanges": "Guardar alterações",
+    "delete": "Eliminar",
+    "deletePermanently": "Eliminar permanentemente",
+    "remove": "Remover",
+    "edit": "Editar",
+    "create": "Criar",
+    "confirm": "Confirmar",
+    "close": "Fechar",
+    "copy": "Copiar",
+    "reset": "Repor",
+    "sign_in": "Iniciar sessão",
+    "sign_out": "Terminar sessão",
+    "open": "Abrir",
+    "search": "Pesquisar"
+  },
+  "states": {
+    "loading": "A carregar…",
+    "saving": "A guardar…",
+    "deleting": "A eliminar…",
+    "active": "Ativo",
+    "disabled": "Desativado",
+    "revoked": "Revogado",
+    "expired": "Expirado",
+    "used": "Utilizado",
+    "online": "Online",
+    "offline": "Offline",
+    "never": "Nunca"
+  },
+  "toasts": {
+    "saved": "Guardado.",
+    "error": "Algo correu mal.",
+    "copied": "Copiado para a área de transferência."
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "actions": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "saveChanges": "Save changes",
+    "delete": "Delete",
+    "deletePermanently": "Delete permanently",
+    "remove": "Remove",
+    "edit": "Edit",
+    "create": "Create",
+    "confirm": "Confirm",
+    "close": "Close",
+    "copy": "Copy",
+    "reset": "Reset",
+    "sign_in": "Sign in",
+    "sign_out": "Sign out",
+    "open": "Open",
+    "search": "Search"
+  },
+  "states": {
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "deleting": "Deleting…",
+    "active": "Active",
+    "disabled": "Disabled",
+    "revoked": "Revoked",
+    "expired": "Expired",
+    "used": "Used",
+    "online": "Online",
+    "offline": "Offline",
+    "never": "Never"
+  },
+  "toasts": {
+    "saved": "Saved.",
+    "error": "Something went wrong.",
+    "copied": "Copied to clipboard."
+  }
+}

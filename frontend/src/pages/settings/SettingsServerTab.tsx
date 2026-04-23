@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Save } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { Toast, type ToastValue } from '@/components/Toast';
@@ -25,6 +26,7 @@ interface Form {
 const EMPTY: Form = { server_host: '', panel_url: '', hbbs_public_key: '' };
 
 export function SettingsServerTab() {
+  const { t } = useTranslation('settings');
   const { data, isLoading } = useServerInfo();
   const update = useUpdateServerInfo();
   const [form, setForm] = useState<Form>(EMPTY);
@@ -68,17 +70,14 @@ export function SettingsServerTab() {
   return (
     <>
       <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">RustDesk server</h2>
+        <h2 className="rd-settings-section__title">{t('server.title')}</h2>
         <p className="rd-settings-section__sub">
-          The values surfaced on the public <code>/join/:token</code> invite
-          page so end users can paste them into their RustDesk client. Saved
-          values override the container env. Leave a field blank to fall
-          back to the env default.
+          {t('server.description')}
         </p>
         <div className="rd-settings-section__body">
           <div className="rd-form__field">
             <label className="rd-form__label" htmlFor="sv-host">
-              ID / Relay server (host[:port])
+              {t('server.idRelay')}
             </label>
             <input
               id="sv-host"
@@ -89,14 +88,13 @@ export function SettingsServerTab() {
               style={{ maxWidth: 520 }}
             />
             <div className="rd-form__hint">
-              Hostname (and optional port) where your hbbs + hbbr run. Both
-              ID server and Relay server fields of the client will use this.
+              {t('server.idRelayHint')}
             </div>
           </div>
 
           <div className="rd-form__field">
             <label className="rd-form__label" htmlFor="sv-panel">
-              Panel public URL
+              {t('server.panelUrl')}
             </label>
             <input
               id="sv-panel"
@@ -107,14 +105,13 @@ export function SettingsServerTab() {
               style={{ maxWidth: 520 }}
             />
             <div className="rd-form__hint">
-              Public URL used when displaying invite links. Must include the
-              scheme (<code>https://</code> or <code>http://</code>).
+              {t('server.panelUrlHint')}
             </div>
           </div>
 
           <div className="rd-form__field">
             <label className="rd-form__label" htmlFor="sv-pubkey">
-              hbbs public key
+              {t('server.publicKey')}
             </label>
             <textarea
               id="sv-pubkey"
@@ -128,9 +125,7 @@ export function SettingsServerTab() {
               style={{ maxWidth: 520, resize: 'vertical' }}
             />
             <div className="rd-form__hint">
-              Contents of <code>id_ed25519.pub</code> on the hbbs host.
-              Users paste this into the "Key" field of the client settings
-              so they authenticate the server.
+              {t('server.publicKeyHint')}
             </div>
           </div>
         </div>
@@ -140,7 +135,7 @@ export function SettingsServerTab() {
             onClick={onSave}
             disabled={!isDirty || update.isPending}
           >
-            {update.isPending ? 'Saving…' : 'Save changes'}
+            {update.isPending ? t('common:states.saving') : t('common:actions.saveChanges')}
           </Button>
         </div>
       </section>
