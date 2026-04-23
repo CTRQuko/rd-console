@@ -106,6 +106,72 @@ describe('<JoinTokensPage />', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/only.*time/i);
   });
 
+  it('asks for confirmation when the disclosure modal is dismissed via X', async () => {
+    signInAsAdmin();
+    mockRoute('GET', rx('/admin/api/join-tokens'), () => ({
+      status: 200,
+      data: [] as JoinTokenMeta[],
+    }));
+    const minted: JoinTokenCreated = {
+      id: 7,
+      token: 'rdcj_unmissable_plaintext',
+      token_prefix: 'rdcj_unm',
+      label: null,
+      created_by_user_id: 1,
+      created_at: '2025-02-01T00:00:00',
+      expires_at: null,
+      used_at: null,
+      revoked: false,
+      status: 'active',
+    };
+    mockRoute('POST', rx('/admin/api/join-tokens'), () => ({
+      status: 201,
+      data: minted,
+    }));
+    wrap(<JoinTokensPage />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /mint token/i }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    // Disclosure modal visible with plaintext.
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue('rdcj_unmissable_plaintext'),
+      ).toBeInTheDocument(),
+    );
+
+    // Click the X on the disclosure header — should NOT close, should
+    // open the confirm.
+    const closeButtons = screen.getAllByRole('button', { name: /close dialog/i });
+    await userEvent.click(closeButtons[0]);
+
+    // Confirm prompt appears.
+    expect(
+      await screen.findByText(/did you copy the token/i),
+    ).toBeInTheDocument();
+    // Token value still present behind the confirm — nothing lost yet.
+    expect(
+      screen.getByDisplayValue('rdcj_unmissable_plaintext'),
+    ).toBeInTheDocument();
+
+    // Cancel returns to disclosure.
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(
+      screen.queryByText(/did you copy the token/i),
+    ).not.toBeInTheDocument();
+
+    // Re-trigger + confirm this time closes everything.
+    await userEvent.click(closeButtons[0]);
+    await userEvent.click(screen.getByRole('button', { name: /close anyway/i }));
+    await waitFor(() =>
+      expect(
+        screen.queryByDisplayValue('rdcj_unmissable_plaintext'),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it('revokes a token via DELETE', async () => {
     signInAsAdmin();
     mockRoute('GET', rx('/admin/api/join-tokens'), () => ({
