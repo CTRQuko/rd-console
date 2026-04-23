@@ -66,6 +66,49 @@
     --radius: 0.5rem;
   }
 
+  /* Accent presets (prefsStore Accent). Override --primary + --ring so
+   * every primary-tinted element follows the choice. Values are HSL with
+   * the same lightness band as the default blue to keep contrast stable. */
+  [data-accent="blue"]   { --primary: 221 83% 53%; --ring: 221 83% 53%; }
+  [data-accent="violet"] { --primary: 262 83% 58%; --ring: 262 83% 58%; }
+  [data-accent="green"]  { --primary: 142 71% 45%; --ring: 142 71% 45%; }
+  [data-accent="amber"]  { --primary: 38 92% 50%;  --ring: 38 92% 50%; }
+  [data-accent="rose"]   { --primary: 347 77% 50%; --ring: 347 77% 50%; }
+  [data-accent="teal"]   { --primary: 189 85% 37%; --ring: 189 85% 37%; }
+
+  /* Radius presets — tweak --radius which is consumed across the UI. */
+  [data-radius="0"]  { --radius: 0; }
+  [data-radius="6"]  { --radius: 0.375rem; }
+  [data-radius="12"] { --radius: 0.75rem; }
+
+  /* Density affects padding + gap on the common "body" elements via
+   * spacing tokens. Tailwind utilities keep the tight/loose deltas
+   * contained — we only override the tokens once, not every rule. */
+  :root {
+    --rd-pad-y: 8px;
+    --rd-pad-x: 12px;
+    --rd-gap: 12px;
+    --rd-font-scale: 1;
+  }
+  [data-density="compact"]     { --rd-pad-y: 4px;  --rd-pad-x: 8px;  --rd-gap: 8px; }
+  [data-density="comfortable"] { --rd-pad-y: 12px; --rd-pad-x: 16px; --rd-gap: 16px; }
+
+  /* Font scale — applied at <html> so `rem`-based sizing follows. */
+  html { font-size: calc(16px * var(--rd-font-scale, 1)); }
+
+  /* Sidebar in "follow-theme" mode under a light theme: swap the always-
+   * dark tokens for the theme surface so the sidebar reads like a card.
+   * In dark mode the default tokens already match the theme, so no override
+   * is needed. "always-dark" never matches this selector. */
+  html[data-sidebar="follow-theme"]:not(.dark) {
+    --sidebar-bg:     hsl(var(--card));
+    --sidebar-hover:  hsl(var(--muted));
+    --sidebar-active: hsl(var(--primary));
+    --sidebar-fg:     hsl(var(--foreground));
+    --sidebar-fg-muted: hsl(var(--muted-foreground));
+    --sidebar-border: hsl(var(--border));
+  }
+
   .dark {
     --background: 240 10% 3.9%;
     --foreground: 0 0% 98%;
