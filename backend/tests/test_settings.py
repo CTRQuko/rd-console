@@ -164,6 +164,44 @@ def test_patch_rejects_oversize_value(client, auth_headers):
     assert r.status_code == 422
 
 
+def test_export_returns_env_style_dump(client, auth_headers, session):
+    """GET /export emits RD_*=value lines only for the editable keys and
+    records an audit entry. Secrets are never surfaced."""
+    # Set an override so the export has non-default content to show.
+    client.patch(
+        "/admin/api/settings/server-info",
+        headers=auth_headers,
+        json={"server_host": "exported.example"},
+    )
+    r = client.get("/admin/api/settings/export", headers=auth_headers)
+    assert r.status_code == 200
+    body = r.text
+    assert "RD_SERVER_HOST=exported.example" in body
+    assert "RD_PANEL_URL=" in body
+    assert "RD_HBBS_PUBLIC_KEY=" in body
+    # Secrets must never leak (check for the `KEY=` form — the names
+    # appear in the NOTE comment on purpose).
+    assert "RD_SECRET_KEY=" not in body
+    assert "RD_ADMIN_PASSWORD=" not in body
+    assert "RD_CLIENT_SHARED_SECRET=" not in body
+
+    # Audit entry stamped.
+    audit = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.SETTINGS_EXPORTED)
+    ).first()
+    assert audit is not None
+
+
+def test_export_requires_admin(client, make_user):
+    make_user(username="regular3", password="regular-pass-1234")
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "regular3", "password": "regular-pass-1234"},
+    )
+    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert client.get("/admin/api/settings/export", headers=headers).status_code == 403
+
+
 def test_existing_joinToken_test_still_works(client, auth_headers):
     """Trip-wire: the existing test_created_token_unlocks_public_join still
     expects the env host to be visible when no override exists. Running

@@ -182,7 +182,7 @@ export function AccountPage() {
     <>
       <PageHeader
         title="Account"
-        subtitle="Personal access tokens for scripts and automations."
+        subtitle="Personal access tokens for scripts and automations. Not the same as device invites — for onboarding a new device see Join tokens."
         action={
           <Button icon={Plus} onClick={() => setOpenCreate(true)}>
             New token

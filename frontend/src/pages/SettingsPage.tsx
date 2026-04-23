@@ -1,181 +1,90 @@
-/** Panel settings — admin-editable server info.
+/** Settings — tabbed shell.
  *
- *  Backend: /admin/api/settings/server-info (GET merged env+override,
- *  PATCH writes override). Clearing a field posts an empty string, which
- *  the backend interprets as "drop override, fall back to env".
+ *  Reorganised from a vertical stack into 5 tabs: Server, Appearance,
+ *  Language, Security, Advanced. Only Server / Security / Advanced are
+ *  wired in this PR — Appearance and Language ship as placeholders and
+ *  get wired in subsequent PRs (B2, B3).
  *
- *  Password change lives on /account — not duplicated here. For v4 the
- *  only editable panel-wide knobs are the three RustDesk bridge values
- *  the end-user pastes into their client (surfaced via the invite flow).
+ *  The active tab is synced to `?tab=` so deep-links from docs or
+ *  bookmarks land on the right pane. Invalid / missing values fall back
+ *  to Server.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { Save } from 'lucide-react';
-import { Button } from '@/components/Button';
+import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
-import { Toast, type ToastValue } from '@/components/Toast';
-import {
-  useServerInfo,
-  useUpdateServerInfo,
-  type ServerInfoPatch,
-} from '@/hooks/useServerInfo';
-import { apiErrorMessage } from '@/lib/api';
+import { Tabs } from '@/components/Tabs';
+import { SettingsServerTab } from './settings/SettingsServerTab';
+import { SettingsSecurityTab } from './settings/SettingsSecurityTab';
+import { SettingsAdvancedTab } from './settings/SettingsAdvancedTab';
 
-interface Form {
-  server_host: string;
-  panel_url: string;
-  hbbs_public_key: string;
+const VALID_TABS = ['server', 'appearance', 'language', 'security', 'advanced'] as const;
+type TabValue = (typeof VALID_TABS)[number];
+
+function isValidTab(v: string | null): v is TabValue {
+  return !!v && (VALID_TABS as readonly string[]).includes(v);
 }
 
-const EMPTY: Form = { server_host: '', panel_url: '', hbbs_public_key: '' };
-
 export function SettingsPage() {
-  const { data, isLoading } = useServerInfo();
-  const update = useUpdateServerInfo();
+  const [params, setParams] = useSearchParams();
+  const raw = params.get('tab');
+  const active: TabValue = isValidTab(raw) ? raw : 'server';
 
-  const [form, setForm] = useState<Form>(EMPTY);
-  const [toast, setToast] = useState<ToastValue | null>(null);
-
-  // Seed the form when data arrives (and re-seed after a save so empty-string
-  // clears reflect the live fallback rather than a stale blank).
-  useEffect(() => {
-    if (data) {
-      setForm({
-        server_host: data.server_host,
-        panel_url: data.panel_url,
-        hbbs_public_key: data.hbbs_public_key,
-      });
-    }
-  }, [data]);
-
-  const dirtyPatch = useMemo<ServerInfoPatch>(() => {
-    if (!data) return {};
-    const out: ServerInfoPatch = {};
-    if (form.server_host !== data.server_host) out.server_host = form.server_host;
-    if (form.panel_url !== data.panel_url) out.panel_url = form.panel_url;
-    if (form.hbbs_public_key !== data.hbbs_public_key)
-      out.hbbs_public_key = form.hbbs_public_key;
-    return out;
-  }, [data, form]);
-
-  const isDirty = Object.keys(dirtyPatch).length > 0;
-
-  const onSave = () => {
-    if (!isDirty) return;
-    update.mutate(dirtyPatch, {
-      onSuccess: () => setToast({ kind: 'ok', text: 'Settings saved.' }),
-      onError: (err) =>
-        setToast({ kind: 'error', text: apiErrorMessage(err) }),
-    });
+  const setTab = (next: string) => {
+    // `replace: true` — each tab switch is not a history entry; the Back
+    // button should take you to wherever you came from, not between tabs.
+    setParams((prev) => {
+      const n = new URLSearchParams(prev);
+      n.set('tab', next);
+      return n;
+    }, { replace: true });
   };
-
-  if (isLoading && !data) {
-    return (
-      <>
-        <PageHeader title="Settings" />
-        <div style={{ color: 'var(--fg-muted)' }}>Loading…</div>
-      </>
-    );
-  }
 
   return (
     <>
       <PageHeader title="Settings" />
+      <Tabs value={active} onChange={setTab}>
+        <Tabs.List ariaLabel="Settings sections">
+          <Tabs.Trigger value="server">Server</Tabs.Trigger>
+          <Tabs.Trigger value="appearance">Appearance</Tabs.Trigger>
+          <Tabs.Trigger value="language">Language</Tabs.Trigger>
+          <Tabs.Trigger value="security">Security</Tabs.Trigger>
+          <Tabs.Trigger value="advanced">Advanced</Tabs.Trigger>
+        </Tabs.List>
 
-      <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">RustDesk server</h2>
-        <p className="rd-settings-section__sub">
-          The values surfaced on the public <code>/join/:token</code> invite
-          page so end users can paste them into their RustDesk client. Saved
-          values override the container env. Leave a field blank to fall
-          back to the env default.
-        </p>
-        <div className="rd-settings-section__body">
-          <div className="rd-form__field">
-            <label className="rd-form__label" htmlFor="sv-host">
-              ID / Relay server (host[:port])
-            </label>
-            <input
-              id="sv-host"
-              className="rd-input"
-              value={form.server_host}
-              onChange={(e) => setForm({ ...form, server_host: e.target.value })}
-              placeholder="rustdesk.example.com"
-              style={{ maxWidth: 520 }}
-            />
-            <div className="rd-form__hint">
-              Hostname (and optional port) where your hbbs + hbbr run. Both
-              ID server and Relay server fields of the client will use this.
-            </div>
-          </div>
+        <Tabs.Panel value="server">
+          <SettingsServerTab />
+        </Tabs.Panel>
 
-          <div className="rd-form__field">
-            <label className="rd-form__label" htmlFor="sv-panel">
-              Panel public URL
-            </label>
-            <input
-              id="sv-panel"
-              className="rd-input"
-              value={form.panel_url}
-              onChange={(e) => setForm({ ...form, panel_url: e.target.value })}
-              placeholder="https://panel.example.com"
-              style={{ maxWidth: 520 }}
-            />
-            <div className="rd-form__hint">
-              Public URL used when displaying invite links. Must include the
-              scheme (<code>https://</code> or <code>http://</code>).
-            </div>
-          </div>
+        <Tabs.Panel value="appearance">
+          <ComingSoon pr="B2" label="Appearance" />
+        </Tabs.Panel>
 
-          <div className="rd-form__field">
-            <label className="rd-form__label" htmlFor="sv-pubkey">
-              hbbs public key
-            </label>
-            <textarea
-              id="sv-pubkey"
-              className="rd-input rd-mono"
-              value={form.hbbs_public_key}
-              onChange={(e) =>
-                setForm({ ...form, hbbs_public_key: e.target.value })
-              }
-              placeholder="Contents of id_ed25519.pub (base64 blob, one line)"
-              rows={3}
-              style={{ maxWidth: 520, resize: 'vertical' }}
-            />
-            <div className="rd-form__hint">
-              Contents of <code>id_ed25519.pub</code> on the hbbs host.
-              Users paste this into the "Key" field of the client settings
-              so they authenticate the server.
-            </div>
-          </div>
-        </div>
-        <div className="rd-settings-section__foot">
-          <Button
-            icon={Save}
-            onClick={onSave}
-            disabled={!isDirty || update.isPending}
-          >
-            {update.isPending ? 'Saving…' : 'Save changes'}
-          </Button>
-        </div>
-      </section>
+        <Tabs.Panel value="language">
+          <ComingSoon pr="B3" label="Language" />
+        </Tabs.Panel>
 
-      <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Version</h2>
-        <div className="rd-settings-section__body">
-          <div style={{ fontSize: 13 }}>
-            <span
-              className="rd-field__label"
-              style={{ display: 'block', marginBottom: 4 }}
-            >
-              rd-console
-            </span>
-            <span className="rd-mono">{data?.version ?? 'unknown'}</span>
-          </div>
-        </div>
-      </section>
+        <Tabs.Panel value="security">
+          <SettingsSecurityTab />
+        </Tabs.Panel>
 
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
+        <Tabs.Panel value="advanced">
+          <SettingsAdvancedTab />
+        </Tabs.Panel>
+      </Tabs>
     </>
+  );
+}
+
+/** Placeholder for tabs shipped in later v5 PRs. Marks intent without
+ *  blocking the shell behind them — operators can bookmark `?tab=language`
+ *  today and see it wired in tomorrow. */
+function ComingSoon({ pr, label }: { pr: string; label: string }) {
+  return (
+    <section className="rd-settings-section">
+      <h2 className="rd-settings-section__title">{label}</h2>
+      <p className="rd-settings-section__sub">
+        Coming in v5 {pr}.
+      </p>
+    </section>
   );
 }

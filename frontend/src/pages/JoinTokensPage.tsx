@@ -185,7 +185,7 @@ export function JoinTokensPage() {
     <>
       <PageHeader
         title="Join tokens"
-        subtitle="Single-use invite tokens for onboarding new RustDesk devices. Each token is shown in plaintext exactly once — copy it immediately."
+        subtitle="Single-use invite tokens for onboarding a new device's RustDesk client. Not the same as Personal Access Tokens on My account (those are for API scripts). Each invite is shown in plaintext exactly once — copy it immediately."
         action={
           <Button icon={Plus} onClick={() => setOpenCreate(true)}>
             Mint token

@@ -10,6 +10,7 @@ same helper, so a PATCH takes effect immediately without a restart.
 from __future__ import annotations
 
 from fastapi import APIRouter
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from .. import __version__
@@ -104,3 +105,39 @@ def update_server_info(
         hbbs_public_key=info["hbbs_public_key"],
         version=__version__,
     )
+
+
+@router.get("/export", response_class=PlainTextResponse)
+def export_settings(session: SessionDep, admin: AdminUser) -> str:
+    """Export editable runtime settings as a ``.env``-style dump.
+
+    Intentionally narrow: only the operator-editable keys (server_host,
+    panel_url, hbbs_public_key) are emitted. Secrets (secret_key,
+    admin_password, client_shared_secret) are NEVER included — dumping
+    them defeats the point of having them env-only.
+
+    The export itself is audited so operators can see who pulled it.
+    """
+    info = get_server_info(session)
+    lines = [
+        "# rd-console runtime settings — export",
+        f"# generated at {utcnow_naive().isoformat()}Z",
+        f"# by user_id={admin.id}",
+        "#",
+        "# NOTE: secrets (RD_SECRET_KEY, RD_ADMIN_PASSWORD, "
+        "RD_CLIENT_SHARED_SECRET) are not included.",
+        "",
+        f"RD_SERVER_HOST={info['server_host']}",
+        f"RD_PANEL_URL={info['panel_url']}",
+        f"RD_HBBS_PUBLIC_KEY={info['hbbs_public_key']}",
+        "",
+    ]
+    body = "\n".join(lines)
+
+    session.add(AuditLog(
+        action=AuditAction.SETTINGS_EXPORTED,
+        actor_user_id=admin.id,
+        payload="keys=hbbs_public_key,panel_url,server_host",
+    ))
+    session.commit()
+    return body

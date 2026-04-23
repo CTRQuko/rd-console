@@ -117,6 +117,24 @@
 .rd-settings-section__body { display: flex; flex-direction: column; gap: 16px; }
 .rd-settings-section__foot { margin-top: 20px; display: flex; justify-content: flex-end; }
 
+/* Tabs (components/Tabs.tsx) */
+.rd-tabs {
+  display: flex; gap: 2px; border-bottom: 1px solid var(--border);
+  margin-bottom: 20px; overflow-x: auto;
+}
+.rd-tab {
+  background: transparent; border: none; color: var(--fg-muted);
+  padding: 10px 14px; font-size: 13px; font-weight: 500; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color 120ms, border-color 120ms; white-space: nowrap;
+}
+.rd-tab:hover { color: var(--fg); }
+.rd-tab.active { color: var(--fg); border-bottom-color: var(--primary, #3b82f6); }
+.rd-tab:focus-visible {
+  outline: 2px solid var(--primary, #3b82f6); outline-offset: 2px; border-radius: 2px;
+}
+.rd-tab-panel { outline: none; }
+
 /* Join page */
 .rd-join { max-width: 560px; width: 100%; }
 .rd-join__header { text-align: center; margin-bottom: 24px; }

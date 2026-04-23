@@ -15,7 +15,7 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/join-tokens': 'Join tokens',
   '/logs':     'Audit logs',
   '/settings': 'Settings',
-  '/account':  'Account',
+  '/account':  'My account',
 };
 
 /** Cmd+K (macOS) / Ctrl+K (other) opens the global search palette,
