@@ -8,7 +8,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Mail, MessageCircle, Plus, Send, Trash2 } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -16,6 +16,7 @@ import { CopyableField } from '@/components/CopyableField';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Dialog } from '@/components/Dialog';
 import { PageHeader } from '@/components/PageHeader';
+import { QRCode } from '@/components/QRCode';
 import { Toast, type ToastValue } from '@/components/Toast';
 import {
   useCreateJoinToken,
@@ -62,10 +63,11 @@ export function JoinTokensPage() {
   const [pendingExpiry, setPendingExpiry] = useState<number | null>(60 * 24); // default: 24h
   const [minted, setMinted] = useState<JoinTokenCreated | null>(null);
   // When the admin tries to dismiss the disclosure via X/Esc/backdrop we
-  // intercept and ask for confirmation — but if they click the explicit
-  // "I've saved it" button we close straight through. Tracking that intent
-  // in a separate flag keeps the two paths honest.
+  // intercept and ask for confirmation — UNLESS they've already copied at
+  // least once (tracked via `copiedAt`), in which case the data is safely
+  // on the clipboard / forwarded and dismiss can skip the confirm step.
   const [confirmDismiss, setConfirmDismiss] = useState(false);
+  const [copiedAt, setCopiedAt] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<JoinTokenMeta | null>(null);
   const [toast, setToast] = useState<ToastValue | null>(null);
 
@@ -188,7 +190,7 @@ export function JoinTokensPage() {
         subtitle="Single-use invite tokens for onboarding a new device's RustDesk client. Not the same as Personal Access Tokens on My account (those are for API scripts). Each invite is shown in plaintext exactly once — copy it immediately."
         action={
           <Button icon={Plus} onClick={() => setOpenCreate(true)}>
-            Mint token
+            Create invitation
           </Button>
         }
       />
@@ -198,7 +200,7 @@ export function JoinTokensPage() {
         empty={
           isLoading
             ? 'Loading…'
-            : 'No join tokens yet. Mint one to onboard a device.'
+            : 'No invitations yet. Create one to onboard a device.'
         }
       />
 
@@ -209,7 +211,7 @@ export function JoinTokensPage() {
           setOpenCreate(false);
           resetCreateForm();
         }}
-        title="Mint join token"
+        title="Create invitation"
         footer={
           <>
             <Button
@@ -222,7 +224,7 @@ export function JoinTokensPage() {
               Cancel
             </Button>
             <Button onClick={submitCreate} disabled={create.isPending}>
-              {create.isPending ? 'Minting…' : 'Create'}
+              {create.isPending ? 'Generating…' : 'Generate link'}
             </Button>
           </>
         }
@@ -287,17 +289,32 @@ export function JoinTokensPage() {
        */}
       <Dialog
         open={!!minted}
-        onClose={() => setConfirmDismiss(true)}
-        title="Copy this token now"
+        onClose={() => {
+          // If the admin has already captured the invite through any of
+          // the share actions, a re-confirmation adds friction without
+          // protecting anything — the data is out of the modal. Close
+          // directly. Otherwise fall through to the guard dialog.
+          if (copiedAt !== null) {
+            setMinted(null);
+            setCopiedAt(null);
+            setToast({ kind: 'ok', text: 'Invitation created.' });
+          } else {
+            setConfirmDismiss(true);
+          }
+        }}
+        title="Share this invitation"
         width={560}
         footer={
           <Button
             onClick={() => {
               setMinted(null);
-              setToast({ kind: 'ok', text: 'Join token minted.' });
+              setCopiedAt(null);
+              setToast({ kind: 'ok', text: 'Invitation created.' });
             }}
           >
-            I&apos;ve saved it — close
+            {copiedAt !== null
+              ? 'Done — close'
+              : 'I\u2019ve copied the invite \u2014 close'}
           </Button>
         }
       >
@@ -321,27 +338,60 @@ export function JoinTokensPage() {
                 style={{ color: 'var(--amber-600, #f59e0b)', flexShrink: 0, marginTop: 2 }}
               />
               <div style={{ fontSize: 13, lineHeight: 1.45 }}>
-                This is the <strong>only</strong> time the full token will be
-                shown. If you close this without copying it, the token is
-                unrecoverable — you&apos;ll need to revoke it and mint a new
+                This invitation is <strong>single-use</strong> and shown{' '}
+                <strong>only once</strong>. Send it to the user through one
+                of the channels below — if you close this without copying
+                or forwarding, you&apos;ll need to revoke and create a new
                 one.
               </div>
             </div>
 
             <div style={{ marginTop: 14 }}>
-              <CopyableField label="Token" value={minted.token} />
+              <CopyableField
+                label="Invite URL"
+                value={inviteUrl}
+                onCopy={() => setCopiedAt(Date.now())}
+              />
             </div>
 
-            <div style={{ marginTop: 10 }}>
-              <CopyableField label="Invite URL" value={inviteUrl} />
+            <ShareRow inviteUrl={inviteUrl} onShared={() => setCopiedAt(Date.now())} />
+
+            <div
+              style={{
+                marginTop: 14,
+                display: 'flex',
+                justifyContent: 'center',
+                padding: 14,
+                background: 'var(--card, #fff)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+              }}
+            >
+              <QRCode value={inviteUrl} size={180} ariaLabel="Invite URL QR code" />
             </div>
+
+            <details style={{ marginTop: 10 }}>
+              <summary
+                style={{
+                  color: 'var(--fg-muted)', fontSize: 12, cursor: 'pointer',
+                }}
+              >
+                Show raw token (usually not needed)
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                <CopyableField
+                  label="Token"
+                  value={minted.token}
+                  onCopy={() => setCopiedAt(Date.now())}
+                />
+              </div>
+            </details>
 
             <div
               className="rd-form__hint"
               style={{ marginTop: 10, color: 'var(--fg-muted)' }}
             >
-              Share the invite URL with the end user — it&apos;s single-use
-              and expires {minted.expires_at ? `on ${fmtDate(minted.expires_at)} UTC` : 'never'}.
+              Invite expires {minted.expires_at ? `on ${fmtDate(minted.expires_at)} UTC` : 'never'}.
             </div>
           </div>
         ) : null}
@@ -354,12 +404,13 @@ export function JoinTokensPage() {
         onConfirm={() => {
           setConfirmDismiss(false);
           setMinted(null);
-          setToast({ kind: 'ok', text: 'Join token minted.' });
+          setCopiedAt(null);
+          setToast({ kind: 'ok', text: 'Invitation created.' });
         }}
         destructive
         confirmLabel="Close anyway"
-        title="Did you copy the token?"
-        body="If you close now without saving the token you won't be able to see it again — you'll have to revoke it and mint a new one."
+        title="Did you copy the invitation?"
+        body="If you close now without saving the invite URL you won't be able to see it again — you'll have to revoke and create a new one."
       />
 
       {/* ─── Revoke confirmation ───────────────────────────────────── */}
@@ -392,5 +443,72 @@ export function JoinTokensPage() {
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </>
+  );
+}
+
+/** Row of share affordances shown in the post-create disclosure modal.
+ *
+ *  Rendered as plain `<a>` elements so the browser handles them natively:
+ *  `mailto:` opens the OS mail client, `wa.me` and `t.me/share` open in
+ *  a new tab. All three are consumer-facing targets; they don't leak the
+ *  token to any third-party backend on their own (the URL is in the
+ *  query string, so strictly it traverses the redirecting server — fine
+ *  for the invite URL which is single-use and expires, but noted).
+ *
+ *  `onShared` fires on click so the parent can mark the invite as
+ *  captured and skip the dismiss-confirm.
+ */
+function ShareRow({
+  inviteUrl,
+  onShared,
+}: {
+  inviteUrl: string;
+  onShared: () => void;
+}) {
+  const subject = 'Your RustDesk invitation';
+  const body = `Open this link once:\n${inviteUrl}\n\nNeed help? Ask your admin.`;
+  const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const whatsapp = `https://wa.me/?text=${encodeURIComponent(body)}`;
+  const telegram =
+    `https://t.me/share/url?url=${encodeURIComponent(inviteUrl)}` +
+    `&text=${encodeURIComponent(subject)}`;
+
+  const linkStyle: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    padding: '8px 12px', borderRadius: 6, fontSize: 13,
+    border: '1px solid var(--border)', color: 'var(--fg)',
+    background: 'var(--card)', textDecoration: 'none',
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap',
+      }}
+      role="group"
+      aria-label="Share invitation"
+    >
+      <a href={mailto} onClick={onShared} style={linkStyle}>
+        <Mail size={14} /> Email
+      </a>
+      <a
+        href={whatsapp}
+        target="_blank"
+        rel="noreferrer noopener"
+        onClick={onShared}
+        style={linkStyle}
+      >
+        <MessageCircle size={14} /> WhatsApp
+      </a>
+      <a
+        href={telegram}
+        target="_blank"
+        rel="noreferrer noopener"
+        onClick={onShared}
+        style={linkStyle}
+      >
+        <Send size={14} /> Telegram
+      </a>
+    </div>
   );
 }
