@@ -28,10 +28,13 @@ def test_cannot_demote_last_admin(client, admin_user, auth_headers):
     assert r.status_code == 400
 
 
-def test_can_demote_admin_if_another_admin_exists(client, admin_user, make_user, auth_headers):
-    make_user(username="admin2", password="admin2pass1234", role=UserRole.ADMIN)
+def test_can_demote_peer_admin_if_another_admin_exists(client, admin_user, make_user, auth_headers):
+    # admin_user is id=1 (initial admin, protected). We demote a PEER admin
+    # to exercise the "not last admin" branch. Demoting id=1 is covered by
+    # the initial-admin protection tests further down.
+    peer = make_user(username="admin2", password="admin2pass1234", role=UserRole.ADMIN)
     r = client.patch(
-        f"/admin/api/users/{admin_user.id}",
+        f"/admin/api/users/{peer.id}",
         headers=auth_headers,
         json={"role": "user"},
     )
@@ -243,3 +246,120 @@ def test_bulk_rejects_non_admin(client, make_user):
         json={"action": "disable", "user_ids": [1]},
     )
     assert r.status_code == 403
+
+
+# ─── Initial admin protection ───────────────────────────────────────────────
+#
+# The admin fixture seeds id=1, which is the bootstrap admin by convention.
+# Jandro wants this row strictly untouchable — even when there are other
+# admins around to satisfy the last-admin guard, the id=1 row must resist
+# delete / hard-delete / disable.
+
+
+def test_initial_admin_cannot_be_hard_deleted_even_with_peer_admin(
+    client, admin_user, make_user, auth_headers, session,
+):
+    """Create a peer admin (id>1), log in as peer, try to hard-delete id=1."""
+    peer = make_user(
+        username="peer", password="peer-pass-1234", role=UserRole.ADMIN,
+    )
+    # Authenticate as peer.
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "peer", "password": "peer-pass-1234"},
+    )
+    peer_headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    r = client.delete(
+        f"/admin/api/users/{admin_user.id}?hard=true", headers=peer_headers,
+    )
+    assert r.status_code == 400
+    assert "initial admin" in r.json()["detail"].lower()
+    # Row still there.
+    session.expire_all()
+    assert session.get(User, admin_user.id) is not None
+    # Peer stayed intact too.
+    assert peer.id is not None
+
+
+def test_initial_admin_cannot_be_soft_disabled_even_with_peer_admin(
+    client, admin_user, make_user, session,
+):
+    make_user(username="peer2", password="peer-pass-1234", role=UserRole.ADMIN)
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "peer2", "password": "peer-pass-1234"},
+    )
+    peer_headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    r = client.delete(f"/admin/api/users/{admin_user.id}", headers=peer_headers)
+    assert r.status_code == 400
+    session.expire_all()
+    still = session.get(User, admin_user.id)
+    assert still is not None and still.is_active is True
+
+
+def test_initial_admin_cannot_be_disabled_via_patch(
+    client, admin_user, make_user,
+):
+    """PATCH with is_active=False on id=1 must fail even from a peer admin."""
+    make_user(username="peer3", password="peer-pass-1234", role=UserRole.ADMIN)
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "peer3", "password": "peer-pass-1234"},
+    )
+    peer_headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    r = client.patch(
+        f"/admin/api/users/{admin_user.id}",
+        headers=peer_headers,
+        json={"is_active": False},
+    )
+    assert r.status_code == 400
+    assert "initial admin" in r.json()["detail"].lower()
+
+
+def test_initial_admin_cannot_be_demoted_via_patch(
+    client, admin_user, make_user,
+):
+    make_user(username="peer4", password="peer-pass-1234", role=UserRole.ADMIN)
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "peer4", "password": "peer-pass-1234"},
+    )
+    peer_headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    r = client.patch(
+        f"/admin/api/users/{admin_user.id}",
+        headers=peer_headers,
+        json={"role": "user"},
+    )
+    assert r.status_code == 400
+    assert "initial admin" in r.json()["detail"].lower()
+
+
+def test_bulk_skips_initial_admin_with_reason(
+    client, admin_user, make_user, session,
+):
+    """Bulk ops include id=1 with reason='initial_admin' and continue the
+    rest of the batch (affected still counts the valid targets)."""
+    make_user(username="peer5", password="peer-pass-1234", role=UserRole.ADMIN)
+    victim = make_user(username="victim5", password="victim-pass-1234")
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "peer5", "password": "peer-pass-1234"},
+    )
+    peer_headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    r = client.post(
+        "/admin/api/users/bulk",
+        headers=peer_headers,
+        json={"action": "delete", "user_ids": [admin_user.id, victim.id]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["affected"] == 1
+    reasons = {row["user_id"]: row["reason"] for row in body["skipped"]}
+    assert reasons[admin_user.id] == "initial_admin"
+    # Victim really gone.
+    session.expunge_all()
+    assert session.get(User, victim.id) is None
+    # Initial admin still there.
+    assert session.get(User, admin_user.id) is not None
