@@ -57,20 +57,37 @@
 
 .rd-topbar {
   position: sticky; top: 0; z-index: 10;
-  height: 56px; background: var(--card);
-  border-bottom: 1px solid var(--border);
+  height: 56px; background: var(--topbar-bg);
+  border-bottom: 1px solid var(--topbar-border);
+  color: var(--topbar-fg);
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 24px;
 }
-.rd-topbar__crumb { font-size: 1rem; color: var(--fg); font-weight: 500; }
-.rd-topbar__crumb-sep { color: var(--fg-subtle); margin: 0 8px; }
+.rd-topbar__crumb { font-size: 1rem; color: var(--topbar-fg); font-weight: 500; }
+.rd-topbar__crumb-sep { color: var(--topbar-fg-muted); margin: 0 8px; }
 .rd-topbar__actions { display: flex; align-items: center; gap: 4px; }
 .rd-topbar__user {
   display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px;
-  border-radius: var(--radius-md); cursor: pointer;
+  border-radius: var(--radius-md); cursor: pointer; color: var(--topbar-fg);
 }
-.rd-topbar__user:hover { background: var(--bg-subtle); }
-.rd-topbar__user-name { font-size: 0.929rem; color: var(--fg); }
+.rd-topbar__user:hover { background: var(--topbar-hover); }
+.rd-topbar__user-name { font-size: 0.929rem; color: var(--topbar-fg); }
+
+/* Topbar inner controls — override the theme-aware vars in favour of
+ * the topbar-specific ones so buttons and kbd chips remain legible
+ * over the always-dark surface even when the main theme is light. */
+.rd-topbar .rd-iconbtn { color: var(--topbar-fg-muted); }
+.rd-topbar .rd-iconbtn:hover { background: var(--topbar-hover); color: var(--topbar-fg); }
+.rd-topbar .rd-btn--secondary {
+  background: var(--topbar-hover); color: var(--topbar-fg);
+  border-color: var(--topbar-border);
+}
+.rd-topbar .rd-btn--secondary:hover:not(:disabled) { background: var(--zinc-700); }
+.rd-topbar kbd {
+  background: var(--zinc-800) !important;
+  border-color: var(--topbar-border) !important;
+  color: var(--topbar-fg-muted) !important;
+}
 
 .rd-content { padding: 24px; flex: 1; }
 

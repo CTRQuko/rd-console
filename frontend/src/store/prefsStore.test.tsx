@@ -21,10 +21,11 @@ describe('usePrefs', () => {
   it('applies prefs to the <html> data-attributes on mount', () => {
     renderHook(() => usePrefs());
     expect(document.documentElement.getAttribute('data-accent')).toBe('blue');
-    expect(document.documentElement.getAttribute('data-sidebar')).toBe('always-dark');
-    // density/radius were removed in P4 — should NOT be present.
+    // density / radius / sidebar were removed in P4/P6 — should NOT be
+    // present.
     expect(document.documentElement.getAttribute('data-density')).toBeNull();
     expect(document.documentElement.getAttribute('data-radius')).toBeNull();
+    expect(document.documentElement.getAttribute('data-sidebar')).toBeNull();
   });
 
   it('persists accent updates and reflects them in the DOM', () => {
@@ -39,15 +40,16 @@ describe('usePrefs', () => {
   it('rejects bogus values from localStorage and falls back to defaults', () => {
     localStorage.setItem(
       'rd:prefs',
-      JSON.stringify({ accent: 'pink', fontScale: 99, sidebarStyle: 'tight' }),
+      JSON.stringify({ accent: 'pink', fontScale: 99 }),
     );
     const { result } = renderHook(() => usePrefs());
     expect(result.current[0]).toEqual(DEFAULT_PREFS);
   });
 
-  it('ignores legacy density/radius keys from pre-P4 localStorage blobs', () => {
-    // A PR #30 browser would have these keys. After P4 they are ignored:
-    // valid prefs still come through, the dead keys don't leak into state.
+  it('ignores legacy density / radius / sidebarStyle keys from older blobs', () => {
+    // A PR #30 / P4 browser would have these keys. After P6-A they are
+    // ignored: valid prefs still come through, the dead keys don't leak
+    // into state.
     localStorage.setItem(
       'rd:prefs',
       JSON.stringify({
@@ -62,11 +64,11 @@ describe('usePrefs', () => {
     expect(result.current[0]).toEqual({
       accent: 'rose',
       fontScale: 1.05,
-      sidebarStyle: 'follow-theme',
     });
     // DOM gets only the attrs we still support.
     expect(document.documentElement.getAttribute('data-density')).toBeNull();
     expect(document.documentElement.getAttribute('data-radius')).toBeNull();
+    expect(document.documentElement.getAttribute('data-sidebar')).toBeNull();
   });
 
   it('reset() restores defaults', () => {
@@ -87,21 +89,21 @@ describe('usePrefs', () => {
 });
 
 describe('applyPrefsToDom', () => {
-  it('writes accent + sidebar + font-scale, clears legacy attrs', () => {
+  it('writes accent + font-scale, clears legacy attrs', () => {
     // Pre-seed the dead legacy attributes to verify they get stripped.
     document.documentElement.setAttribute('data-density', 'compact');
     document.documentElement.setAttribute('data-radius', '12');
+    document.documentElement.setAttribute('data-sidebar', 'follow-theme');
 
     applyPrefsToDom({
       accent: 'teal',
       fontScale: 1,
-      sidebarStyle: 'follow-theme',
     });
 
     expect(document.documentElement.getAttribute('data-accent')).toBe('teal');
-    expect(document.documentElement.getAttribute('data-sidebar')).toBe('follow-theme');
     // Legacy keys wiped.
     expect(document.documentElement.getAttribute('data-density')).toBeNull();
     expect(document.documentElement.getAttribute('data-radius')).toBeNull();
+    expect(document.documentElement.getAttribute('data-sidebar')).toBeNull();
   });
 });

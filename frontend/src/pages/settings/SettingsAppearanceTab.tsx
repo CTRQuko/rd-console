@@ -1,13 +1,12 @@
 /** Settings → Appearance tab (slim edition).
  *
- *  Four knobs — deliberately reduced from the original six shipped in
- *  PR #30. Density and corner-radius were never actually wired (the
- *  flat `rd-*` components ignore their vars), so they're gone.
+ *  Three knobs — sidebar style removed in P6-A per operator request:
+ *  the sidebar + topbar chrome is now always dark regardless of theme,
+ *  light mode only affects the content area.
  *
- *    - theme (light/dark)
- *    - accent colour (6 presets)
+ *    - theme (light/dark) — affects content only
+ *    - accent colour (6 presets) — also lights the active sidebar item
  *    - font scale (0.85 – 1.20)
- *    - sidebar style (always-dark / follow-theme)
  *
  *  Mutations are client-side (localStorage + DOM data-attributes). No
  *  "Save" button — each control is a direct preference with a live
@@ -18,11 +17,7 @@ import { Monitor, Users } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { StatCard } from '@/components/StatCard';
-import {
-  ACCENT_SWATCHES,
-  usePrefs,
-  type SidebarStyle,
-} from '@/store/prefsStore';
+import { ACCENT_SWATCHES, usePrefs } from '@/store/prefsStore';
 import { useTheme, type Theme } from '@/store/themeStore';
 
 export function SettingsAppearanceTab() {
@@ -119,25 +114,6 @@ export function SettingsAppearanceTab() {
               Reset
             </Button>
           </div>
-        </div>
-      </section>
-
-      <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Sidebar</h2>
-        <p className="rd-settings-section__sub">
-          The sidebar is dark by default for contrast. Choose to let it
-          follow the theme instead.
-        </p>
-        <div className="rd-settings-section__body">
-          <SegmentedControl<SidebarStyle>
-            value={prefs.sidebarStyle}
-            options={[
-              { value: 'always-dark', label: 'Always dark' },
-              { value: 'follow-theme', label: 'Follow theme' },
-            ]}
-            onChange={(v) => setPrefs({ sidebarStyle: v })}
-            ariaLabel="Sidebar style"
-          />
         </div>
       </section>
 

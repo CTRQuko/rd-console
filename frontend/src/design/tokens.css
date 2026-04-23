@@ -57,13 +57,25 @@
   --ring:            var(--blue-600);
   --row-hover:       var(--zinc-50);
 
-  /* Sidebar is always dark — does not flip with theme */
+  /* Sidebar is always dark — does not flip with theme. Active-item
+   * background follows --primary so the accent preference lights up the
+   * current nav entry. Hover / borders stay neutral-dark regardless. */
   --sidebar-bg:       var(--zinc-900);
   --sidebar-hover:    var(--zinc-800);
-  --sidebar-active:   var(--blue-600);
+  --sidebar-active:   var(--primary);
   --sidebar-fg:       var(--zinc-100);
   --sidebar-fg-muted: var(--zinc-400);
   --sidebar-border:   var(--zinc-800);
+
+  /* Topbar shares the sidebar's always-dark surface so switching to light
+   * theme only changes the CONTENT area — per operator request. Putting
+   * the tokens next to sidebar keeps the "chrome is dark" mental model
+   * obvious. */
+  --topbar-bg:        var(--zinc-900);
+  --topbar-border:    var(--zinc-800);
+  --topbar-fg:        var(--zinc-100);
+  --topbar-fg-muted:  var(--zinc-400);
+  --topbar-hover:     var(--zinc-800);
 
   /* Online/offline dots */
   --dot-online:  var(--green-500);
