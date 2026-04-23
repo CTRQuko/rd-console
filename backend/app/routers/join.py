@@ -9,10 +9,10 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel import select
 
-from ..config import get_settings
 from ..deps import SessionDep
 from ..models.join_token import JoinToken
 from ..security import utcnow_naive
+from ..services.server_info import get_server_info
 
 router = APIRouter(prefix="/api/join", tags=["public:join"])
 
@@ -47,11 +47,11 @@ def get_join_config(token: str, session: SessionDep) -> JoinConfig:
     session.add(row)
     session.commit()
 
-    s = get_settings()
+    info = get_server_info(session)
     return JoinConfig(
-        id_server=s.server_host,
-        relay_server=s.server_host,
-        api_server=s.panel_url,
-        public_key=s.hbbs_public_key,
+        id_server=info["server_host"],
+        relay_server=info["server_host"],
+        api_server=info["panel_url"],
+        public_key=info["hbbs_public_key"],
         label=row.label,
     )
