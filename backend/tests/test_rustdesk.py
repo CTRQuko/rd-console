@@ -176,7 +176,12 @@ def test_legacy_current_user_echoes_identity(client, make_user):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert r2.status_code == 200
-    assert r2.json()["name"] == "flutter"
+    body = r2.json()
+    assert body["name"] == "flutter"
+    # kingmo888 echoes the token + type back so the Flutter client can
+    # refresh its cached triple on every session probe. Regression guard.
+    assert body["access_token"] == token
+    assert body["type"] == "access_token"
 
 
 def test_legacy_current_user_requires_token(client):
@@ -189,7 +194,9 @@ def test_legacy_logout_returns_200(client):
     client's sign-out flow completes cleanly."""
     r = client.post("/api/logout", json={"id": "1779980041", "uuid": "x"})
     assert r.status_code == 200
-    assert r.json() == {"data": "", "error": ""}
+    # kingmo888's exact shape — the Flutter client branches on `code == 1`
+    # to decide whether to clear its local session, so anything else hangs.
+    assert r.json() == {"code": 1}
 
 
 def test_legacy_login_not_gated_by_client_secret(client, make_user, with_client_secret):
