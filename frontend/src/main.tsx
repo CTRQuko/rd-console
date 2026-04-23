@@ -23,14 +23,13 @@ import App from './App';
     const p = JSON.parse(raw);
     const html = document.documentElement;
     if (typeof p.accent === 'string') html.setAttribute('data-accent', p.accent);
-    if (typeof p.sidebarStyle === 'string')
-      html.setAttribute('data-sidebar', p.sidebarStyle);
     if (typeof p.fontScale === 'number') {
       html.style.setProperty('--rd-font-scale', String(p.fontScale));
     }
-    // density + radius were shipped in PR #30 but removed in P4. If an
-    // older blob still has them, skip silently — prefsStore's readInitial
-    // won't restore them.
+    // density / radius / sidebarStyle were shipped in earlier prefs
+    // versions but removed. Older localStorage blobs carry them;
+    // prefsStore.readInitial ignores them and applyPrefsToDom strips
+    // any dangling attributes. Skip silently here too.
   } catch {
     /* ignore — defaults apply */
   }

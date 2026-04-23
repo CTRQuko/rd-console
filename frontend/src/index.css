@@ -71,21 +71,8 @@
    * shadcn --primary here is intentionally left at the blue default —
    * no UI component reads it today, but keeping it stable avoids a
    * future mystery when someone does. Font-scale root rule likewise
-   * moved to tokens.css. Sidebar follow-theme override stays below
-   * because it references the shadcn HSL vars that live in THIS file. */
-
-  /* Sidebar in "follow-theme" mode under a light theme: swap the always-
-   * dark tokens for the theme surface so the sidebar reads like a card.
-   * In dark mode the default tokens already match the theme, so no override
-   * is needed. "always-dark" never matches this selector. */
-  html[data-sidebar="follow-theme"]:not(.dark) {
-    --sidebar-bg:     hsl(var(--card));
-    --sidebar-hover:  hsl(var(--muted));
-    --sidebar-active: hsl(var(--primary));
-    --sidebar-fg:     hsl(var(--foreground));
-    --sidebar-fg-muted: hsl(var(--muted-foreground));
-    --sidebar-border: hsl(var(--border));
-  }
+   * moved to tokens.css. Sidebar follow-theme override was removed in
+   * P6-A — sidebar + topbar are now always dark regardless of theme. */
 
   .dark {
     --background: 240 10% 3.9%;

@@ -17,20 +17,17 @@ export type Accent =
   | 'amber'
   | 'rose'
   | 'teal';
-export type SidebarStyle = 'always-dark' | 'follow-theme';
 
 export interface Prefs {
   accent: Accent;
   /** Multiplier applied to the root font-size via `--rd-font-scale`.
    *  Kept as a number because the slider is continuous; persisted as-is. */
   fontScale: number;
-  sidebarStyle: SidebarStyle;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   accent: 'blue',
   fontScale: 1,
-  sidebarStyle: 'always-dark',
 };
 
 export const ACCENT_SWATCHES: { value: Accent; hex: string; label: string }[] = [
@@ -47,9 +44,6 @@ const STORAGE_KEY = 'rd:prefs';
 function isAccent(v: unknown): v is Accent {
   return ['blue', 'violet', 'green', 'amber', 'rose', 'teal'].includes(v as string);
 }
-function isSidebar(v: unknown): v is SidebarStyle {
-  return ['always-dark', 'follow-theme'].includes(v as string);
-}
 
 /** Read from localStorage with per-field validation. Unknown values fall
  *  back to DEFAULT_PREFS so a stale payload from a previous version
@@ -60,9 +54,10 @@ function readInitial(): Prefs {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_PREFS;
     const parsed = JSON.parse(raw) as Partial<Prefs>;
-    // density + radius were shipped in PR #30 but removed in P4 (never
-    // actually worked for the flat rd-* components). Ignore if present
-    // in an older localStorage blob.
+    // density + radius were shipped in PR #30 but removed in P4.
+    // sidebarStyle was shipped in PR #30 but removed in P6-A (sidebar is
+    // now always dark by operator request). Ignore if present in an
+    // older localStorage blob.
     return {
       accent: isAccent(parsed.accent) ? parsed.accent : DEFAULT_PREFS.accent,
       fontScale:
@@ -71,9 +66,6 @@ function readInitial(): Prefs {
         parsed.fontScale <= 1.2
           ? parsed.fontScale
           : DEFAULT_PREFS.fontScale,
-      sidebarStyle: isSidebar(parsed.sidebarStyle)
-        ? parsed.sidebarStyle
-        : DEFAULT_PREFS.sidebarStyle,
     };
   } catch {
     return DEFAULT_PREFS;
@@ -84,13 +76,13 @@ export function applyPrefsToDom(prefs: Prefs): void {
   if (typeof document === 'undefined') return;
   const html = document.documentElement;
   html.setAttribute('data-accent', prefs.accent);
-  html.setAttribute('data-sidebar', prefs.sidebarStyle);
   html.style.setProperty('--rd-font-scale', String(prefs.fontScale));
-  // Clean up legacy attributes from pre-P4 prefs — if a user had PR #30
-  // stored, these would still sit on <html> and match the dead CSS rules
-  // (harmless but confusing in devtools).
+  // Clean up attributes from pre-v6 prefs — if a user had PR #30 /
+  // P4 stored, these would still sit on <html> and match dead CSS
+  // rules. Also data-sidebar from pre-P6-A.
   html.removeAttribute('data-density');
   html.removeAttribute('data-radius');
+  html.removeAttribute('data-sidebar');
 }
 
 /** Hook returning `[prefs, setPrefs, resetPrefs]`. Mutations are immediate
