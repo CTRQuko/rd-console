@@ -7,6 +7,7 @@ import { AddressBookPage } from '@/pages/AddressBookPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { DevicesPage } from '@/pages/DevicesPage';
 import { JoinPage } from '@/pages/JoinPage';
+import { JoinTokensPage } from '@/pages/JoinTokensPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -57,6 +58,7 @@ function HydrationGate() {
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/address-book" element={<AddressBookPage />} />
         <Route path="/tags" element={<TagsPage />} />
+        <Route path="/join-tokens" element={<JoinTokensPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/account" element={<AccountPage />} />
