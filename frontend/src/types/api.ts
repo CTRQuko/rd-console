@@ -235,3 +235,12 @@ export interface JoinTokenMeta {
 export interface JoinTokenCreated extends JoinTokenMeta {
   token: string;
 }
+
+/** Response shape of GET /api/join/:token — snake_case mirrors the backend. */
+export interface JoinConfig {
+  id_server: string;
+  relay_server: string;
+  api_server: string;
+  public_key: string;
+  label: string | null;
+}
