@@ -1,0 +1,81 @@
+# Frontend-only image — serves the built SPA behind nginx and points
+# every API call at a remote backend set at build time.
+#
+# Used by the mac-mini split-deploy: the LXC-side container runs with
+# RD_DISABLE_FRONTEND=true, and this image renders the UI against the
+# remote's API.
+#
+# Build arg VITE_API_BASE must be the public URL of the backend, e.g.
+#   docker build --build-arg VITE_API_BASE=https://rustdesk.casaredes.cc \
+#     -f Dockerfile.frontend -t rd-console-ui:latest .
+# Without it the bundle would default to same-origin, which defeats the
+# whole point of the split.
+
+# ═══════════════ STAGE 1 — build the SPA ══════════════════════════════════
+FROM node:20-alpine AS builder
+
+WORKDIR /build
+
+# Cache-friendly layer: copy manifests first so `npm ci` only re-runs when
+# dependencies actually change.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+# Copy the rest of the frontend source tree.
+COPY frontend/ ./
+
+ARG VITE_API_BASE
+ENV VITE_API_BASE=${VITE_API_BASE}
+
+# Vite bakes env vars prefixed with VITE_ into the client bundle. Running
+# `tsc -b && vite build` both for strict type safety and to match the
+# repo's `npm run build` contract.
+RUN npm run build
+
+# ═══════════════ STAGE 2 — serve with nginx ══════════════════════════════
+FROM nginx:alpine
+
+# SPA-friendly nginx config: assets served as-is, every other path falls
+# back to index.html so React Router can pick up deep links. Also set
+# long-cache on hashed assets and no-cache on index.html so a redeploy
+# flushes cleanly.
+COPY --from=builder /build/dist /usr/share/nginx/html
+
+RUN cat > /etc/nginx/conf.d/default.conf <<'NGINX'
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Long-cache hashed assets — Vite guarantees content-hashed filenames
+    # under /assets/, so immutable is safe.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # Fonts likewise (no hash but rarely change; short cache is fine).
+    location /fonts/ {
+        add_header Cache-Control "public, max-age=86400";
+        try_files $uri =404;
+    }
+
+    # The shell itself must never be cached — a stale index.html pointing
+    # at a missing bundle is the classic SPA-deploy footgun.
+    location = /index.html {
+        add_header Cache-Control "no-store, must-revalidate";
+    }
+
+    # Everything else: let React Router handle client-side routes by
+    # falling through to index.html.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+NGINX
+
+EXPOSE 8080
+
+CMD ["nginx", "-g", "daemon off;"]
