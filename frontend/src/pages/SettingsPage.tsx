@@ -13,6 +13,7 @@
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { Tabs } from '@/components/Tabs';
+import { SettingsAppearanceTab } from './settings/SettingsAppearanceTab';
 import { SettingsServerTab } from './settings/SettingsServerTab';
 import { SettingsSecurityTab } from './settings/SettingsSecurityTab';
 import { SettingsAdvancedTab } from './settings/SettingsAdvancedTab';
@@ -56,7 +57,7 @@ export function SettingsPage() {
         </Tabs.Panel>
 
         <Tabs.Panel value="appearance">
-          <ComingSoon pr="B2" label="Appearance" />
+          <SettingsAppearanceTab />
         </Tabs.Panel>
 
         <Tabs.Panel value="language">
