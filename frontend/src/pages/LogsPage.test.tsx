@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { LogsPage } from './LogsPage';
@@ -108,6 +108,45 @@ describe('<LogsPage />', () => {
 
     // Raw JSON is still available under a collapsible, for power users.
     expect(screen.getByText(/Raw JSON/i)).toBeInTheDocument();
+  });
+
+  it('surfaces bulk delete toolbar when rows are selected + gates on typing DELETE', async () => {
+    signInAsAdmin();
+    mockRoute('GET', rx('/admin/api/logs'), () => ({
+      status: 200,
+      data: { total: SEED.length, items: SEED } satisfies PaginatedLogs,
+    }));
+    const deleted: number[][] = [];
+    mockRoute('DELETE', rx('/admin/api/logs'), (cfg) => {
+      const body = JSON.parse(cfg.data ?? '{}');
+      deleted.push(body.ids);
+      return {
+        status: 200,
+        data: { affected: body.ids.length, skipped: [] },
+      };
+    });
+    wrap(<LogsPage />);
+
+    await screen.findByText(/555 666 777/);
+    // Select the first log row via its row checkbox.
+    const rowCheckboxes = screen.getAllByRole('checkbox', {
+      name: /^select log \d+$/i,
+    });
+    await userEvent.click(rowCheckboxes[0]);
+
+    const deleteBtn = await screen.findByRole('button', { name: /^delete 1$/i });
+    await userEvent.click(deleteBtn);
+
+    // Confirm dialog is gated by "Type DELETE".
+    const confirmInput = await screen.findByLabelText(/type .* to confirm/i);
+    const confirmSubmit = screen.getByRole('button', { name: /^delete$/i });
+    expect(confirmSubmit).toBeDisabled();
+
+    fireEvent.change(confirmInput, { target: { value: 'DELETE' } });
+    expect(confirmSubmit).not.toBeDisabled();
+    await userEvent.click(confirmSubmit);
+
+    await waitFor(() => expect(deleted[0]).toEqual([SEED[0].id]));
   });
 
   it('debounces the actor search into the query params', async () => {
