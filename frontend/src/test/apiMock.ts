@@ -61,14 +61,29 @@ axios.defaults.adapter = async (config) => {
     );
   }
   const out = route.handler(config);
-  return {
+  const response = {
     data: out.data,
     status: out.status,
-    statusText: 'OK',
+    statusText: out.status >= 200 && out.status < 300 ? 'OK' : 'Error',
     headers: out.headers ?? { 'content-type': 'application/json' },
     config,
     request: {},
   };
+  // Mirror axios v1 behaviour: if validateStatus rejects the response code,
+  // raise an AxiosError so consumers that branch on 4xx/5xx (JoinPage's
+  // 404/410, for example) exercise their catch path in tests.
+  const validate = config.validateStatus ?? ((s: number) => s >= 200 && s < 300);
+  if (!validate(out.status)) {
+    return Promise.reject(
+      Object.assign(new Error(`Request failed with status code ${out.status}`), {
+        isAxiosError: true,
+        config,
+        response,
+        code: 'ERR_BAD_REQUEST',
+      }),
+    );
+  }
+  return response;
 }
 
 /** URL helper for routes. Takes a fixed path and returns an anchored regex. */
