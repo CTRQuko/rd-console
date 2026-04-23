@@ -106,6 +106,10 @@ def update_user(user_id: int, body: UserUpdate, session: SessionDep, admin: Admi
         and user.is_active
     )
     if demoting or deactivating:
+        # The initial admin is a strict no-touch target — even if there are
+        # other admins around to satisfy the last-admin guard, we never let
+        # the bootstrap account be demoted or disabled.
+        _assert_not_initial_admin(user)
         remaining = _count_active_admins(session, exclude_user_id=user.id)
         if remaining == 0:
             raise HTTPException(
@@ -149,6 +153,26 @@ def _assert_not_last_admin_gone(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Cannot remove the last active admin",
+        )
+
+
+# The bootstrap admin is always the first user row inserted. Jandro asked
+# this row to be strictly untouchable — even if there are other admins
+# around to satisfy the last-admin guard, the initial account is the
+# "break glass" identity the operator relies on to recover. Protected
+# explicitly instead of via `is_bootstrap` flag so we don't need a
+# migration; id=1 is implicit-but-reliable for all installs of this
+# codebase (admin is created before any other row by `_bootstrap_admin`
+# in main.py).
+_INITIAL_ADMIN_ID = 1
+
+
+def _assert_not_initial_admin(user: User) -> None:
+    """Raise 400 if `user` is the bootstrap admin. Intentional hard stop."""
+    if user.id == _INITIAL_ADMIN_ID:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "The initial admin account cannot be removed or disabled.",
         )
 
 
@@ -214,6 +238,7 @@ def delete_or_disable_user(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     if user.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot remove yourself")
+    _assert_not_initial_admin(user)
 
     removes_admin = user.role == UserRole.ADMIN and user.is_active
     _assert_not_last_admin_gone(
@@ -291,6 +316,12 @@ def bulk_users(
             continue
         if user.id == admin.id:
             skip(uid, "self")
+            continue
+        # Initial admin is un-deletable and un-disableable. Allowed to be
+        # enabled (in case someone managed to set it inactive via a prior
+        # bug — the enable path is safe and self-healing).
+        if user.id == _INITIAL_ADMIN_ID and body.action in ("disable", "delete"):
+            skip(uid, "initial_admin")
             continue
 
         if body.action == "disable":

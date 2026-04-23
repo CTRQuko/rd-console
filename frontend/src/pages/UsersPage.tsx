@@ -113,8 +113,15 @@ export function UsersPage() {
       width: 56,
       cell: (r) => {
         const isSelf = me?.username === r.username;
+        // id=1 is the bootstrap admin — backend enforces it can't be
+        // disabled or deleted. Mirror that in the UI so the option is
+        // visibly unavailable, not just rejected after a click.
+        const isInitialAdmin = r.id === 1;
         return (
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div
+            style={{ display: 'flex', justifyContent: 'flex-end' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <DropdownMenu
               ariaLabel={`Actions for ${r.username}`}
               trigger={
@@ -141,7 +148,7 @@ export function UsersPage() {
                   id: 'disable',
                   label: r.is_active ? 'Disable…' : 'Re-enable',
                   destructive: r.is_active,
-                  disabled: isSelf && r.is_active,
+                  disabled: (isSelf && r.is_active) || (isInitialAdmin && r.is_active),
                   onSelect: () => {
                     if (!r.is_active) {
                       // Flip back on with a PATCH; no confirmation needed.
@@ -163,7 +170,7 @@ export function UsersPage() {
                   id: 'delete',
                   label: 'Delete permanently…',
                   destructive: true,
-                  disabled: isSelf,
+                  disabled: isSelf || isInitialAdmin,
                   onSelect: () => setConfirmHardDelete(r),
                 },
               ]}
@@ -249,6 +256,12 @@ export function UsersPage() {
               .filter((i) => !Number.isNaN(i)),
           )
         }
+        // Clicking the row itself (outside the checkbox + actions menu)
+        // opens the edit dialog — aligning with DevicesPage's drawer-on-
+        // click pattern so users stop wondering why the row is "dead".
+        // The actions menu cell stops propagation so menu clicks don't
+        // double-fire.
+        onRowClick={(r) => setEditing(r)}
       />
 
       <CreateUserDialog

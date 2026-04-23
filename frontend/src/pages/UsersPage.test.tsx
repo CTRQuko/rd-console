@@ -243,4 +243,38 @@ describe('<UsersPage />', () => {
     const del = await screen.findByRole('menuitem', { name: /delete permanently/i });
     expect(del).toBeDisabled();
   });
+
+  it('disables Disable and Delete for the initial admin (id=1) even when viewed by a different admin', async () => {
+    signInAsAdmin('admin2');  // Not id=1 — the current user is a peer admin.
+    installHappyPath();
+    wrap(<UsersPage />);
+    await screen.findByText('admin');
+
+    // admin row (id=1 in SEED).
+    const row = screen.getByText('admin').closest('tr')!;
+    await userEvent.click(within(row).getByRole('button', { name: /actions for admin/i }));
+
+    const disable = await screen.findByRole('menuitem', { name: /^disable/i });
+    const del = screen.getByRole('menuitem', { name: /delete permanently/i });
+    // Both action items are disabled because the row is the initial admin,
+    // regardless of who's looking.
+    expect(disable).toBeDisabled();
+    expect(del).toBeDisabled();
+  });
+
+  it('opens the Edit dialog when clicking the row body (outside the menu)', async () => {
+    signInAsAdmin();
+    installHappyPath();
+    wrap(<UsersPage />);
+    await screen.findByText('alice');
+
+    // Click on a non-menu cell in the row — alice's username cell.
+    const cell = screen.getByText('alice');
+    await userEvent.click(cell);
+
+    // EditUserDialog opens for alice.
+    expect(
+      await screen.findByRole('dialog', { name: /edit alice/i }),
+    ).toBeInTheDocument();
+  });
 });
