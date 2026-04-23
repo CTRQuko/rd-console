@@ -12,6 +12,7 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/devices':  'Devices',
   '/address-book': 'Address book',
   '/tags':     'Tags',
+  '/join-tokens': 'Join tokens',
   '/logs':     'Audit logs',
   '/settings': 'Settings',
   '/account':  'Account',

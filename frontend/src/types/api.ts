@@ -211,3 +211,27 @@ export interface ApiTokenCreated {
   token: string;
   metadata: ApiTokenMeta;
 }
+
+// ─── Join tokens (PR #18) ───────────────────────────────────────────────────
+
+export type JoinTokenStatus = 'active' | 'used' | 'expired' | 'revoked';
+
+/** Join-token metadata — never contains the plaintext secret after create. */
+export interface JoinTokenMeta {
+  id: number;
+  /** First 8 chars of the plaintext — safe to render. */
+  token_prefix: string;
+  label: string | null;
+  created_by_user_id: number | null;
+  created_at: string;
+  expires_at: string | null;
+  used_at: string | null;
+  revoked: boolean;
+  status: JoinTokenStatus;
+}
+
+/** One-shot create response — `token` is the plaintext, only available here.
+ *  Surface it to the admin immediately; losing it means revoke+remint. */
+export interface JoinTokenCreated extends JoinTokenMeta {
+  token: string;
+}
