@@ -15,12 +15,17 @@
     "sign_in": "Sign in",
     "sign_out": "Sign out",
     "open": "Open",
-    "search": "Search"
+    "search": "Search",
+    "download": "Download",
+    "export": "Export"
   },
   "states": {
     "loading": "Loading…",
     "saving": "Saving…",
     "deleting": "Deleting…",
+    "updating": "Updating…",
+    "exporting": "Exporting…",
+    "signingIn": "Signing in…",
     "active": "Active",
     "disabled": "Disabled",
     "revoked": "Revoked",
@@ -28,11 +33,20 @@
     "used": "Used",
     "online": "Online",
     "offline": "Offline",
-    "never": "Never"
+    "never": "Never",
+    "unknown": "unknown"
   },
   "toasts": {
     "saved": "Saved.",
     "error": "Something went wrong.",
-    "copied": "Copied to clipboard."
+    "copied": "Copied to clipboard.",
+    "passwordChanged": "Password changed.",
+    "exportDownloaded": "Export downloaded."
+  },
+  "validation": {
+    "passwordMismatch": "New password and confirmation do not match.",
+    "passwordTooShort": "New password must be at least 8 characters.",
+    "missingCredentials": "Missing credentials",
+    "signInFailed": "Sign-in failed"
   }
 }

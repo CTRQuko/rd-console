@@ -13,6 +13,7 @@
  *  preview as the confirmation signal.
  */
 
+import { useTranslation } from 'react-i18next';
 import { Monitor, Users } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
@@ -21,40 +22,40 @@ import { ACCENT_SWATCHES, usePrefs } from '@/store/prefsStore';
 import { useTheme, type Theme } from '@/store/themeStore';
 
 export function SettingsAppearanceTab() {
+  const { t } = useTranslation('settings');
   const [prefs, setPrefs, reset] = usePrefs();
   const [theme, setTheme] = useTheme();
 
   return (
     <>
       <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Theme</h2>
+        <h2 className="rd-settings-section__title">{t('appearance.theme')}</h2>
         <p className="rd-settings-section__sub">
-          Switch between light and dark. The saved value follows this browser
-          — your server's other admins have their own preference.
+          {t('appearance.themeDescription')}
         </p>
         <div className="rd-settings-section__body">
           <SegmentedControl<Theme>
             value={theme}
             options={[
-              { value: 'light', label: 'Light' },
-              { value: 'dark', label: 'Dark' },
+              { value: 'light', label: t('appearance.themeLight') },
+              { value: 'dark', label: t('appearance.themeDark') },
             ]}
             onChange={setTheme}
-            ariaLabel="Theme"
+            ariaLabel={t('appearance.theme')}
           />
         </div>
       </section>
 
       <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Accent colour</h2>
+        <h2 className="rd-settings-section__title">{t('appearance.accent')}</h2>
         <p className="rd-settings-section__sub">
-          Applied to primary buttons, links, and focus rings across the app.
+          {t('appearance.accentDescription')}
         </p>
         <div
           className="rd-settings-section__body"
           style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}
           role="radiogroup"
-          aria-label="Accent colour"
+          aria-label={t('appearance.accent')}
         >
           {ACCENT_SWATCHES.map((sw) => {
             const active = prefs.accent === sw.value;
@@ -84,9 +85,9 @@ export function SettingsAppearanceTab() {
       </section>
 
       <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Font size</h2>
+        <h2 className="rd-settings-section__title">{t('appearance.fontSize')}</h2>
         <p className="rd-settings-section__sub">
-          Scale the entire UI. 100% is the default.
+          {t('appearance.fontSizeDescription')}
         </p>
         <div className="rd-settings-section__body">
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -99,7 +100,7 @@ export function SettingsAppearanceTab() {
               onChange={(e) =>
                 setPrefs({ fontScale: Number(e.target.value) / 100 })
               }
-              aria-label="Font size"
+              aria-label={t('appearance.fontSize')}
               style={{ flex: 1, maxWidth: 280 }}
             />
             <span className="rd-mono" style={{ minWidth: 56, textAlign: 'right' }}>
@@ -111,16 +112,16 @@ export function SettingsAppearanceTab() {
               onClick={() => setPrefs({ fontScale: 1 })}
               disabled={prefs.fontScale === 1}
             >
-              Reset
+              {t('common:actions.reset')}
             </Button>
           </div>
         </div>
       </section>
 
       <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Preview</h2>
+        <h2 className="rd-settings-section__title">{t('appearance.preview')}</h2>
         <p className="rd-settings-section__sub">
-          Reacts in real time as you change the settings above.
+          {t('appearance.previewDescription')}
         </p>
         <div className="rd-settings-section__body" style={{ gap: 14 }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -130,10 +131,10 @@ export function SettingsAppearanceTab() {
             <Button variant="ghost">Ghost</Button>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Badge variant="active" dot>Active</Badge>
+            <Badge variant="active" dot>{t('common:states.active')}</Badge>
             <Badge variant="info">Info</Badge>
             <Badge variant="warn">Warning</Badge>
-            <Badge variant="disabled">Disabled</Badge>
+            <Badge variant="disabled">{t('common:states.disabled')}</Badge>
           </div>
           <div
             style={{
@@ -142,13 +143,23 @@ export function SettingsAppearanceTab() {
               gap: 12,
             }}
           >
-            <StatCard icon={Monitor} iconTone="blue" label="Online devices" value="12" />
-            <StatCard icon={Users} iconTone="violet" label="Sessions today" value="48" />
+            <StatCard
+              icon={Monitor}
+              iconTone="blue"
+              label={t('appearance.previewStatOnline')}
+              value="12"
+            />
+            <StatCard
+              icon={Users}
+              iconTone="violet"
+              label={t('appearance.previewStatSessions')}
+              value="48"
+            />
           </div>
         </div>
         <div className="rd-settings-section__foot">
           <Button variant="secondary" onClick={reset}>
-            Reset to defaults
+            {t('appearance.resetDefaults')}
           </Button>
         </div>
       </section>

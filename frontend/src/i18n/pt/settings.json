@@ -45,7 +45,15 @@
     "confirmNewPassword": "Confirmar nova palavra-passe",
     "updatePassword": "Atualizar palavra-passe",
     "guardrails": "Limites de segurança",
-    "guardrailsDescription": "Resumo só de leitura dos limites de autenticação e prevenção de abuso ativos. Alterá-los requer reimplementar com as variáveis de env correspondentes."
+    "guardrailsDescription": "Resumo só de leitura dos limites de autenticação e prevenção de abuso ativos. Alterá-los requer reimplementar com as variáveis de env correspondentes.",
+    "guardrailsLoginLabel": "Limite de login:",
+    "guardrailsLoginValue": "10 pedidos / minuto por IP (HTTP 429 após o limite).",
+    "guardrailsJoinLabel": "Limite de resgate de convite:",
+    "guardrailsJoinValue": "30 pedidos / minuto por IP.",
+    "guardrailsJwtLabel": "Sessão do painel (JWT):",
+    "guardrailsJwtValue": "24 horas, configurável com",
+    "guardrailsHashLabel": "Hashing da palavra-passe:",
+    "guardrailsHashValue": "Argon2id, rehash automático no login quando os parâmetros mudam."
   },
   "advanced": {
     "exportTitle": "Exportar configuração",
@@ -66,6 +74,8 @@
     "fontSizeDescription": "Escala toda a interface. 100% é o valor por omissão.",
     "preview": "Pré-visualização",
     "previewDescription": "Reage em tempo real quando altera as definições acima.",
+    "previewStatOnline": "Dispositivos online",
+    "previewStatSessions": "Sessões hoje",
     "resetDefaults": "Repor valores por omissão"
   }
 }

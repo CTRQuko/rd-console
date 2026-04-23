@@ -45,7 +45,15 @@
     "confirmNewPassword": "Confirmer le nouveau mot de passe",
     "updatePassword": "Mettre à jour le mot de passe",
     "guardrails": "Garde-fous",
-    "guardrailsDescription": "Résumé en lecture seule des limites d'authentification et de prévention des abus en vigueur. Les modifier nécessite un redéploiement avec les variables d'env correspondantes."
+    "guardrailsDescription": "Résumé en lecture seule des limites d'authentification et de prévention des abus en vigueur. Les modifier nécessite un redéploiement avec les variables d'env correspondantes.",
+    "guardrailsLoginLabel": "Limite de connexion :",
+    "guardrailsLoginValue": "10 requêtes / minute par IP (HTTP 429 au-delà du seuil).",
+    "guardrailsJoinLabel": "Limite de validation d'invitation :",
+    "guardrailsJoinValue": "30 requêtes / minute par IP.",
+    "guardrailsJwtLabel": "Session du panneau (JWT) :",
+    "guardrailsJwtValue": "24 heures, configurable avec",
+    "guardrailsHashLabel": "Hachage du mot de passe :",
+    "guardrailsHashValue": "Argon2id, rehashage automatique à la connexion lorsque les paramètres changent."
   },
   "advanced": {
     "exportTitle": "Exporter la configuration",
@@ -66,6 +74,8 @@
     "fontSizeDescription": "Mettre à l'échelle toute l'interface. 100 % est la valeur par défaut.",
     "preview": "Aperçu",
     "previewDescription": "Réagit en temps réel lorsque vous modifiez les paramètres ci-dessus.",
+    "previewStatOnline": "Appareils en ligne",
+    "previewStatSessions": "Sessions aujourd'hui",
     "resetDefaults": "Réinitialiser aux valeurs par défaut"
   }
 }

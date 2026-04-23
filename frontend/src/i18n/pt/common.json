@@ -15,12 +15,17 @@
     "sign_in": "Iniciar sessão",
     "sign_out": "Terminar sessão",
     "open": "Abrir",
-    "search": "Pesquisar"
+    "search": "Pesquisar",
+    "download": "Transferir",
+    "export": "Exportar"
   },
   "states": {
     "loading": "A carregar…",
     "saving": "A guardar…",
     "deleting": "A eliminar…",
+    "updating": "A atualizar…",
+    "exporting": "A exportar…",
+    "signingIn": "A iniciar sessão…",
     "active": "Ativo",
     "disabled": "Desativado",
     "revoked": "Revogado",
@@ -28,11 +33,20 @@
     "used": "Utilizado",
     "online": "Online",
     "offline": "Offline",
-    "never": "Nunca"
+    "never": "Nunca",
+    "unknown": "desconhecido"
   },
   "toasts": {
     "saved": "Guardado.",
     "error": "Algo correu mal.",
-    "copied": "Copiado para a área de transferência."
+    "copied": "Copiado para a área de transferência.",
+    "passwordChanged": "Palavra-passe alterada.",
+    "exportDownloaded": "Exportação transferida."
+  },
+  "validation": {
+    "passwordMismatch": "A nova palavra-passe e a confirmação não coincidem.",
+    "passwordTooShort": "A nova palavra-passe deve ter pelo menos 8 caracteres.",
+    "missingCredentials": "Credenciais em falta",
+    "signInFailed": "Falha ao iniciar sessão"
   }
 }
