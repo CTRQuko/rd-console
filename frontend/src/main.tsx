@@ -23,15 +23,16 @@ import App from './App';
     const p = JSON.parse(raw);
     const html = document.documentElement;
     if (typeof p.accent === 'string') html.setAttribute('data-accent', p.accent);
-    if (typeof p.density === 'string') html.setAttribute('data-density', p.density);
-    if (typeof p.radius === 'string') html.setAttribute('data-radius', p.radius);
     if (typeof p.sidebarStyle === 'string')
       html.setAttribute('data-sidebar', p.sidebarStyle);
     if (typeof p.fontScale === 'number') {
       html.style.setProperty('--rd-font-scale', String(p.fontScale));
     }
+    // density + radius were shipped in PR #30 but removed in P4. If an
+    // older blob still has them, skip silently — prefsStore's readInitial
+    // won't restore them.
   } catch {
-    /* ignore — defaults from index.css apply */
+    /* ignore — defaults apply */
   }
 })();
 

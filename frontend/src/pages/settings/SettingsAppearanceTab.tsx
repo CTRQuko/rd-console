@@ -1,17 +1,17 @@
-/** Settings → Appearance tab.
+/** Settings → Appearance tab (slim edition).
  *
- *  Surfaces the six knobs covered by `prefsStore`:
- *    - theme (light/dark) — owned by themeStore, toggled here too
- *    - accent (6 presets)
- *    - density (compact/normal/comfortable)
- *    - radius (0 / 6 / 12)
+ *  Four knobs — deliberately reduced from the original six shipped in
+ *  PR #30. Density and corner-radius were never actually wired (the
+ *  flat `rd-*` components ignore their vars), so they're gone.
+ *
+ *    - theme (light/dark)
+ *    - accent colour (6 presets)
  *    - font scale (0.85 – 1.20)
  *    - sidebar style (always-dark / follow-theme)
  *
- *  All mutations are client-side (localStorage + DOM data-attributes).
- *  Saved on change — there's no "Save" button because every control
- *  is a direct preference, not a pending edit, and the live preview
- *  gives the confirmation signal.
+ *  Mutations are client-side (localStorage + DOM data-attributes). No
+ *  "Save" button — each control is a direct preference with a live
+ *  preview as the confirmation signal.
  */
 
 import { Monitor, Users } from 'lucide-react';
@@ -21,8 +21,6 @@ import { StatCard } from '@/components/StatCard';
 import {
   ACCENT_SWATCHES,
   usePrefs,
-  type Density,
-  type RadiusPreset,
   type SidebarStyle,
 } from '@/store/prefsStore';
 import { useTheme, type Theme } from '@/store/themeStore';
@@ -87,46 +85,6 @@ export function SettingsAppearanceTab() {
               />
             );
           })}
-        </div>
-      </section>
-
-      <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Density</h2>
-        <p className="rd-settings-section__sub">
-          Controls row height and spacing. Useful if you run the panel on a
-          laptop screen (Compact) or a tablet/touch device (Comfortable).
-        </p>
-        <div className="rd-settings-section__body">
-          <SegmentedControl<Density>
-            value={prefs.density}
-            options={[
-              { value: 'compact', label: 'Compact' },
-              { value: 'normal', label: 'Normal' },
-              { value: 'comfortable', label: 'Comfortable' },
-            ]}
-            onChange={(v) => setPrefs({ density: v })}
-            ariaLabel="Density"
-          />
-        </div>
-      </section>
-
-      <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Corner radius</h2>
-        <p className="rd-settings-section__sub">
-          Sharper corners (0) feel more "admin-tool"; rounded (12) feels
-          closer to consumer apps. Pick what doesn&apos;t fight your eye.
-        </p>
-        <div className="rd-settings-section__body">
-          <SegmentedControl<RadiusPreset>
-            value={prefs.radius}
-            options={[
-              { value: '0', label: 'Square' },
-              { value: '6', label: 'Soft (6px)' },
-              { value: '12', label: 'Round (12px)' },
-            ]}
-            onChange={(v) => setPrefs({ radius: v })}
-            ariaLabel="Corner radius"
-          />
         </div>
       </section>
 
@@ -223,7 +181,11 @@ export function SettingsAppearanceTab() {
 }
 
 /** Three-way-ish segmented control. Kept local — only appearance uses it.
- *  If another page picks this up, promote to `components/SegmentedControl`. */
+ *  Fix vs PR #30: inactive color was `var(--fg-muted)` which in light mode
+ *  on a white card approaches invisible. Switched to `var(--fg)` with a
+ *  reduced opacity so the label is readable in both themes, and the active
+ *  state uses primary + plain white foreground (no shadcn HSL that was
+ *  undefined in light). */
 function SegmentedControl<T extends string>({
   value,
   options,
@@ -241,9 +203,9 @@ function SegmentedControl<T extends string>({
       aria-label={ariaLabel}
       style={{
         display: 'inline-flex',
-        background: 'var(--card)',
+        background: 'var(--bg-subtle)',
         border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
+        borderRadius: 'var(--radius-md)',
         padding: 2,
         gap: 2,
       }}
@@ -258,15 +220,16 @@ function SegmentedControl<T extends string>({
             aria-checked={active}
             onClick={() => onChange(opt.value)}
             style={{
-              background: active ? 'hsl(var(--primary))' : 'transparent',
-              color: active ? 'hsl(var(--primary-foreground))' : 'var(--fg-muted)',
+              background: active ? 'var(--primary)' : 'transparent',
+              color: active ? '#ffffff' : 'var(--fg)',
+              opacity: active ? 1 : 0.75,
               border: 'none',
               padding: '6px 14px',
-              borderRadius: 'calc(var(--radius) - 2px)',
-              fontSize: 13,
+              borderRadius: 'calc(var(--radius-md) - 2px)',
+              fontSize: '0.929rem',
               fontWeight: 500,
               cursor: 'pointer',
-              transition: 'background 120ms, color 120ms',
+              transition: 'background 120ms, color 120ms, opacity 120ms',
             }}
           >
             {opt.label}
