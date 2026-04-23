@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     # ─── Environment ───
     environment: Literal["dev", "prod"] = "dev"
 
+    # When true, `_mount_frontend()` skips the SPA serving entirely — useful
+    # when the same backend image ships in two roles: "API + panel" (default)
+    # and "API only" (this instance's frontend is served from elsewhere, e.g.
+    # a staging nginx on a different host). With the frontend off, every
+    # non-API GET returns a 404 from FastAPI instead of a maybe-stale SPA
+    # shell — no risk of a misconfigured reverse proxy accidentally routing
+    # an unrelated hostname into a rd-console login page.
+    disable_frontend: bool = False
+
     # ─── RustDesk server (shown to clients on the /join page) ───
     server_host: str = Field(default="", description="Hostname of the RustDesk hbbs/hbbr server")
     panel_url: str = Field(default="", description="Public URL of this panel")

@@ -108,6 +108,9 @@ def _find_frontend_dist() -> Path | None:
 
 
 def _mount_frontend(app: FastAPI) -> None:
+    if get_settings().disable_frontend:
+        log.info("RD_DISABLE_FRONTEND=true — serving API only, no SPA mounted")
+        return
     dist = _find_frontend_dist()
     if dist is None:
         log.info("No frontend build found — serving API only")
