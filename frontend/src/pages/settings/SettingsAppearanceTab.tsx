@@ -21,7 +21,6 @@ import { StatCard } from '@/components/StatCard';
 import {
   ACCENT_SWATCHES,
   usePrefs,
-  type Accent,
   type Density,
   type RadiusPreset,
   type SidebarStyle,
