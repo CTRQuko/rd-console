@@ -16,17 +16,21 @@ import { PageHeader } from '@/components/PageHeader';
 import { Tabs } from '@/components/Tabs';
 import { SettingsAppearanceTab } from './settings/SettingsAppearanceTab';
 import { SettingsApiTokensTab } from './settings/SettingsApiTokensTab';
+import { SettingsGeneralTab } from './settings/SettingsGeneralTab';
 import { SettingsServerTab } from './settings/SettingsServerTab';
 import { SettingsSecurityTab } from './settings/SettingsSecurityTab';
 import { SettingsAdvancedTab } from './settings/SettingsAdvancedTab';
 import { SettingsUsersTab } from './settings/SettingsUsersTab';
 
+// v7: Language was removed as a standalone tab — its selector moved
+// inside the new "General" tab. Bookmarks to `?tab=language` are
+// redirected to `?tab=general` via isValidTab's fallback.
 const VALID_TABS = [
   'server',
   'users',
   'api-tokens',
+  'general',
   'appearance',
-  'language',
   'security',
   'advanced',
 ] as const;
@@ -39,7 +43,10 @@ function isValidTab(v: string | null): v is TabValue {
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
   const raw = params.get('tab');
-  const active: TabValue = isValidTab(raw) ? raw : 'server';
+  // Legacy `?tab=language` bookmarks end up on General, where the
+  // selector now lives.
+  const normalised = raw === 'language' ? 'general' : raw;
+  const active: TabValue = isValidTab(normalised) ? normalised : 'server';
 
   const setTab = (next: string) => {
     // `replace: true` — each tab switch is not a history entry; the Back
@@ -59,8 +66,8 @@ export function SettingsPage() {
           <Tabs.Trigger value="server">Server</Tabs.Trigger>
           <Tabs.Trigger value="users">Users</Tabs.Trigger>
           <Tabs.Trigger value="api-tokens">API tokens</Tabs.Trigger>
+          <Tabs.Trigger value="general">General</Tabs.Trigger>
           <Tabs.Trigger value="appearance">Appearance</Tabs.Trigger>
-          <Tabs.Trigger value="language">Language</Tabs.Trigger>
           <Tabs.Trigger value="security">Security</Tabs.Trigger>
           <Tabs.Trigger value="advanced">Advanced</Tabs.Trigger>
         </Tabs.List>
@@ -77,12 +84,12 @@ export function SettingsPage() {
           <SettingsApiTokensTab />
         </Tabs.Panel>
 
-        <Tabs.Panel value="appearance">
-          <SettingsAppearanceTab />
+        <Tabs.Panel value="general">
+          <SettingsGeneralTab />
         </Tabs.Panel>
 
-        <Tabs.Panel value="language">
-          <ComingSoon pr="v7" label="Language" />
+        <Tabs.Panel value="appearance">
+          <SettingsAppearanceTab />
         </Tabs.Panel>
 
         <Tabs.Panel value="security">
@@ -94,20 +101,6 @@ export function SettingsPage() {
         </Tabs.Panel>
       </Tabs>
     </>
-  );
-}
-
-/** Placeholder for tabs shipped in later PRs. Marks intent without
- *  blocking the shell behind them — operators can bookmark `?tab=language`
- *  today and see it wired in tomorrow. */
-function ComingSoon({ pr, label }: { pr: string; label: string }) {
-  return (
-    <section className="rd-settings-section">
-      <h2 className="rd-settings-section__title">{label}</h2>
-      <p className="rd-settings-section__sub">
-        Coming in {pr}.
-      </p>
-    </section>
   );
 }
 

@@ -32,6 +32,7 @@ import { TagChip } from '@/components/TagChip';
 import { TagInput } from '@/components/TagInput';
 import { Toast, type ToastValue } from '@/components/Toast';
 import { useDeviceLogs } from '@/hooks/useLogs';
+import { useDateTime } from '@/lib/formatters';
 import {
   useDevices,
   useDisconnectDevice,
@@ -638,6 +639,7 @@ function DeviceDrawer({
   onCreateTag,
 }: DeviceDrawerProps) {
   const { data: logs } = useDeviceLogs(device?.id ?? null, 10);
+  const { fmt } = useDateTime();
 
   if (!device) return null;
 
@@ -694,7 +696,7 @@ function DeviceDrawer({
         <dt>Last seen</dt>
         <dd>{relativeLastSeen(device.last_seen_at)}</dd>
         <dt>First seen</dt>
-        <dd className="mono">{device.created_at.slice(0, 19).replace('T', ' ')}</dd>
+        <dd className="mono">{fmt(device.created_at)}</dd>
         <dt>Owner</dt>
         <dd>
           {ownerName ?? (
@@ -770,7 +772,7 @@ function DeviceDrawer({
                 }}
               >
                 <span className="rd-mono" style={{ color: 'var(--fg-muted)', minWidth: 120 }}>
-                  {r.created_at.slice(0, 19).replace('T', ' ')}
+                  {fmt(r.created_at)}
                 </span>
                 <Badge
                   variant={

@@ -33,6 +33,7 @@ import {
   useUsers,
 } from '@/hooks/useUsers';
 import { apiErrorMessage } from '@/lib/api';
+import { useDateTime } from '@/lib/formatters';
 import { useAuthStore } from '@/store/authStore';
 import type { ApiUser, ApiUserRole } from '@/types/api';
 
@@ -45,6 +46,7 @@ export function SettingsUsersTab() {
   const disable = useDisableUser();
   const hardDelete = useDeleteUser();
   const bulk = useBulkUsers();
+  const { fmtDateOnly } = useDateTime();
   const me = useAuthStore((s) => s.user);
 
   const [q, setQ] = useState('');
@@ -104,7 +106,7 @@ export function SettingsUsersTab() {
       header: 'Created',
       cell: (r) => (
         <span style={{ color: 'var(--fg-muted)' }} className="rd-mono">
-          {r.created_at.slice(0, 10)}
+          {fmtDateOnly(r.created_at)}
         </span>
       ),
     },

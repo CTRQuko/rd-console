@@ -28,6 +28,7 @@ import {
   useRevokeJoinToken,
 } from '@/hooks/useJoinTokens';
 import { apiErrorMessage } from '@/lib/api';
+import { useDateTime } from '@/lib/formatters';
 import type {
   JoinTokenCreated,
   JoinTokenMeta,
@@ -54,8 +55,7 @@ const EXPIRY_PRESETS: { label: string; minutes: number | null }[] = [
   { label: 'Never', minutes: null },
 ];
 
-const fmtDate = (s: string | null) =>
-  s ? new Date(s).toISOString().replace('T', ' ').slice(0, 16) : '—';
+// `fmtDate` lives in `lib/formatters` now — see `useDateTime()` below.
 
 export function JoinTokensPage() {
   // Whether to include revoked tokens in the list. Default OFF per
@@ -67,6 +67,7 @@ export function JoinTokensPage() {
   const revoke = useRevokeJoinToken();
   const hardDelete = useHardDeleteJoinToken();
   const bulk = useBulkJoinTokens();
+  const { fmt: fmtDate } = useDateTime();
 
   const [openCreate, setOpenCreate] = useState(false);
   const [pendingLabel, setPendingLabel] = useState('');
@@ -475,7 +476,7 @@ export function JoinTokensPage() {
               className="rd-form__hint"
               style={{ marginTop: 10, color: 'var(--fg-muted)' }}
             >
-              Invite expires {minted.expires_at ? `on ${fmtDate(minted.expires_at)} UTC` : 'never'}.
+              Invite expires {minted.expires_at ? `on ${fmtDate(minted.expires_at)}` : 'never'}.
             </div>
           </div>
         ) : null}

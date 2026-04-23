@@ -17,6 +17,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Dialog } from '@/components/Dialog';
 import { PageHeader } from '@/components/PageHeader';
+import { useDateTime } from '@/lib/formatters';
 import { TagChip } from '@/components/TagChip';
 import { Toast, type ToastValue } from '@/components/Toast';
 import {
@@ -71,6 +72,7 @@ type TableRow = AbPeer & { id: RowId };
 
 export function AddressBookPage() {
   const { data: snap, isLoading } = useAddressBook();
+  const { fmt } = useDateTime();
   const save = useSaveAddressBook();
 
   const [editing, setEditing] = useState<AbPeer | null>(null);
@@ -224,7 +226,7 @@ export function AddressBookPage() {
         title="Address book"
         subtitle={
           snap?.updated_at
-            ? `Your personal list of peers — aliases, tags, favourites. Synced with your RustDesk client via /api/ab. Independent of Devices (which shows every client the server has seen). Last update: ${new Date(snap.updated_at).toISOString().slice(0, 16).replace('T', ' ')}.`
+            ? `Your personal list of peers — aliases, tags, favourites. Synced with your RustDesk client via /api/ab. Independent of Devices (which shows every client the server has seen). Last update: ${fmt(snap.updated_at)}.`
             : 'Your personal list of peers — aliases, tags, favourites. Synced with your RustDesk client via /api/ab. Independent of Devices (which shows every client the server has seen). Add peers here and they appear on every device.'
         }
         action={
