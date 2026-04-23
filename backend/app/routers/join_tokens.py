@@ -33,16 +33,17 @@ router = APIRouter(prefix="/admin/api/join-tokens", tags=["admin:join-tokens"])
 
 
 class JoinTokenOut(BaseModel):
-    """Join-token row as the admin UI sees it.
+    """Join-token metadata — list/read view.
 
-    Unlike PATs we return the plaintext ``token`` here: admins need to
-    copy it into the onboarding URL they share with the end user, and
-    it's already single-use + short-lived so the leak radius is tiny.
-    Anyone who sees the admin API sees /api/join/:token traffic anyway.
+    Matches the PAT redaction pattern: ``token_prefix`` for identification
+    in lists, never the full plaintext. Admins get the full token back
+    ONCE on create (see :class:`JoinTokenCreateOut`); if they lose it,
+    they revoke and mint a new one. Keeps the admin-side leak radius
+    consistent with /api/auth/tokens.
     """
 
     id: int
-    token: str
+    token_prefix: str  # first 8 chars — enough to identify, not to redeem
     label: str | None
     created_by_user_id: int | None
     created_at: datetime
@@ -51,6 +52,13 @@ class JoinTokenOut(BaseModel):
     revoked: bool
     # Derived for the UI so the list view doesn't re-compute it client-side.
     status: str  # "active" | "used" | "expired" | "revoked"
+
+
+class JoinTokenCreateOut(JoinTokenOut):
+    """Returned ONCE on create. The plaintext ``token`` field is never
+    available again — lose it, revoke and mint a new one."""
+
+    token: str
 
 
 class JoinTokenCreate(BaseModel):
@@ -80,7 +88,28 @@ def _status(t: JoinToken, now: datetime) -> str:
 def _to_out(t: JoinToken, now: datetime) -> JoinTokenOut:
     return JoinTokenOut(
         id=t.id,  # type: ignore[arg-type]
+        token_prefix=t.token[:8],
+        label=t.label,
+        created_by_user_id=t.created_by_user_id,
+        created_at=t.created_at,
+        expires_at=t.expires_at,
+        used_at=t.used_at,
+        revoked=t.revoked,
+        status=_status(t, now),
+    )
+
+
+def _to_create_out(t: JoinToken, now: datetime) -> JoinTokenCreateOut:
+    """Create-time response — includes the plaintext ``token`` ONCE.
+
+    Mirrors the PAT pattern in ``routers/api_tokens.py``: full secret is
+    returned exactly once on create, never again on list/read. If the
+    admin loses it, they revoke and mint a new one.
+    """
+    return JoinTokenCreateOut(
+        id=t.id,  # type: ignore[arg-type]
         token=t.token,
+        token_prefix=t.token[:8],
         label=t.label,
         created_by_user_id=t.created_by_user_id,
         created_at=t.created_at,
@@ -94,12 +123,12 @@ def _to_out(t: JoinToken, now: datetime) -> JoinTokenOut:
 # ─── Routes ─────────────────────────────────────────────────────────────────
 
 
-@router.post("", response_model=JoinTokenOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=JoinTokenCreateOut, status_code=status.HTTP_201_CREATED)
 def create_join_token(
     body: JoinTokenCreate,
     admin: AdminUser,
     session: SessionDep,
-) -> JoinTokenOut:
+) -> JoinTokenCreateOut:
     now = utcnow_naive()
     expires_at: datetime | None = None
     if body.expires_in_minutes is not None:
@@ -124,7 +153,7 @@ def create_join_token(
     )
     session.commit()
 
-    return _to_out(row, now)
+    return _to_create_out(row, now)
 
 
 @router.get("", response_model=list[JoinTokenOut])

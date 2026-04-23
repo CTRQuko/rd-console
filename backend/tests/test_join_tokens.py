@@ -19,6 +19,9 @@ def test_create_join_token_minimal(client, auth_headers, session):
     # the invite URL — unlike PATs it's single-use and short-lived.
     assert body["token"]
     assert len(body["token"]) >= 32
+    # Prefix matches leading chars of plaintext — admins can identify this
+    # token in the list view without seeing the full secret.
+    assert body["token_prefix"] == body["token"][:8]
     assert body["label"] is None
     assert body["used_at"] is None
     assert body["revoked"] is False
@@ -96,6 +99,11 @@ def test_list_join_tokens_returns_status(client, auth_headers, session):
     r = client.get("/admin/api/join-tokens", headers=auth_headers)
     assert r.status_code == 200
     rows = r.json()
+    # Redaction: list view NEVER includes plaintext ``token`` — only the
+    # 8-char prefix. Matches the PAT pattern in /api/auth/tokens.
+    for row in rows:
+        assert "token" not in row
+        assert len(row["token_prefix"]) == 8
     by_label = {row["label"]: row["status"] for row in rows}
     assert by_label["active"] == "active"
     assert by_label["expired"] == "expired"
