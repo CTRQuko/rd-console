@@ -223,6 +223,11 @@ def update_device(
             payload=json.dumps({"device_id": device_id, "changes": changed}, default=str),
         )
     )
+    # Reconcile auto-tags for attribute changes that affect them
+    # (platform, version, owner). Cheaper to always call — the service
+    # is idempotent — than to maintain a parallel allowlist here.
+    from ..services.auto_tags import sync_auto_tags_for_device
+    sync_auto_tags_for_device(session, d)
     session.commit()
     session.refresh(d)
     return DeviceOut.from_model(d, tags=_tags_for_device(session, device_id))

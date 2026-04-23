@@ -96,4 +96,23 @@ describe('<AddressBookPage />', () => {
     const inner = JSON.parse(body.data);
     expect(inner.peers).toHaveLength(0);
   });
+
+  it('opens the Edit peer dialog when clicking the row body', async () => {
+    // Row-click edit added in v6 P5 for consistency with Users + Devices.
+    // The actions column's inline buttons still work independently because
+    // they stop propagation.
+    signInAsAdmin();
+    mockRoute('POST', rx('/api/ab/get'), () => ({
+      status: 200,
+      data: { updated_at: '2026-04-23T01:30:00', data: SEED_INNER },
+    }));
+    wrap(<AddressBookPage />);
+    const user = userEvent.setup();
+
+    // Click on the alias cell (part of the row body, not in the actions).
+    await user.click(await screen.findByText('laptop'));
+    expect(
+      await screen.findByRole('dialog', { name: /edit peer/i }),
+    ).toBeInTheDocument();
+  });
 });

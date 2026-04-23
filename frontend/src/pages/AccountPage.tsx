@@ -182,7 +182,7 @@ export function AccountPage() {
     <>
       <PageHeader
         title="Account"
-        subtitle="Personal access tokens for scripts and automations. Not the same as device invites — for onboarding a new device see Join tokens."
+        subtitle="Personal Access Tokens for API scripts and automations — e.g. curling the admin API from a cron job. They authenticate YOU programmatically, scoped to your own account. Unrelated to the login password (change it in Settings → Security) and to device invites (see Join tokens)."
         action={
           <Button icon={Plus} onClick={() => setOpenCreate(true)}>
             New token
