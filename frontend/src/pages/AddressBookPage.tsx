@@ -1,9 +1,8 @@
 /** Address book — per-user peer directory.
  *
- *  Scope: panel-UI-only for now. Native RustDesk clients hit /api/login
- *  which this backend doesn't expose yet; a follow-up will alias the
- *  legacy login and this page's data will automatically show up inside
- *  the client.
+ *  Shared with native RustDesk clients: the Flutter client logs in via
+ *  /api/login (kingmo888 shape) and syncs the same blob this page edits,
+ *  so changes here appear in the client and vice-versa.
  *
  *  Storage contract: the backend stores an opaque stringified JSON blob.
  *  We parse it into {tags, peers[], tag_colors} on load and stringify
