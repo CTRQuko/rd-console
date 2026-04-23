@@ -81,13 +81,45 @@ heartbeat() {
 
 log "hbbs-watcher starting: container=$HBBS_CONTAINER target=$RDC_URL since=$SINCE"
 
+# Diagnostic helper: count update_pk lines we've seen (matched or not) so
+# we can tell "hbbs sees nothing" apart from "hbbs logs something we don't
+# understand". Printed every DIAG_INTERVAL seconds regardless.
+DIAG_INTERVAL="${HBBS_WATCHER_DIAG_INTERVAL:-600}"  # 10 min
+
 # Outer loop = reconnect on `docker logs` exit.
 while true; do
+    # Per-connection counters reset on reconnect — the ts isn't global
+    # state, it's just a "since the last docker-logs-f started" rate.
+    SEEN=0
+    MATCHED=0
+    LAST_DIAG=$(date +%s)
+
     # 2>&1 because hbbs writes to both stdout and stderr.
     docker logs -f --since "$SINCE" "$HBBS_CONTAINER" 2>&1 \
     | while IFS= read -r line; do
-        if [[ "$line" =~ $RE ]]; then
-            heartbeat "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+        # Count anything mentioning update_pk regardless of match. We log
+        # unmatched samples at WARN so the regex can be debugged post-hoc
+        # if hbbs changes its log format. Cap at 10 unmatched-logs per
+        # reconnect to avoid a runaway if every line fails.
+        if [[ "$line" == *"update_pk"* ]]; then
+            SEEN=$((SEEN + 1))
+            if [[ "$line" =~ $RE ]]; then
+                MATCHED=$((MATCHED + 1))
+                heartbeat "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+            elif [[ "$SEEN" -lt 10 || "$((SEEN % 100))" -eq 0 ]]; then
+                warn "unmatched update_pk line (regex drift?): ${line:0:240}"
+            fi
+        fi
+
+        # Periodic heartbeat count dump so the watcher's own journalctl
+        # makes it obvious whether hbbs is quiet (cliente cerrado) vs
+        # producing output we can't parse.
+        NOW=$(date +%s)
+        if [[ "$((NOW - LAST_DIAG))" -ge "$DIAG_INTERVAL" ]]; then
+            log "diag: update_pk seen=$SEEN matched=$MATCHED in last ${DIAG_INTERVAL}s"
+            SEEN=0
+            MATCHED=0
+            LAST_DIAG=$NOW
         fi
       done \
     || warn "docker logs stream ended (code $?) — reconnecting"
