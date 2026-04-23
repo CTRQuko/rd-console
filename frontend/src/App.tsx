@@ -11,7 +11,9 @@ import { JoinTokensPage } from '@/pages/JoinTokensPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
-import { TagsPage } from '@/pages/TagsPage';
+// TagsPage was removed in v6 P5 — tags are now auto-generated from
+// device platform/version/owner and edited in-context inside the Device
+// drawer. The backend /admin/api/tags endpoints still serve reads.
 import { UsersPage } from '@/pages/UsersPage';
 import { useAuthHasHydrated, useAuthStore } from '@/store/authStore';
 
@@ -57,7 +59,6 @@ function HydrationGate() {
         <Route path="/users" element={<UsersPage />} />
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/address-book" element={<AddressBookPage />} />
-        <Route path="/tags" element={<TagsPage />} />
         <Route path="/join-tokens" element={<JoinTokensPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />

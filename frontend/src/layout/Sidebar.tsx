@@ -8,7 +8,6 @@ import {
   Monitor,
   Send,
   Settings as SettingsIcon,
-  Tag as TagIcon,
   Users as UsersIcon,
 } from 'lucide-react';
 import type { AuthUser } from '@/types/api';
@@ -18,11 +17,10 @@ const NAV_ITEMS = [
   { to: '/users',    label: 'Users',     Icon: UsersIcon },
   { to: '/devices',  label: 'Devices',   Icon: Monitor },
   { to: '/address-book', label: 'Address book', Icon: BookUser },
-  { to: '/tags',     label: 'Tags',      Icon: TagIcon },
   { to: '/join-tokens', label: 'Join tokens', Icon: Send },
   { to: '/logs',     label: 'Logs',      Icon: FileText },
   { to: '/settings', label: 'Settings',  Icon: SettingsIcon },
-  { to: '/account',  label: 'My account', Icon: KeyRound },
+  { to: '/account',  label: 'API tokens', Icon: KeyRound },
 ] as const;
 
 interface SidebarProps {

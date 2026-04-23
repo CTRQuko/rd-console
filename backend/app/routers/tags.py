@@ -30,6 +30,8 @@ class TagOut(BaseModel):
     color: str
     created_at: datetime
     device_count: int
+    auto: bool = False
+    auto_source: str | None = None
 
 
 class TagCreate(BaseModel):
@@ -48,6 +50,8 @@ def _tag_with_count(session, tag: Tag) -> TagOut:
         color=tag.color,
         created_at=tag.created_at,
         device_count=int(count),
+        auto=tag.auto,
+        auto_source=tag.auto_source,
     )
 
 
@@ -96,6 +100,17 @@ def delete_tag(tag_id: int, session: SessionDep, admin: AdminUser) -> None:
     tag = session.get(Tag, tag_id)
     if not tag:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Tag not found")
+
+    # Auto-tags are derived from device attributes by services/auto_tags.
+    # Deleting one would just have the next sync/heartbeat re-create it,
+    # so we refuse up front — keeps the audit trail clean and the error
+    # explanation obvious.
+    if tag.auto:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Auto-generated tags cannot be deleted — change the device's "
+            "platform, version, or owner instead.",
+        )
 
     # Remove all device<->tag links first (no ON DELETE CASCADE in SQLite
     # without PRAGMA foreign_keys=ON, which we don't enforce).

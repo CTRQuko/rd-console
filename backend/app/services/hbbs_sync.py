@@ -47,6 +47,7 @@ from .. import db as db_module
 from ..config import get_settings
 from ..models.device import Device
 from ..security import utcnow_naive
+from .auto_tags import sync_auto_tags_for_device
 
 log = logging.getLogger("rd_console.hbbs_sync")
 
@@ -188,6 +189,11 @@ def _sync_once() -> tuple[int, int]:
                     created_at=first_seen,
                 )
                 sess.add(dev)
+                # Flush so the device gets an id before we reconcile auto-tags
+                # against it. The whole tick is one transaction — flush just
+                # assigns the PK within it.
+                sess.flush()
+                sync_auto_tags_for_device(sess, dev)
                 inserted += 1
             else:
                 changed = False
@@ -210,6 +216,10 @@ def _sync_once() -> tuple[int, int]:
                 # (fed by the hbbs-watcher sidecar) is the single writer.
                 if changed:
                     sess.add(existing)
+                    # Shape changed → reconcile auto-tags. Idempotent in the
+                    # no-change case, but we gate it on `changed` so we don't
+                    # do N useless SELECTs per sync tick.
+                    sync_auto_tags_for_device(sess, existing)
                     updated += 1
         sess.commit()
 

@@ -29,6 +29,16 @@ class Tag(SQLModel, table=True):
     color: str = Field(default="blue", max_length=16)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+    # Auto-tags are synthesised by services/auto_tags.py from device
+    # attributes (platform, version, owner). They cannot be edited or
+    # deleted through the admin tags router — any attempt is rejected
+    # with 400. When the underlying attribute changes, the auto-tag
+    # re-attaches to the new tag (creating it if missing).
+    auto: bool = Field(default=False)
+    # Free-form provenance string, e.g. "platform", "version:major",
+    # "owner". Primarily for the UI tooltip — not parsed by the backend.
+    auto_source: str | None = Field(default=None, max_length=64)
+
 
 class DeviceTag(SQLModel, table=True):
     __tablename__ = "device_tags"

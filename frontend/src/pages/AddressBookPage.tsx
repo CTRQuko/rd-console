@@ -241,6 +241,10 @@ export function AddressBookPage() {
             ? 'Loading…'
             : 'No peers yet. Add one to start syncing across your clients.'
         }
+        // Row-click edit, matching UsersPage + DevicesPage. The actions
+        // column already stops propagation so the inline pencil/delete
+        // buttons don't double-fire.
+        onRowClick={(r) => openEdit(r)}
       />
 
       {/* Known tags summary — surface what the RustDesk client shows */}

@@ -11,11 +11,10 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/users':    'Users',
   '/devices':  'Devices',
   '/address-book': 'Address book',
-  '/tags':     'Tags',
   '/join-tokens': 'Join tokens',
   '/logs':     'Audit logs',
   '/settings': 'Settings',
-  '/account':  'My account',
+  '/account':  'API tokens',
 };
 
 /** Cmd+K (macOS) / Ctrl+K (other) opens the global search palette,

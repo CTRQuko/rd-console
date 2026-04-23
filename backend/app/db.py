@@ -51,6 +51,9 @@ _ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("devices", "is_favorite", "BOOLEAN NOT NULL DEFAULT 0"),
     # v5: soft-delete for audit logs (PR C — /admin/api/logs DELETE)
     ("audit_logs", "deleted_at", "DATETIME"),
+    # v6: auto-tag flags (P5)
+    ("tags", "auto", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("tags", "auto_source", "VARCHAR(64)"),
 )
 
 

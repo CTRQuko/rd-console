@@ -124,6 +124,8 @@ def sysinfo(
     session: SessionDep,
     _: ClientSecretDep,
 ) -> dict:
+    from ..services.auto_tags import sync_auto_tags_for_device
+
     device = session.exec(select(Device).where(Device.rustdesk_id == body.id)).first()
     if not device:
         device = Device(rustdesk_id=body.id)
@@ -134,6 +136,9 @@ def sysinfo(
     device.version = body.version or device.version
     device.last_seen_at = utcnow_naive()
     session.add(device)
+    # Flush so a brand-new device gets an id before tag reconciliation.
+    session.flush()
+    sync_auto_tags_for_device(session, device)
     session.commit()
     return {"ok": True}
 
