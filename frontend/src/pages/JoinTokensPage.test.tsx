@@ -233,12 +233,118 @@ describe('<JoinTokensPage />', () => {
     });
     wrap(<JoinTokensPage />);
 
+    // Post-P3 the per-row control is a dropdown menu. Open it, then click
+    // Revoke, then confirm.
     await userEvent.click(
-      await screen.findByRole('button', { name: /revoke abcd1234/i }),
+      await screen.findByRole('button', { name: /actions for abcd1234/i }),
     );
-    // ConfirmDialog surfaces a "Revoke" button — click to confirm.
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: /revoke/i }),
+    );
     await userEvent.click(screen.getByRole('button', { name: /^revoke$/i }));
 
     await waitFor(() => expect(deleted).toEqual([1]));
+  });
+
+  it('hard-deletes an invitation via the row menu → confirm dialog', async () => {
+    signInAsAdmin();
+    mockRoute('GET', rx('/admin/api/join-tokens'), () => ({
+      status: 200,
+      data: [SEED[0]],
+    }));
+    const deleted: string[] = [];
+    mockRoute('DELETE', /^\/admin\/api\/join-tokens\/1\?hard=true$/, (cfg) => {
+      deleted.push(cfg.url ?? '');
+      return { status: 204, data: null };
+    });
+    wrap(<JoinTokensPage />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /actions for abcd1234/i }),
+    );
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: /delete permanently/i }),
+    );
+    // Confirm dialog uses "Delete permanently" as the primary.
+    await userEvent.click(
+      screen.getByRole('button', { name: /^delete permanently$/i }),
+    );
+    await waitFor(() => expect(deleted.length).toBe(1));
+  });
+
+  it('bulk revokes selected invitations via the toolbar', async () => {
+    signInAsAdmin();
+    mockRoute('GET', rx('/admin/api/join-tokens'), () => ({
+      status: 200,
+      data: [SEED[0]],
+    }));
+    const captured: unknown[] = [];
+    mockRoute('POST', rx('/admin/api/join-tokens/bulk'), (cfg) => {
+      const body = JSON.parse(cfg.data ?? '{}');
+      captured.push(body);
+      return {
+        status: 200,
+        data: { action: body.action, affected: body.ids.length, skipped: [] },
+      };
+    });
+    wrap(<JoinTokensPage />);
+
+    await screen.findByText('Abuela — laptop');
+    // Select the first (and only) active row via its checkbox.
+    const rowCheckboxes = screen.getAllByRole('checkbox');
+    // First checkbox is the leader; second is the row.
+    await userEvent.click(rowCheckboxes[1]);
+
+    // Toolbar now shows Revoke / Delete buttons.
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^revoke$/i }),
+    );
+    // Confirm dialog submit button.
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^revoke all$/i }),
+    );
+
+    await waitFor(() =>
+      expect(captured.at(-1)).toEqual({ action: 'revoke', ids: [1] }),
+    );
+  });
+
+  it('cancelling the Create dialog shows a "No invitation created" toast', async () => {
+    signInAsAdmin();
+    mockRoute('GET', rx('/admin/api/join-tokens'), () => ({
+      status: 200,
+      data: [] as JoinTokenMeta[],
+    }));
+    wrap(<JoinTokensPage />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /create invitation/i }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /^cancel$/i }),
+    );
+    expect(
+      await screen.findByText(/no invitation created/i),
+    ).toBeInTheDocument();
+  });
+
+  it('hides revoked tokens by default and includes them when toggled', async () => {
+    signInAsAdmin();
+    const paramsSeen: unknown[] = [];
+    mockRoute('GET', rx('/admin/api/join-tokens'), (cfg) => {
+      paramsSeen.push(cfg.params ?? {});
+      return { status: 200, data: [] as JoinTokenMeta[] };
+    });
+    wrap(<JoinTokensPage />);
+
+    // Initial fetch has no include_revoked param (default hide).
+    await waitFor(() => expect(paramsSeen.length).toBeGreaterThan(0));
+    expect(paramsSeen[0]).toEqual({});
+
+    // Flip the toggle.
+    await userEvent.click(screen.getByRole('switch', { name: /show revoked/i }));
+    await waitFor(() =>
+      expect(paramsSeen.at(-1)).toMatchObject({ include_revoked: true }),
+    );
   });
 });

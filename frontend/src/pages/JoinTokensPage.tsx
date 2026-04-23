@@ -8,18 +8,22 @@
  */
 
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Mail, MessageCircle, Plus, Send, Trash2 } from 'lucide-react';
+import { AlertTriangle, Mail, MessageCircle, MoreHorizontal, Plus, Send, Trash2 } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyableField } from '@/components/CopyableField';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Dialog } from '@/components/Dialog';
+import { DropdownMenu } from '@/components/DropdownMenu';
 import { PageHeader } from '@/components/PageHeader';
 import { QRCode } from '@/components/QRCode';
 import { Toast, type ToastValue } from '@/components/Toast';
+import { Toggle } from '@/components/Toggle';
 import {
+  useBulkJoinTokens,
   useCreateJoinToken,
+  useHardDeleteJoinToken,
   useJoinTokens,
   useRevokeJoinToken,
 } from '@/hooks/useJoinTokens';
@@ -54,9 +58,15 @@ const fmtDate = (s: string | null) =>
   s ? new Date(s).toISOString().replace('T', ' ').slice(0, 16) : '—';
 
 export function JoinTokensPage() {
-  const { data: rows = [], isLoading } = useJoinTokens();
+  // Whether to include revoked tokens in the list. Default OFF per
+  // feedback — "revoke = out of sight". Admin can flip the toggle to
+  // audit the full history.
+  const [includeRevoked, setIncludeRevoked] = useState(false);
+  const { data: rows = [], isLoading } = useJoinTokens(includeRevoked);
   const create = useCreateJoinToken();
   const revoke = useRevokeJoinToken();
+  const hardDelete = useHardDeleteJoinToken();
+  const bulk = useBulkJoinTokens();
 
   const [openCreate, setOpenCreate] = useState(false);
   const [pendingLabel, setPendingLabel] = useState('');
@@ -69,6 +79,9 @@ export function JoinTokensPage() {
   const [confirmDismiss, setConfirmDismiss] = useState(false);
   const [copiedAt, setCopiedAt] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<JoinTokenMeta | null>(null);
+  const [confirmHardDelete, setConfirmHardDelete] = useState<JoinTokenMeta | null>(null);
+  const [confirmBulk, setConfirmBulk] = useState<'revoke' | 'delete' | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [toast, setToast] = useState<ToastValue | null>(null);
 
   // Invite URL helper — the backend surfaces it via public /api/join/:token,
@@ -144,16 +157,32 @@ export function JoinTokensPage() {
           style={{ display: 'flex', justifyContent: 'flex-end' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            className="rd-iconbtn"
-            aria-label={`Revoke ${t.token_prefix}`}
-            disabled={t.revoked}
-            onClick={() => setConfirm(t)}
-            style={t.revoked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-          >
-            <Trash2 size={14} />
-          </button>
+          <DropdownMenu
+            ariaLabel={`Actions for ${t.token_prefix}`}
+            trigger={
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={MoreHorizontal}
+                aria-label={`Actions for ${t.token_prefix}`}
+              />
+            }
+            items={[
+              {
+                id: 'revoke',
+                label: 'Revoke…',
+                destructive: true,
+                disabled: t.revoked,
+                onSelect: () => setConfirm(t),
+              },
+              {
+                id: 'delete',
+                label: 'Delete permanently…',
+                destructive: true,
+                onSelect: () => setConfirmHardDelete(t),
+              },
+            ]}
+          />
         </div>
       ),
     },
@@ -194,13 +223,60 @@ export function JoinTokensPage() {
           </Button>
         }
       />
+      <div className="rd-toolbar">
+        <div className="rd-toolbar__group">
+          <Toggle
+            checked={includeRevoked}
+            onChange={setIncludeRevoked}
+            label="Show revoked"
+          />
+        </div>
+        {selectedIds.length > 0 && (
+          <div
+            className="rd-toolbar__group"
+            style={{ marginLeft: 'auto', gap: 8 }}
+            role="group"
+            aria-label="Bulk actions"
+          >
+            <span style={{ color: 'var(--fg-muted)', fontSize: 13 }}>
+              {selectedIds.length} selected
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirmBulk('revoke')}
+            >
+              Revoke
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              icon={Trash2}
+              onClick={() => setConfirmBulk('delete')}
+            >
+              Delete
+            </Button>
+          </div>
+        )}
+      </div>
       <DataTable<JoinTokenMeta>
         rows={rows}
         columns={columns}
         empty={
           isLoading
             ? 'Loading…'
-            : 'No invitations yet. Create one to onboard a device.'
+            : includeRevoked
+              ? 'No invitations yet. Create one to onboard a device.'
+              : 'No active invitations. Toggle "Show revoked" to see history, or Create one to onboard a device.'
+        }
+        selectable
+        selectedIds={selectedIds}
+        onSelectionChange={(ids) =>
+          setSelectedIds(
+            ids
+              .map((i) => (typeof i === 'number' ? i : Number(i)))
+              .filter((i) => !Number.isNaN(i)),
+          )
         }
       />
 
@@ -208,8 +284,15 @@ export function JoinTokensPage() {
       <Dialog
         open={openCreate}
         onClose={() => {
+          // Neutral toast on dismiss — Jandro repeatedly reported
+          // "cancel created it anyway" confusion. The code never creates
+          // on cancel; this toast makes the non-outcome explicit so the
+          // admin has a positive signal that nothing was persisted.
           setOpenCreate(false);
           resetCreateForm();
+          if (!create.isPending) {
+            setToast({ kind: 'ok', text: 'No invitation created.' });
+          }
         }}
         title="Create invitation"
         footer={
@@ -219,6 +302,7 @@ export function JoinTokensPage() {
               onClick={() => {
                 setOpenCreate(false);
                 resetCreateForm();
+                setToast({ kind: 'ok', text: 'No invitation created.' });
               }}
             >
               Cancel
@@ -438,6 +522,83 @@ export function JoinTokensPage() {
           confirm
             ? `Token ${confirm.token_prefix}…${confirm.label ? ` (${confirm.label})` : ''} will stop working immediately. Any invite URL already sent becomes invalid.`
             : ''
+        }
+      />
+
+      {/* ─── Hard delete confirmation ──────────────────────────────── */}
+      <ConfirmDialog
+        open={!!confirmHardDelete}
+        onClose={() => setConfirmHardDelete(null)}
+        onConfirm={() => {
+          if (!confirmHardDelete) return;
+          const victim = confirmHardDelete;
+          hardDelete.mutate(victim.id, {
+            onSuccess: () => {
+              setConfirmHardDelete(null);
+              setToast({ kind: 'ok', text: `Token ${victim.token_prefix}… deleted permanently.` });
+            },
+            onError: (err) => {
+              setConfirmHardDelete(null);
+              setToast({ kind: 'error', text: apiErrorMessage(err) });
+            },
+          });
+        }}
+        destructive
+        confirmLabel={hardDelete.isPending ? 'Deleting…' : 'Delete permanently'}
+        title="Delete invitation permanently?"
+        body={
+          confirmHardDelete
+            ? `Token ${confirmHardDelete.token_prefix}…${confirmHardDelete.label ? ` (${confirmHardDelete.label})` : ''} will be removed from the database. The deletion itself is stamped in the audit log. This cannot be undone.`
+            : ''
+        }
+      />
+
+      {/* ─── Bulk confirmation ─────────────────────────────────────── */}
+      <ConfirmDialog
+        open={confirmBulk !== null}
+        onClose={() => setConfirmBulk(null)}
+        onConfirm={() => {
+          if (!confirmBulk) return;
+          const action = confirmBulk;
+          const ids = selectedIds.slice();
+          bulk.mutate(
+            { action, ids },
+            {
+              onSuccess: (result) => {
+                setConfirmBulk(null);
+                setSelectedIds([]);
+                const skipped = result.skipped.length;
+                const actionWord = action === 'delete' ? 'deleted' : 'revoked';
+                const msg =
+                  skipped === 0
+                    ? `${result.affected} invitation${result.affected === 1 ? '' : 's'} ${actionWord}.`
+                    : `${result.affected} ${actionWord}, ${skipped} skipped (${result.skipped.map((s) => s.reason).join(', ')}).`;
+                setToast({ kind: skipped === 0 ? 'ok' : 'error', text: msg });
+              },
+              onError: (err) => {
+                setConfirmBulk(null);
+                setToast({ kind: 'error', text: apiErrorMessage(err) });
+              },
+            },
+          );
+        }}
+        destructive
+        confirmLabel={
+          bulk.isPending
+            ? 'Working…'
+            : confirmBulk === 'delete'
+              ? 'Delete all'
+              : 'Revoke all'
+        }
+        title={
+          confirmBulk === 'delete'
+            ? `Delete ${selectedIds.length} invitation${selectedIds.length === 1 ? '' : 's'} permanently?`
+            : `Revoke ${selectedIds.length} invitation${selectedIds.length === 1 ? '' : 's'}?`
+        }
+        body={
+          confirmBulk === 'delete'
+            ? 'Selected invitations will be erased from the database. Audit log keeps a record of each deletion. This cannot be undone.'
+            : 'Selected invitations will stop working immediately. Any invite URL already sent becomes invalid. Already-revoked rows are skipped.'
         }
       />
 

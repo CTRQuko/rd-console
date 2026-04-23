@@ -50,6 +50,7 @@ class AuditAction(str, Enum):
     # v4: join-token lifecycle (admin-minted invites for /api/join/:token)
     JOIN_TOKEN_CREATED = "join_token_created"
     JOIN_TOKEN_REVOKED = "join_token_revoked"
+    JOIN_TOKEN_DELETED = "join_token_deleted"
 
 
 # Category grouping used by /admin/api/logs?category=...
@@ -70,6 +71,7 @@ AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
         AuditAction.API_TOKEN_REVOKED,
         AuditAction.JOIN_TOKEN_CREATED,
         AuditAction.JOIN_TOKEN_REVOKED,
+        AuditAction.JOIN_TOKEN_DELETED,
     ),
     "user_management": (
         AuditAction.USER_CREATED,

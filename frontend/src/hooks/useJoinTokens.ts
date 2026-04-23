@@ -10,13 +10,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { JoinTokenCreated, JoinTokenMeta } from '@/types/api';
 
-export const JOIN_TOKENS_KEY = ['admin', 'join-tokens'] as const;
+export const JOIN_TOKENS_KEY = (includeRevoked: boolean) =>
+  ['admin', 'join-tokens', { includeRevoked }] as const;
 
-export function useJoinTokens() {
+export function useJoinTokens(includeRevoked = false) {
   return useQuery<JoinTokenMeta[]>({
-    queryKey: JOIN_TOKENS_KEY,
+    queryKey: JOIN_TOKENS_KEY(includeRevoked),
     queryFn: async () => {
-      const { data } = await api.get<JoinTokenMeta[]>('/admin/api/join-tokens');
+      const { data } = await api.get<JoinTokenMeta[]>('/admin/api/join-tokens', {
+        params: includeRevoked ? { include_revoked: true } : undefined,
+      });
       return data;
     },
   });
@@ -29,6 +32,12 @@ export interface CreateJoinTokenBody {
   expires_in_minutes?: number | null;
 }
 
+function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
+  // Multiple query keys exist (with/without include_revoked). Invalidate
+  // the common prefix so every variant refetches.
+  qc.invalidateQueries({ queryKey: ['admin', 'join-tokens'] });
+}
+
 export function useCreateJoinToken() {
   const qc = useQueryClient();
   return useMutation({
@@ -39,12 +48,12 @@ export function useCreateJoinToken() {
       );
       return data;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: JOIN_TOKENS_KEY });
-    },
+    onSuccess: () => invalidateAll(qc),
   });
 }
 
+/** Soft revoke — backend sets `revoked=true`. Row stays in DB.
+ *  Default list hides revoked, so the admin typically won't see it after. */
 export function useRevokeJoinToken() {
   const qc = useQueryClient();
   return useMutation({
@@ -52,8 +61,41 @@ export function useRevokeJoinToken() {
       await api.delete(`/admin/api/join-tokens/${id}`);
       return id;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: JOIN_TOKENS_KEY });
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+/** Hard delete — backend removes the row entirely. Audit trail preserved
+ *  via JOIN_TOKEN_DELETED in /admin/api/logs. Irreversible. */
+export function useHardDeleteJoinToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      await api.delete(`/admin/api/join-tokens/${id}?hard=true`);
+      return id;
     },
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export type BulkJoinTokenAction = 'revoke' | 'delete';
+
+export interface BulkJoinTokenResult {
+  action: BulkJoinTokenAction;
+  affected: number;
+  skipped: { id: number; reason: string }[];
+}
+
+export function useBulkJoinTokens() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { action: BulkJoinTokenAction; ids: number[] }) => {
+      const { data } = await api.post<BulkJoinTokenResult>(
+        '/admin/api/join-tokens/bulk',
+        body,
+      );
+      return data;
+    },
+    onSuccess: () => invalidateAll(qc),
   });
 }

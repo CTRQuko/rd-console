@@ -160,23 +160,58 @@ def create_join_token(
 def list_join_tokens(
     admin: AdminUser,  # noqa: ARG001 — require admin
     session: SessionDep,
+    include_revoked: bool = False,
 ) -> list[JoinTokenOut]:
+    """List join tokens.
+
+    Default hides revoked rows — the admin asked for "revoke = out of
+    sight" as the common case. The full history (including revoked) is
+    still accessible via `?include_revoked=true` for audit/forensics,
+    and every revoke+delete is stamped in `/admin/api/logs` anyway.
+    """
     now = utcnow_naive()
-    rows = session.exec(
-        select(JoinToken).order_by(JoinToken.created_at.desc())  # type: ignore[attr-defined]
-    ).all()
+    stmt = select(JoinToken)
+    if not include_revoked:
+        # `revoked` is a non-null bool column; explicit False keeps the
+        # filter readable in the query log.
+        stmt = stmt.where(JoinToken.revoked == False)  # noqa: E712
+    stmt = stmt.order_by(JoinToken.created_at.desc())  # type: ignore[attr-defined]
+    rows = session.exec(stmt).all()
     return [_to_out(r, now) for r in rows]
 
 
 @router.delete("/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
-def revoke_join_token(
+def revoke_or_delete_join_token(
     token_id: int,
     admin: AdminUser,
     session: SessionDep,
+    hard: bool = False,
 ) -> None:
+    """Revoke (soft, default) or permanently delete a join token.
+
+    * No flag → revoke: sets `revoked=true`, audit `JOIN_TOKEN_REVOKED`.
+      Idempotent (already-revoked is a 204 no-op with no second audit).
+    * `?hard=true` → delete: removes the row. Audit `JOIN_TOKEN_DELETED`
+      captures the metadata so the fact-of-deletion is preserved even
+      though the row isn't.
+    """
     row = session.get(JoinToken, token_id)
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Join token not found")
+
+    if hard:
+        # Capture the identifying bits BEFORE the delete so the audit
+        # payload doesn't reach into a flushed object.
+        payload = f"id={row.id} prefix={row.token[:8]} label={(row.label or '')[:64]}"
+        session.delete(row)
+        session.add(AuditLog(
+            action=AuditAction.JOIN_TOKEN_DELETED,
+            actor_user_id=admin.id,
+            payload=payload,
+        ))
+        session.commit()
+        return
+
     if row.revoked:
         # Idempotent — no audit entry the second time, nothing changed.
         return
@@ -190,3 +225,84 @@ def revoke_join_token(
         )
     )
     session.commit()
+
+
+# ─── Bulk ops ──────────────────────────────────────────────────────────────
+
+
+class BulkJoinTokensBody(BaseModel):
+    """Bulk revoke/delete of join tokens.
+
+    `action` mirrors the per-row surface:
+      * ``revoke`` → set revoked=true. Skips rows already revoked with
+        reason ``already_revoked``.
+      * ``delete`` → hard delete regardless of revoke state. Fact-of-
+        deletion stamped in audit per row.
+    """
+    action: str = Field(pattern="^(revoke|delete)$")
+    ids: list[int] = Field(min_length=1, max_length=200)
+
+
+class BulkJoinTokensResult(BaseModel):
+    action: str
+    affected: int
+    skipped: list[dict]  # {id, reason}
+
+
+@router.post("/bulk", response_model=BulkJoinTokensResult)
+def bulk_join_tokens(
+    body: BulkJoinTokensBody,
+    session: SessionDep,
+    admin: AdminUser,
+) -> BulkJoinTokensResult:
+    """Apply revoke or delete to a batch of join tokens in one transaction.
+
+    Errors per row (not_found, already_revoked) collected into
+    ``skipped`` rather than aborting the batch — matches the Users bulk
+    shape so the UI handling is identical.
+    """
+    ids = list(dict.fromkeys(body.ids))
+    rows = session.exec(
+        select(JoinToken).where(JoinToken.id.in_(ids))  # type: ignore[attr-defined]
+    ).all()
+    found = {r.id: r for r in rows}
+
+    skipped: list[dict] = []
+    affected = 0
+
+    def skip(rid: int, reason: str) -> None:
+        skipped.append({"id": rid, "reason": reason})
+
+    for rid in ids:
+        row = found.get(rid)
+        if row is None:
+            skip(rid, "not_found")
+            continue
+
+        if body.action == "revoke":
+            if row.revoked:
+                skip(rid, "already_revoked")
+                continue
+            row.revoked = True
+            session.add(row)
+            session.add(AuditLog(
+                action=AuditAction.JOIN_TOKEN_REVOKED,
+                actor_user_id=admin.id,
+                payload=f"id={row.id} label={(row.label or '')[:64]}",
+            ))
+            affected += 1
+
+        elif body.action == "delete":
+            payload = f"id={row.id} prefix={row.token[:8]} label={(row.label or '')[:64]}"
+            session.delete(row)
+            session.add(AuditLog(
+                action=AuditAction.JOIN_TOKEN_DELETED,
+                actor_user_id=admin.id,
+                payload=payload,
+            ))
+            affected += 1
+
+    session.commit()
+    return BulkJoinTokensResult(
+        action=body.action, affected=affected, skipped=skipped,
+    )
