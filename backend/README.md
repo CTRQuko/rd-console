@@ -74,6 +74,9 @@ environment side, un-prefixed inside `Settings`.
 | GET    | `/admin/api/logs`                 | admin      | Audit log (paginated)          |
 | GET    | `/admin/api/settings/server-info` | admin      | Server host / public key       |
 | GET    | `/api/join/{token}`               | public     | Fetch RustDesk client config   |
+| POST   | `/admin/api/join-tokens`          | admin      | Mint a new invite token        |
+| GET    | `/admin/api/join-tokens`          | admin      | List invite tokens + status    |
+| DELETE | `/admin/api/join-tokens/{id}`     | admin      | Revoke an invite token         |
 | POST   | `/api/heartbeat`                  | client     | Device heartbeat (stub)        |
 | POST   | `/api/sysinfo`                    | client     | Device system info (stub)     |
 | POST   | `/api/audit/conn`                 | client     | Connection event (stub)        |
@@ -91,7 +94,7 @@ environment side, un-prefixed inside `Settings`.
 - [ ] Issue bearer tokens for RustDesk clients (separate from panel JWTs)
 - [x] `/api/login`, `/api/currentUser`, `/api/logout` for the RustDesk client
 - [x] Address book sync: `POST /api/ab` + `POST /api/ab/get`
-- [ ] Join-token creation endpoint for admins (`POST /admin/api/join-tokens`)
+- [x] Join-token creation endpoint for admins (`POST /admin/api/join-tokens`)
 - [ ] Rate limiting on `/api/auth/login` and `/api/join/:token`
 - [ ] Alembic migrations (currently `SQLModel.metadata.create_all`)
 - [ ] Prometheus metrics on `/metrics`

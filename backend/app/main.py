@@ -22,6 +22,7 @@ from .routers import (
     auth,
     devices,
     join,
+    join_tokens,
     logs,
     rustdesk,
     search,
@@ -200,6 +201,7 @@ def create_app() -> FastAPI:
     app.include_router(tags.router)
     app.include_router(search.router)
     app.include_router(address_book.router)
+    app.include_router(join_tokens.router)
 
     # Public
     app.include_router(join.router)
