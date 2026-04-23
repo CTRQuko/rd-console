@@ -54,6 +54,43 @@ export function useDisableUser() {
   });
 }
 
+/** Hard delete (DELETE /admin/api/users/{id}?hard=true) — wipes the user
+ *  row plus PATs + address book; preserves devices/audit rows with NULL
+ *  owner. Distinct hook from useDisableUser so consumers have to opt in
+ *  explicitly. */
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      await api.delete(`/admin/api/users/${id}?hard=true`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersKey });
+    },
+  });
+}
+
+export type BulkUserAction = 'disable' | 'enable' | 'delete';
+
+export interface BulkUserResult {
+  action: BulkUserAction;
+  affected: number;
+  skipped: { user_id: number; reason: string }[];
+}
+
+export function useBulkUsers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { action: BulkUserAction; user_ids: number[] }) => {
+      const r = await api.post<BulkUserResult>('/admin/api/users/bulk', body);
+      return r.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersKey });
+    },
+  });
+}
+
 export interface UserCreateBody {
   username: string;
   email?: string;

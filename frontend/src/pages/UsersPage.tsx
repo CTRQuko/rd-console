@@ -12,7 +12,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { MoreHorizontal, Plus, Search } from 'lucide-react';
+import { MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -24,7 +24,9 @@ import { PageHeader } from '@/components/PageHeader';
 import { Select } from '@/components/Select';
 import { Toast } from '@/components/Toast';
 import {
+  useBulkUsers,
   useCreateUser,
+  useDeleteUser,
   useDisableUser,
   useUpdateUser,
   useUsers,
@@ -40,12 +42,19 @@ export function UsersPage() {
   const create = useCreateUser();
   const update = useUpdateUser();
   const disable = useDisableUser();
+  const hardDelete = useDeleteUser();
+  const bulk = useBulkUsers();
   const me = useAuthStore((s) => s.user);
 
   const [q, setQ] = useState('');
   const [openCreate, setOpenCreate] = useState(false);
   const [editing, setEditing] = useState<ApiUser | null>(null);
   const [confirm, setConfirm] = useState<ApiUser | null>(null);
+  // Hard-delete confirmation (distinct from the disable confirm above —
+  // destructive with a stronger wording so admins can't mis-click).
+  const [confirmHardDelete, setConfirmHardDelete] = useState<ApiUser | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [confirmBulk, setConfirmBulk] = useState<'disable' | 'enable' | 'delete' | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
 
   const filtered = useMemo(() => {
@@ -150,6 +159,13 @@ export function UsersPage() {
                     }
                   },
                 },
+                {
+                  id: 'delete',
+                  label: 'Delete permanently…',
+                  destructive: true,
+                  disabled: isSelf,
+                  onSelect: () => setConfirmHardDelete(r),
+                },
               ]}
             />
           </div>
@@ -178,6 +194,40 @@ export function UsersPage() {
             style={{ width: 260 }}
           />
         </div>
+        {selectedIds.length > 0 && (
+          <div
+            className="rd-toolbar__group"
+            style={{ marginLeft: 'auto', gap: 8 }}
+            role="group"
+            aria-label="Bulk actions"
+          >
+            <span style={{ color: 'var(--fg-muted)', fontSize: 13 }}>
+              {selectedIds.length} selected
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirmBulk('disable')}
+            >
+              Disable
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirmBulk('enable')}
+            >
+              Re-enable
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              icon={Trash2}
+              onClick={() => setConfirmBulk('delete')}
+            >
+              Delete
+            </Button>
+          </div>
+        )}
       </div>
       <DataTable<ApiUser>
         rows={filtered}
@@ -190,6 +240,15 @@ export function UsersPage() {
               : 'No users yet.'
         }
         columns={columns}
+        selectable
+        selectedIds={selectedIds}
+        onSelectionChange={(ids) =>
+          setSelectedIds(
+            ids
+              .map((i) => (typeof i === 'number' ? i : Number(i)))
+              .filter((i) => !Number.isNaN(i)),
+          )
+        }
       />
 
       <CreateUserDialog
@@ -253,6 +312,88 @@ export function UsersPage() {
           confirm
             ? `${confirm.username} won't be able to sign in until re-enabled.`
             : ''
+        }
+      />
+
+      <ConfirmDialog
+        open={!!confirmHardDelete}
+        onClose={() => setConfirmHardDelete(null)}
+        onConfirm={() => {
+          if (!confirmHardDelete) return;
+          const victim = confirmHardDelete;
+          hardDelete.mutate(victim.id, {
+            onSuccess: () => {
+              setConfirmHardDelete(null);
+              setToast({ kind: 'ok', text: `${victim.username} deleted permanently.` });
+            },
+            onError: (err) => {
+              setConfirmHardDelete(null);
+              setToast({ kind: 'error', text: apiErrorMessage(err) });
+            },
+          });
+        }}
+        destructive
+        confirmLabel={hardDelete.isPending ? 'Deleting…' : 'Delete permanently'}
+        title="Delete user permanently?"
+        body={
+          confirmHardDelete
+            ? `${confirmHardDelete.username} and all their API tokens and address book entries will be erased. Devices and audit logs keep their history (with NULL owner). This cannot be undone.`
+            : ''
+        }
+      />
+
+      <ConfirmDialog
+        open={confirmBulk !== null}
+        onClose={() => setConfirmBulk(null)}
+        onConfirm={() => {
+          if (!confirmBulk) return;
+          const action = confirmBulk;
+          const ids = selectedIds.slice();
+          bulk.mutate(
+            { action, user_ids: ids },
+            {
+              onSuccess: (result) => {
+                setConfirmBulk(null);
+                setSelectedIds([]);
+                const skipped = result.skipped.length;
+                const msg =
+                  skipped === 0
+                    ? `${result.affected} user${result.affected === 1 ? '' : 's'} ${action}d.`
+                    : `${result.affected} ${action}d, ${skipped} skipped (${result.skipped
+                        .map((s) => s.reason)
+                        .join(', ')}).`;
+                setToast({ kind: skipped === 0 ? 'ok' : 'error', text: msg });
+              },
+              onError: (err) => {
+                setConfirmBulk(null);
+                setToast({ kind: 'error', text: apiErrorMessage(err) });
+              },
+            },
+          );
+        }}
+        destructive={confirmBulk !== 'enable'}
+        confirmLabel={
+          bulk.isPending
+            ? 'Working…'
+            : confirmBulk === 'delete'
+              ? 'Delete all'
+              : confirmBulk === 'enable'
+                ? 'Re-enable all'
+                : 'Disable all'
+        }
+        title={
+          confirmBulk === 'delete'
+            ? `Delete ${selectedIds.length} users permanently?`
+            : confirmBulk === 'enable'
+              ? `Re-enable ${selectedIds.length} users?`
+              : `Disable ${selectedIds.length} users?`
+        }
+        body={
+          confirmBulk === 'delete'
+            ? 'Selected users and their PATs + address books will be erased. Yourself and the last active admin will be skipped automatically. This cannot be undone.'
+            : confirmBulk === 'enable'
+              ? 'Selected users will be able to sign in again.'
+              : 'Selected users will not be able to sign in until re-enabled. Yourself and the last active admin will be skipped.'
         }
       />
 
