@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { UsersPage } from './UsersPage';
+import { SettingsUsersTab } from './SettingsUsersTab';
 import { signInAsAdmin, wrap } from '@/test/utils';
 import { mockRoute, rx } from '@/test/apiMock';
 import type { ApiUser } from '@/types/api';
@@ -69,11 +69,11 @@ function installHappyPath() {
   });
 }
 
-describe('<UsersPage />', () => {
+describe('<SettingsUsersTab />', () => {
   it('renders users returned by the API', async () => {
     signInAsAdmin();
     installHappyPath();
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
 
     expect(await screen.findByText('alice')).toBeInTheDocument();
     expect(screen.getByText('bob')).toBeInTheDocument();
@@ -85,7 +85,7 @@ describe('<UsersPage />', () => {
   it('filters rows by username/email via the search box', async () => {
     signInAsAdmin();
     installHappyPath();
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
 
     await screen.findByText('alice');
     await userEvent.type(screen.getByPlaceholderText(/search users/i), 'bob');
@@ -96,7 +96,7 @@ describe('<UsersPage />', () => {
   it('disables a user via the row dropdown → confirm dialog', async () => {
     signInAsAdmin();
     installHappyPath();
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
     await screen.findByText('alice');
 
     const row = screen.getByText('alice').closest('tr')!;
@@ -127,7 +127,7 @@ describe('<UsersPage />', () => {
       return { status: 200, data: store.find((u) => u.id === id) };
     });
 
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
     await screen.findByText('alice');
 
     const row = screen.getByText('alice').closest('tr')!;
@@ -151,7 +151,7 @@ describe('<UsersPage />', () => {
   it('disables the Disable menu item for the logged-in admin themselves', async () => {
     signInAsAdmin('admin');
     installHappyPath();
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
     await screen.findByText('admin');
 
     const row = screen.getByText('admin').closest('tr')!;
@@ -173,7 +173,7 @@ describe('<UsersPage />', () => {
       store = store.filter((u) => u.id !== id);
       return { status: 204 };
     });
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
     await screen.findByText('alice');
 
     const row = screen.getByText('alice').closest('tr')!;
@@ -211,7 +211,7 @@ describe('<UsersPage />', () => {
         data: { action: body.action, affected: body.user_ids.length, skipped: [] },
       };
     });
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
     await screen.findByText('alice');
 
     // Pick alice (id=2) — click her row checkbox.
@@ -235,7 +235,7 @@ describe('<UsersPage />', () => {
   it('hides the hard-delete menu item for the logged-in admin themselves', async () => {
     signInAsAdmin('admin');
     installHappyPath();
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
     await screen.findByText('admin');
 
     const row = screen.getByText('admin').closest('tr')!;
@@ -247,7 +247,7 @@ describe('<UsersPage />', () => {
   it('disables Disable and Delete for the initial admin (id=1) even when viewed by a different admin', async () => {
     signInAsAdmin('admin2');  // Not id=1 — the current user is a peer admin.
     installHappyPath();
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
     await screen.findByText('admin');
 
     // admin row (id=1 in SEED).
@@ -265,7 +265,7 @@ describe('<UsersPage />', () => {
   it('opens the Edit dialog when clicking the row body (outside the menu)', async () => {
     signInAsAdmin();
     installHappyPath();
-    wrap(<UsersPage />);
+    wrap(<SettingsUsersTab />);
     await screen.findByText('alice');
 
     // Click on a non-menu cell in the row — alice's username cell.

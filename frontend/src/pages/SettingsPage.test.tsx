@@ -36,8 +36,10 @@ describe('<SettingsPage />', () => {
     }));
     wrap(<SettingsPage />);
 
-    // All 5 tabs render as WAI-ARIA tabs.
+    // All 7 tabs render as WAI-ARIA tabs (v6 P6-B added Users + API tokens).
     expect(screen.getByRole('tab', { name: /^server$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^users$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^api tokens$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^appearance$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^language$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^security$/i })).toBeInTheDocument();

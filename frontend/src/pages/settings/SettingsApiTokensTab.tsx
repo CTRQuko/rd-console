@@ -20,7 +20,6 @@ import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Dialog } from '@/components/Dialog';
-import { PageHeader } from '@/components/PageHeader';
 import { Select } from '@/components/Select';
 import { Toast, type ToastValue } from '@/components/Toast';
 import {
@@ -54,7 +53,7 @@ function tokenStatus(t: ApiTokenMeta): { label: string; tone: 'ok' | 'warn' | 'd
   return { label: 'Active', tone: 'ok' };
 }
 
-export function AccountPage() {
+export function SettingsApiTokensTab() {
   const { data: rows = [], isLoading } = useApiTokens();
   const create = useCreateApiToken();
   const revoke = useRevokeApiToken();
@@ -180,15 +179,21 @@ export function AccountPage() {
 
   return (
     <>
-      <PageHeader
-        title="Account"
-        subtitle="Personal Access Tokens for API scripts and automations — e.g. curling the admin API from a cron job. They authenticate YOU programmatically, scoped to your own account. Unrelated to the login password (change it in Settings → Security) and to device invites (see Join tokens)."
-        action={
+      <section className="rd-settings-section">
+        <h2 className="rd-settings-section__title">API tokens</h2>
+        <p className="rd-settings-section__sub">
+          Personal Access Tokens for API scripts and automations — e.g.
+          curling the admin API from a cron job. They authenticate{' '}
+          <em>you</em> programmatically, scoped to your own account.
+          Unrelated to the login password (change it in the Security tab)
+          and to device invites (see Join tokens in the sidebar).
+        </p>
+        <div className="rd-settings-section__foot" style={{ justifyContent: 'flex-start', marginTop: 0 }}>
           <Button icon={Plus} onClick={() => setOpenCreate(true)}>
             New token
           </Button>
-        }
-      />
+        </div>
+      </section>
       <DataTable<ApiTokenMeta>
         rows={sorted}
         columns={columns}
