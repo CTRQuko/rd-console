@@ -26,7 +26,57 @@ describe('<SettingsPage />', () => {
     ).toBeInTheDocument();
     expect(screen.getByDisplayValue('https://env-panel.example')).toBeInTheDocument();
     expect(screen.getByDisplayValue('ENV_PUBKEY')).toBeInTheDocument();
-    // Version surfaces read-only.
+  });
+
+  it('renders tabs for each settings section', async () => {
+    signInAsAdmin();
+    mockRoute('GET', rx('/admin/api/settings/server-info'), () => ({
+      status: 200,
+      data: SEED,
+    }));
+    wrap(<SettingsPage />);
+
+    // All 5 tabs render as WAI-ARIA tabs.
+    expect(screen.getByRole('tab', { name: /^server$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^appearance$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^language$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^security$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^advanced$/i })).toBeInTheDocument();
+    // Server tab is selected by default.
+    expect(screen.getByRole('tab', { name: /^server$/i })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('switches to the Security tab when clicked and shows the password form', async () => {
+    signInAsAdmin();
+    mockRoute('GET', rx('/admin/api/settings/server-info'), () => ({
+      status: 200,
+      data: SEED,
+    }));
+    wrap(<SettingsPage />);
+
+    await userEvent.click(screen.getByRole('tab', { name: /^security$/i }));
+    expect(
+      await screen.findByLabelText(/current password/i),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+  });
+
+  it('shows the Advanced tab with the export button and build info', async () => {
+    signInAsAdmin();
+    mockRoute('GET', rx('/admin/api/settings/server-info'), () => ({
+      status: 200,
+      data: SEED,
+    }));
+    wrap(<SettingsPage />);
+
+    await userEvent.click(screen.getByRole('tab', { name: /^advanced$/i }));
+    expect(
+      await screen.findByRole('button', { name: /download rd-console.env/i }),
+    ).toBeInTheDocument();
+    // Build info section surfaces the version from the shared hook cache.
     expect(screen.getByText('0.1.0')).toBeInTheDocument();
   });
 

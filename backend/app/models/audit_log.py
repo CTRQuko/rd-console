@@ -29,6 +29,7 @@ class AuditAction(str, Enum):
     USER_ENABLED = "user_enabled"
     USER_DELETED = "user_deleted"
     SETTINGS_CHANGED = "settings_changed"
+    SETTINGS_EXPORTED = "settings_exported"
     # v2: panel-initiated device actions
     DEVICE_UPDATED = "device_updated"
     DEVICE_FORGOTTEN = "device_forgotten"
@@ -78,6 +79,7 @@ AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
     ),
     "config": (
         AuditAction.SETTINGS_CHANGED,
+        AuditAction.SETTINGS_EXPORTED,
         AuditAction.DEVICE_UPDATED,
         AuditAction.DEVICE_FORGOTTEN,
         AuditAction.DEVICE_DISCONNECT_REQUESTED,

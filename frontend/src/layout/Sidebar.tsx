@@ -22,7 +22,7 @@ const NAV_ITEMS = [
   { to: '/join-tokens', label: 'Join tokens', Icon: Send },
   { to: '/logs',     label: 'Logs',      Icon: FileText },
   { to: '/settings', label: 'Settings',  Icon: SettingsIcon },
-  { to: '/account',  label: 'Account',   Icon: KeyRound },
+  { to: '/account',  label: 'My account', Icon: KeyRound },
 ] as const;
 
 interface SidebarProps {
