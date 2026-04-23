@@ -61,6 +61,11 @@ export function JoinTokensPage() {
   const [pendingLabel, setPendingLabel] = useState('');
   const [pendingExpiry, setPendingExpiry] = useState<number | null>(60 * 24); // default: 24h
   const [minted, setMinted] = useState<JoinTokenCreated | null>(null);
+  // When the admin tries to dismiss the disclosure via X/Esc/backdrop we
+  // intercept and ask for confirmation — but if they click the explicit
+  // "I've saved it" button we close straight through. Tracking that intent
+  // in a separate flag keeps the two paths honest.
+  const [confirmDismiss, setConfirmDismiss] = useState(false);
   const [confirm, setConfirm] = useState<JoinTokenMeta | null>(null);
   const [toast, setToast] = useState<ToastValue | null>(null);
 
@@ -274,17 +279,15 @@ export function JoinTokensPage() {
 
       {/* ─── One-shot disclosure modal ─────────────────────────────── */}
       {/*
-       * Backdrop and Escape are intentionally disabled (no-op onClose).
-       * The only way out is the "I've saved it" button — a dismissed-by-
-       * accident modal means the admin has to revoke + remint. This
-       * matches the advisor's explicit requirement that the create-
-       * response be unmissable.
+       * X / Esc / backdrop route through `confirmDismiss` instead of
+       * closing the modal directly — if the admin dismisses by accident
+       * the token is unrecoverable, so we ask before letting them go.
+       * The primary "I've saved it" button skips the confirm (it's the
+       * explicit acknowledgement path).
        */}
       <Dialog
         open={!!minted}
-        onClose={() => {
-          /* no-op: force explicit acknowledgement via the Done button */
-        }}
+        onClose={() => setConfirmDismiss(true)}
         title="Copy this token now"
         width={560}
         footer={
@@ -343,6 +346,21 @@ export function JoinTokensPage() {
           </div>
         ) : null}
       </Dialog>
+
+      {/* ─── Dismiss-without-copying guard ─────────────────────────── */}
+      <ConfirmDialog
+        open={confirmDismiss}
+        onClose={() => setConfirmDismiss(false)}
+        onConfirm={() => {
+          setConfirmDismiss(false);
+          setMinted(null);
+          setToast({ kind: 'ok', text: 'Join token minted.' });
+        }}
+        destructive
+        confirmLabel="Close anyway"
+        title="Did you copy the token?"
+        body="If you close now without saving the token you won't be able to see it again — you'll have to revoke it and mint a new one."
+      />
 
       {/* ─── Revoke confirmation ───────────────────────────────────── */}
       <ConfirmDialog
