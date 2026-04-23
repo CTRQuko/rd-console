@@ -1,0 +1,71 @@
+{
+  "title": "Settings",
+  "tabs": {
+    "general": "General",
+    "server": "Server",
+    "users": "Users",
+    "apiTokens": "API tokens",
+    "appearance": "Appearance",
+    "security": "Security",
+    "advanced": "Advanced"
+  },
+  "general": {
+    "landing": {
+      "title": "Default landing page",
+      "description": "Where the app takes you after you sign in. Changes apply on your next login."
+    },
+    "language": {
+      "title": "Language",
+      "description": "UI language preference."
+    },
+    "dateTime": {
+      "title": "Date, time & timezone",
+      "description": "How timestamps render across the panel (logs, devices, tokens). Server always stores in UTC; the UI converts to your chosen timezone and format.",
+      "format": "Format",
+      "timezone": "Timezone",
+      "livePreview": "Live preview"
+    }
+  },
+  "server": {
+    "title": "RustDesk server",
+    "description": "The values surfaced on the public /join/:token invite page so end users can paste them into their RustDesk client. Saved values override the container env. Leave a field blank to fall back to the env default.",
+    "idRelay": "ID / Relay server (host[:port])",
+    "idRelayHint": "Hostname (and optional port) where your hbbs + hbbr run. Both ID server and Relay server fields of the client will use this.",
+    "panelUrl": "Panel public URL",
+    "panelUrlHint": "Public URL used when displaying invite links. Must include the scheme (https:// or http://).",
+    "publicKey": "hbbs public key",
+    "publicKeyHint": "Contents of id_ed25519.pub on the hbbs host. Users paste this into the \"Key\" field of the client settings so they authenticate the server."
+  },
+  "security": {
+    "changePassword": "Change password",
+    "changePasswordDescription": "Changes take effect on next sign-in. Your current session stays valid until its JWT expires.",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "newPasswordHint": "Minimum 8 characters.",
+    "confirmNewPassword": "Confirm new password",
+    "updatePassword": "Update password",
+    "guardrails": "Guardrails",
+    "guardrailsDescription": "Read-only summary of the auth and abuse-prevention limits in effect. Changes to these require redeploying with the matching env vars."
+  },
+  "advanced": {
+    "exportTitle": "Export configuration",
+    "exportDescription": "Download the editable runtime settings as a .env-style file. Useful when migrating to a new host. Secrets (RD_SECRET_KEY, RD_ADMIN_PASSWORD, RD_CLIENT_SHARED_SECRET) are never included — copy those from your source env.",
+    "downloadEnv": "Download rd-console.env",
+    "buildInfo": "Build info",
+    "version": "Version",
+    "frontend": "Frontend"
+  },
+  "appearance": {
+    "theme": "Theme",
+    "themeDescription": "Switch between light and dark. The saved value follows this browser — your server's other admins have their own preference.",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "accent": "Accent colour",
+    "accentDescription": "Applied to primary buttons, links, and focus rings across the app.",
+    "fontSize": "Font size",
+    "fontSizeDescription": "Scale the entire UI. 100% is the default.",
+    "preview": "Preview",
+    "previewDescription": "Reacts in real time as you change the settings above.",
+    "resetDefaults": "Reset to defaults"
+  }
+}

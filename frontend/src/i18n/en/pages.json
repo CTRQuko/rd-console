@@ -1,0 +1,14 @@
+{
+  "dashboard": "Dashboard",
+  "devices": "Devices",
+  "devicesSubtitle": "Clients that have connected to this server. Rows appear automatically when a RustDesk client points its ID/Relay here — you don't add devices manually. Metadata (hostname, platform, version) populates from the client's own sysinfo or the hbbs sync; a freshly-connected client can take up to ~30s to fill in. Auto-refreshes every 30s.",
+  "addressBook": "Address book",
+  "joinTokens": "Join tokens",
+  "joinTokensSubtitle": "Single-use invite tokens for onboarding a new device's RustDesk client. Not the same as Personal Access Tokens in Settings → API tokens (those are for API scripts). Each invite is shown in plaintext exactly once — copy it immediately.",
+  "auditLogs": "Audit logs",
+  "signInTitle": "rd-console",
+  "signInSubtitle": "RustDesk Server Manager",
+  "username": "Username",
+  "password": "Password",
+  "haveInvitation": "Have an invitation? Open join page →"
+}

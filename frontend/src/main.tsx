@@ -1,6 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
+// i18n bootstrap must precede any component that uses `useTranslation`.
+// It reads the saved language from localStorage `rd:prefs` or falls back
+// to the browser's Accept-Language.
+import './lib/i18n';
+
 // Tailwind base + @font-face for Inter/InterDisplay + shadcn CSS vars.
 import './index.css';
 // Design-system CSS custom properties (colors, sizes, radii, motion).

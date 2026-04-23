@@ -1,0 +1,71 @@
+{
+  "title": "Einstellungen",
+  "tabs": {
+    "general": "Allgemein",
+    "server": "Server",
+    "users": "Benutzer",
+    "apiTokens": "API-Tokens",
+    "appearance": "Erscheinungsbild",
+    "security": "Sicherheit",
+    "advanced": "Erweitert"
+  },
+  "general": {
+    "landing": {
+      "title": "Standard-Startseite",
+      "description": "Wohin die App Sie nach der Anmeldung führt. Änderungen werden bei der nächsten Anmeldung wirksam."
+    },
+    "language": {
+      "title": "Sprache",
+      "description": "Spracheinstellung der Oberfläche."
+    },
+    "dateTime": {
+      "title": "Datum, Uhrzeit und Zeitzone",
+      "description": "Wie Zeitstempel im Panel angezeigt werden (Protokolle, Geräte, Tokens). Der Server speichert immer in UTC; die Oberfläche konvertiert in Ihre gewählte Zeitzone und Ihr Format.",
+      "format": "Format",
+      "timezone": "Zeitzone",
+      "livePreview": "Live-Vorschau"
+    }
+  },
+  "server": {
+    "title": "RustDesk-Server",
+    "description": "Die Werte, die auf der öffentlichen /join/:token-Einladungsseite erscheinen, damit Endbenutzer sie in ihren RustDesk-Client einfügen. Gespeicherte Werte überschreiben die Container-env. Feld leer lassen, um den env-Standard zu verwenden.",
+    "idRelay": "ID / Relay-Server (Host[:Port])",
+    "idRelayHint": "Hostname (und optionaler Port), auf dem Ihre hbbs + hbbr laufen. Sowohl ID-Server- als auch Relay-Server-Felder des Clients verwenden diesen Wert.",
+    "panelUrl": "Öffentliche Panel-URL",
+    "panelUrlHint": "Öffentliche URL, die beim Anzeigen von Einladungslinks verwendet wird. Muss das Schema enthalten (https:// oder http://).",
+    "publicKey": "Öffentlicher hbbs-Schlüssel",
+    "publicKeyHint": "Inhalt von id_ed25519.pub auf dem hbbs-Host. Benutzer fügen ihn in das Feld „Key\" der Client-Einstellungen ein, um den Server zu authentifizieren."
+  },
+  "security": {
+    "changePassword": "Passwort ändern",
+    "changePasswordDescription": "Änderungen werden bei der nächsten Anmeldung wirksam. Ihre aktuelle Sitzung bleibt gültig, bis das JWT abläuft.",
+    "currentPassword": "Aktuelles Passwort",
+    "newPassword": "Neues Passwort",
+    "newPasswordHint": "Mindestens 8 Zeichen.",
+    "confirmNewPassword": "Neues Passwort bestätigen",
+    "updatePassword": "Passwort aktualisieren",
+    "guardrails": "Schutzmaßnahmen",
+    "guardrailsDescription": "Schreibgeschützte Übersicht der aktiven Authentifizierungs- und Missbrauchsverhinderungslimits. Änderungen erfordern einen Redeploy mit den entsprechenden env-Variablen."
+  },
+  "advanced": {
+    "exportTitle": "Konfiguration exportieren",
+    "exportDescription": "Laden Sie die editierbaren Laufzeiteinstellungen als .env-Datei herunter. Nützlich bei Migration auf einen neuen Host. Geheimnisse (RD_SECRET_KEY, RD_ADMIN_PASSWORD, RD_CLIENT_SHARED_SECRET) werden nie einbezogen — kopieren Sie diese aus Ihrer Quell-env.",
+    "downloadEnv": "rd-console.env herunterladen",
+    "buildInfo": "Build-Info",
+    "version": "Version",
+    "frontend": "Frontend"
+  },
+  "appearance": {
+    "theme": "Design",
+    "themeDescription": "Zwischen Hell und Dunkel wechseln. Der gespeicherte Wert folgt diesem Browser — andere Administratoren des Servers haben ihre eigenen Einstellungen.",
+    "themeLight": "Hell",
+    "themeDark": "Dunkel",
+    "accent": "Akzentfarbe",
+    "accentDescription": "Wird auf primäre Schaltflächen, Links und Fokusringe in der gesamten App angewendet.",
+    "fontSize": "Schriftgröße",
+    "fontSizeDescription": "Die gesamte Oberfläche skalieren. 100 % ist der Standard.",
+    "preview": "Vorschau",
+    "previewDescription": "Reagiert in Echtzeit, wenn Sie die obigen Einstellungen ändern.",
+    "resetDefaults": "Auf Standardwerte zurücksetzen"
+  }
+}

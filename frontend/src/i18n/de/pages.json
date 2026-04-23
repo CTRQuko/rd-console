@@ -1,0 +1,14 @@
+{
+  "dashboard": "Übersicht",
+  "devices": "Geräte",
+  "devicesSubtitle": "Clients, die sich mit diesem Server verbunden haben. Zeilen erscheinen automatisch, wenn ein RustDesk-Client seine ID/Relay hierhin richtet — Sie fügen keine Geräte manuell hinzu. Metadaten (Hostname, Plattform, Version) werden aus dem sysinfo des Clients oder der hbbs-Synchronisation gefüllt; ein frisch verbundener Client kann bis zu ~30s brauchen. Auto-Aktualisierung alle 30s.",
+  "addressBook": "Adressbuch",
+  "joinTokens": "Einladungen",
+  "joinTokensSubtitle": "Einmalige Einladungstokens zum Onboarding des RustDesk-Clients eines neuen Geräts. Nicht zu verwechseln mit den Persönlichen Zugriffstokens in Einstellungen → API-Tokens (diese sind für Skripte). Jede Einladung wird genau einmal im Klartext angezeigt — kopieren Sie sie sofort.",
+  "auditLogs": "Audit-Protokolle",
+  "signInTitle": "rd-console",
+  "signInSubtitle": "RustDesk-Server-Verwaltung",
+  "username": "Benutzername",
+  "password": "Passwort",
+  "haveInvitation": "Haben Sie eine Einladung? Beitrittsseite öffnen →"
+}

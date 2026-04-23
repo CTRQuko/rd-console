@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   BookUser,
   FileText,
@@ -14,12 +15,12 @@ import type { AuthUser } from '@/types/api';
 // sidebar keeps only day-to-day destinations; configuration surfaces
 // concentrate under /settings.
 const NAV_ITEMS = [
-  { to: '/',             label: 'Dashboard',    Icon: LayoutDashboard },
-  { to: '/devices',      label: 'Devices',      Icon: Monitor },
-  { to: '/address-book', label: 'Address book', Icon: BookUser },
-  { to: '/join-tokens',  label: 'Join tokens',  Icon: Send },
-  { to: '/logs',         label: 'Logs',         Icon: FileText },
-  { to: '/settings',     label: 'Settings',     Icon: SettingsIcon },
+  { to: '/',             labelKey: 'dashboard',   Icon: LayoutDashboard },
+  { to: '/devices',      labelKey: 'devices',     Icon: Monitor },
+  { to: '/address-book', labelKey: 'addressBook', Icon: BookUser },
+  { to: '/join-tokens',  labelKey: 'joinTokens',  Icon: Send },
+  { to: '/logs',         labelKey: 'logs',        Icon: FileText },
+  { to: '/settings',     labelKey: 'settings',    Icon: SettingsIcon },
 ] as const;
 
 interface SidebarProps {
@@ -28,6 +29,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ user, onLogout }: SidebarProps) {
+  const { t } = useTranslation('sidebar');
   return (
     <aside className="rd-sidebar">
       <div className="rd-sidebar__brand">
@@ -36,7 +38,7 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
         <span className="rd-sidebar__ver">v0.1.0</span>
       </div>
       <nav className="rd-sidebar__nav">
-        {NAV_ITEMS.map(({ to, label, Icon }) => (
+        {NAV_ITEMS.map(({ to, labelKey, Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -46,7 +48,7 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
             }
           >
             <Icon size={16} />
-            {label}
+            {t(labelKey)}
           </NavLink>
         ))}
       </nav>
@@ -59,8 +61,8 @@ export function Sidebar({ user, onLogout }: SidebarProps) {
         <button
           className="rd-sidebar__logout"
           onClick={onLogout}
-          title="Sign out"
-          aria-label="Sign out"
+          title={t('common:actions.sign_out')}
+          aria-label={t('common:actions.sign_out')}
         >
           <LogOut size={16} />
         </button>

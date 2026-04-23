@@ -12,6 +12,7 @@
  */
 
 import { Navigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/PageHeader';
 import { Tabs } from '@/components/Tabs';
 import { SettingsAppearanceTab } from './settings/SettingsAppearanceTab';
@@ -25,11 +26,14 @@ import { SettingsUsersTab } from './settings/SettingsUsersTab';
 // v7: Language was removed as a standalone tab — its selector moved
 // inside the new "General" tab. Bookmarks to `?tab=language` are
 // redirected to `?tab=general` via isValidTab's fallback.
+// General leads — it's where the admin's own preferences live (landing
+// page, language, date format, timezone). Server / Users / API tokens
+// follow because they are system-wide rather than per-admin.
 const VALID_TABS = [
+  'general',
   'server',
   'users',
   'api-tokens',
-  'general',
   'appearance',
   'security',
   'advanced',
@@ -41,12 +45,13 @@ function isValidTab(v: string | null): v is TabValue {
 }
 
 export function SettingsPage() {
+  const { t } = useTranslation('settings');
   const [params, setParams] = useSearchParams();
   const raw = params.get('tab');
   // Legacy `?tab=language` bookmarks end up on General, where the
   // selector now lives.
   const normalised = raw === 'language' ? 'general' : raw;
-  const active: TabValue = isValidTab(normalised) ? normalised : 'server';
+  const active: TabValue = isValidTab(normalised) ? normalised : 'general';
 
   const setTab = (next: string) => {
     // `replace: true` — each tab switch is not a history entry; the Back
@@ -60,16 +65,16 @@ export function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" />
+      <PageHeader title={t('title')} />
       <Tabs value={active} onChange={setTab}>
-        <Tabs.List ariaLabel="Settings sections">
-          <Tabs.Trigger value="server">Server</Tabs.Trigger>
-          <Tabs.Trigger value="users">Users</Tabs.Trigger>
-          <Tabs.Trigger value="api-tokens">API tokens</Tabs.Trigger>
-          <Tabs.Trigger value="general">General</Tabs.Trigger>
-          <Tabs.Trigger value="appearance">Appearance</Tabs.Trigger>
-          <Tabs.Trigger value="security">Security</Tabs.Trigger>
-          <Tabs.Trigger value="advanced">Advanced</Tabs.Trigger>
+        <Tabs.List ariaLabel={t('title')}>
+          <Tabs.Trigger value="general">{t('tabs.general')}</Tabs.Trigger>
+          <Tabs.Trigger value="server">{t('tabs.server')}</Tabs.Trigger>
+          <Tabs.Trigger value="users">{t('tabs.users')}</Tabs.Trigger>
+          <Tabs.Trigger value="api-tokens">{t('tabs.apiTokens')}</Tabs.Trigger>
+          <Tabs.Trigger value="appearance">{t('tabs.appearance')}</Tabs.Trigger>
+          <Tabs.Trigger value="security">{t('tabs.security')}</Tabs.Trigger>
+          <Tabs.Trigger value="advanced">{t('tabs.advanced')}</Tabs.Trigger>
         </Tabs.List>
 
         <Tabs.Panel value="server">

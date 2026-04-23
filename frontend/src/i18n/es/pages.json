@@ -1,0 +1,14 @@
+{
+  "dashboard": "Panel",
+  "devices": "Dispositivos",
+  "devicesSubtitle": "Clientes que se han conectado a este servidor. Las filas aparecen automáticamente cuando un cliente RustDesk apunta su ID/Relay aquí — no se añaden dispositivos manualmente. Los metadatos (hostname, plataforma, versión) se rellenan desde el sysinfo del cliente o el sync de hbbs; un cliente recién conectado puede tardar ~30s en llenarse. Auto-refresco cada 30s.",
+  "addressBook": "Agenda",
+  "joinTokens": "Invitaciones",
+  "joinTokensSubtitle": "Tokens de invitación de un solo uso para incorporar el cliente RustDesk de un nuevo dispositivo. No confundir con los Tokens de Acceso Personal en Ajustes → Tokens API (esos son para scripts). Cada invitación se muestra en texto claro una única vez — cópiala inmediatamente.",
+  "auditLogs": "Registros de auditoría",
+  "signInTitle": "rd-console",
+  "signInSubtitle": "Gestor de Servidor RustDesk",
+  "username": "Usuario",
+  "password": "Contraseña",
+  "haveInvitation": "¿Tienes una invitación? Abrir página de acceso →"
+}

@@ -1,0 +1,71 @@
+{
+  "title": "Ajustes",
+  "tabs": {
+    "general": "General",
+    "server": "Servidor",
+    "users": "Usuarios",
+    "apiTokens": "Tokens API",
+    "appearance": "Apariencia",
+    "security": "Seguridad",
+    "advanced": "Avanzado"
+  },
+  "general": {
+    "landing": {
+      "title": "Página inicial por defecto",
+      "description": "Adónde te lleva el panel al iniciar sesión. Se aplica en el próximo login."
+    },
+    "language": {
+      "title": "Idioma",
+      "description": "Preferencia de idioma de la interfaz."
+    },
+    "dateTime": {
+      "title": "Fecha, hora y zona horaria",
+      "description": "Cómo se muestran las marcas de tiempo en el panel (logs, dispositivos, tokens). El servidor siempre almacena en UTC; la interfaz convierte a tu zona horaria y formato elegidos.",
+      "format": "Formato",
+      "timezone": "Zona horaria",
+      "livePreview": "Vista previa"
+    }
+  },
+  "server": {
+    "title": "Servidor RustDesk",
+    "description": "Los valores que aparecen en la página pública /join/:token para que los usuarios finales los peguen en su cliente RustDesk. Los valores guardados sobrescriben el env del contenedor. Deja un campo vacío para usar el valor del env.",
+    "idRelay": "Servidor ID / Relay (host[:puerto])",
+    "idRelayHint": "Hostname (y puerto opcional) donde corren tus hbbs + hbbr. Tanto el campo ID server como Relay server del cliente usarán este valor.",
+    "panelUrl": "URL pública del panel",
+    "panelUrlHint": "URL pública usada al mostrar enlaces de invitación. Debe incluir el esquema (https:// o http://).",
+    "publicKey": "Clave pública de hbbs",
+    "publicKeyHint": "Contenido de id_ed25519.pub en el host de hbbs. Los usuarios lo pegan en el campo «Key» de los ajustes del cliente para autenticar el servidor."
+  },
+  "security": {
+    "changePassword": "Cambiar contraseña",
+    "changePasswordDescription": "Los cambios tienen efecto al próximo inicio de sesión. Tu sesión actual sigue válida hasta que el JWT expire.",
+    "currentPassword": "Contraseña actual",
+    "newPassword": "Contraseña nueva",
+    "newPasswordHint": "Mínimo 8 caracteres.",
+    "confirmNewPassword": "Confirmar contraseña nueva",
+    "updatePassword": "Actualizar contraseña",
+    "guardrails": "Límites de seguridad",
+    "guardrailsDescription": "Resumen de solo lectura de los límites de autenticación y prevención de abuso activos. Cambiarlos requiere redesplegar con las env vars correspondientes."
+  },
+  "advanced": {
+    "exportTitle": "Exportar configuración",
+    "exportDescription": "Descarga los ajustes editables en formato .env. Útil al migrar a otro host. Los secretos (RD_SECRET_KEY, RD_ADMIN_PASSWORD, RD_CLIENT_SHARED_SECRET) nunca se incluyen — cópialos desde tu env original.",
+    "downloadEnv": "Descargar rd-console.env",
+    "buildInfo": "Información de build",
+    "version": "Versión",
+    "frontend": "Frontend"
+  },
+  "appearance": {
+    "theme": "Tema",
+    "themeDescription": "Alterna entre claro y oscuro. El valor guardado se asocia a este navegador — los otros administradores del servidor tienen su propia preferencia.",
+    "themeLight": "Claro",
+    "themeDark": "Oscuro",
+    "accent": "Color de acento",
+    "accentDescription": "Se aplica a botones primarios, enlaces y anillos de foco en toda la aplicación.",
+    "fontSize": "Tamaño de fuente",
+    "fontSizeDescription": "Escala toda la interfaz. 100% es el valor por defecto.",
+    "preview": "Vista previa",
+    "previewDescription": "Reacciona en tiempo real cuando cambias los ajustes de arriba.",
+    "resetDefaults": "Restablecer valores por defecto"
+  }
+}

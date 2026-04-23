@@ -19,7 +19,9 @@ describe('<SettingsPage />', () => {
       status: 200,
       data: SEED,
     }));
-    wrap(<SettingsPage />);
+    // v7: General is the default tab. Deep-link to the Server tab
+    // explicitly to exercise the server-info form.
+    wrap(<SettingsPage />, { initialRoute: '/settings?tab=server' });
 
     expect(
       await screen.findByDisplayValue('env-host.example'),
@@ -45,8 +47,9 @@ describe('<SettingsPage />', () => {
     expect(screen.getByRole('tab', { name: /^general$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^security$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^advanced$/i })).toBeInTheDocument();
-    // Server tab is selected by default.
-    expect(screen.getByRole('tab', { name: /^server$/i })).toHaveAttribute(
+    // v7: General is the default tab (it's where most admins land —
+    // personal prefs like language/landing/date/timezone).
+    expect(screen.getByRole('tab', { name: /^general$/i })).toHaveAttribute(
       'aria-selected',
       'true',
     );
@@ -95,7 +98,7 @@ describe('<SettingsPage />', () => {
       captured.push(body);
       return { status: 200, data: { ...SEED, ...body } };
     });
-    wrap(<SettingsPage />);
+    wrap(<SettingsPage />, { initialRoute: '/settings?tab=server' });
 
     const host = await screen.findByDisplayValue('env-host.example');
     fireEvent.change(host, { target: { value: 'live.example' } });
@@ -115,7 +118,7 @@ describe('<SettingsPage />', () => {
       status: 200,
       data: SEED,
     }));
-    wrap(<SettingsPage />);
+    wrap(<SettingsPage />, { initialRoute: '/settings?tab=server' });
 
     await screen.findByDisplayValue('env-host.example');
     const save = screen.getByRole('button', { name: /save changes/i });
