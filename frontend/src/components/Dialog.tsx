@@ -24,7 +24,21 @@ export function Dialog({ open, onClose, title, children, footer, width = 440 }: 
   // on the backdrop doesn't close the dialog mid-text-selection.
   const pointerStartedInside = useRef(false);
 
-  // Escape to close + focus trap.
+  // Keep onClose in a ref so the setup effect below only runs on open/close
+  // toggles. Without this, consumer pages passing inline arrow handlers
+  // (e.g. `onClose={() => { setOpenCreate(false); resetForm(); }}`) created
+  // a new reference on every re-render — including every keystroke inside
+  // form fields — which re-triggered the effect and stole focus back to
+  // the first focusable element (the header "close" button). The
+  // user-visible symptom was: typing in a dialog input bounced focus to
+  // the X button between characters. Same for typing that caused state
+  // updates in the parent.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  // Escape to close + focus trap. ONLY re-runs when `open` toggles.
   useEffect(() => {
     if (!open) return;
     previouslyFocused.current = document.activeElement as HTMLElement | null;
@@ -32,6 +46,17 @@ export function Dialog({ open, onClose, title, children, footer, width = 440 }: 
     const focusFirst = () => {
       const node = dialogRef.current;
       if (!node) return;
+      // Prefer the first input/textarea/select inside the body over the
+      // header's close button, which is otherwise always the DOM-first
+      // focusable. Falls back to the first generic focusable (e.g.
+      // confirm dialogs with no inputs), then to the dialog itself.
+      const bodyControl = node.querySelector<HTMLElement>(
+        '.rd-dialog__body input:not([disabled]), .rd-dialog__body textarea:not([disabled]), .rd-dialog__body select:not([disabled])',
+      );
+      if (bodyControl) {
+        bodyControl.focus();
+        return;
+      }
       const focusables = node.querySelectorAll<HTMLElement>(FOCUSABLE);
       const first = focusables[0];
       (first ?? node).focus();
@@ -42,7 +67,7 @@ export function Dialog({ open, onClose, title, children, footer, width = 440 }: 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
       if (e.key === 'Tab' && dialogRef.current) {
@@ -71,7 +96,7 @@ export function Dialog({ open, onClose, title, children, footer, width = 440 }: 
       // Restore focus to where it was before the dialog opened.
       previouslyFocused.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
