@@ -53,12 +53,16 @@ ME=$(curl -sf -X POST "$API/api/currentUser" \
     -H "Authorization: Bearer $TOKEN")
 echo "$ME"
 echo "$ME" | grep -q "\"name\":\"$USER\"" || fail "currentUser returned wrong identity"
+echo "$ME" | grep -q "\"type\":\"access_token\"" || fail "currentUser missing type field"
+echo "$ME" | grep -q "\"access_token\":\"$TOKEN\"" || fail "currentUser did not echo token"
 
 echo ""
-echo "=== 5. /api/logout returns 200 ==="
-curl -sf -X POST "$API/api/logout" \
+echo "=== 5. /api/logout returns kingmo888 shape {\"code\":1} ==="
+LOGOUT=$(curl -sf -X POST "$API/api/logout" \
     -H 'Content-Type: application/json' \
-    -d '{"id":"smoke-client","uuid":"smoke-uuid"}' >/dev/null
+    -d '{"id":"smoke-client","uuid":"smoke-uuid"}')
+echo "$LOGOUT"
+echo "$LOGOUT" | grep -q '"code":1' || fail "logout expected {\"code\":1} got $LOGOUT"
 
 echo ""
 echo "=== 6. /api/login is NOT gated by X-RD-Secret ==="

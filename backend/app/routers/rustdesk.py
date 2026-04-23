@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import select
 
@@ -245,13 +245,29 @@ def legacy_login(body: LegacyLoginRequest, session: SessionDep) -> dict:
 
 
 @router.post("/currentUser")
-def legacy_current_user(user: CurrentUser) -> dict:
+def legacy_current_user(
+    user: CurrentUser,
+    authorization: str | None = Header(default=None),
+) -> dict:
     """Probe the current session. The client uses this to validate its
     cached token on startup; if it fails the client drops the AB and asks
-    for a fresh login."""
+    for a fresh login.
+
+    Echoes `access_token` + `type` back verbatim to match kingmo888's
+    contract — the Flutter client uses this response to refresh its
+    cached token triple (access_token, type, name) on every probe.
+    """
+    token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
     return {
-        "id": user.id,
+        "access_token": token,
+        "type": "access_token",
         "name": user.username,
+        # Extra fields are additive — kingmo888 only returns the three above,
+        # but the Flutter client reads via dict.get so unknown keys are fine
+        # and let the panel UI share this handler later if needed.
+        "id": user.id,
         "email": user.email or "",
         "note": "",
         "status": 1 if user.is_active else 0,
@@ -270,9 +286,10 @@ class LegacyLogoutRequest(BaseModel):
 @router.post("/logout")
 def legacy_logout(body: LegacyLogoutRequest) -> dict:  # noqa: ARG001 - body kept for wire compat
     """Stateless JWT — we can't actually invalidate the token server-side
-    without a denylist, so this is a 200 ack. Returning kingmo888's shape
-    so the client flow completes cleanly."""
-    return {"data": "", "error": ""}
+    without a denylist, so this is a 200 ack. kingmo888 returns `{code: 1}`
+    on success; the Flutter client branches on that key, so matching it
+    verbatim avoids client-side sign-out hangs."""
+    return {"code": 1}
 
 
 @router.post("/audit/file")
