@@ -1,13 +1,15 @@
-/** UsersPage v2 — Edit + Disable flows, wired to /admin/api/users.
+/** Settings → Users tab — Edit + Disable + hard-delete + bulk ops wired
+ *  to /admin/api/users.
  *
- *  Kept the existing layout (PageHeader + toolbar + DataTable) so this is a
- *  surgical swap. The row-actions dropdown replaces the inline Edit/Disable
- *  buttons: fewer buttons to scan, more affordances per row (Reset password
- *  slot is ready for a future milestone).
+ *  Lives inside Settings (since v6 P6-B) — the outer SettingsPage owns
+ *  the page chrome, so this file no longer renders a PageHeader. The
+ *  Create button + search input share a single toolbar row.
  *
- *  The Create flow still lives here; we call useCreateUser() but fall back
- *  to sensible defaults so the dialog can be opened in isolation for
- *  component tests. "Disable" is implemented as DELETE /admin/api/users/{id}
+ *  The row-actions dropdown replaces the inline Edit/Disable buttons:
+ *  fewer buttons to scan, more affordances per row (Reset password slot
+ *  is ready for a future milestone). The Create flow still lives here;
+ *  useCreateUser() with sensible defaults so the dialog can be opened in
+ *  isolation for component tests. "Disable" is DELETE /admin/api/users/{id}
  *  per the backend contract — the server does a soft-disable.
  */
 
@@ -20,7 +22,6 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { Dialog } from '@/components/Dialog';
 import { DropdownMenu } from '@/components/DropdownMenu';
 import { Input } from '@/components/Input';
-import { PageHeader } from '@/components/PageHeader';
 import { Select } from '@/components/Select';
 import { Toast } from '@/components/Toast';
 import {
@@ -37,7 +38,7 @@ import type { ApiUser, ApiUserRole } from '@/types/api';
 
 type ToastState = { kind: 'ok' | 'error'; text: string } | null;
 
-export function UsersPage() {
+export function SettingsUsersTab() {
   const { data: rows = [], isLoading } = useUsers();
   const create = useCreateUser();
   const update = useUpdateUser();
@@ -183,14 +184,6 @@ export function UsersPage() {
 
   return (
     <>
-      <PageHeader
-        title="Users"
-        action={
-          <Button icon={Plus} onClick={() => setOpenCreate(true)}>
-            Create user
-          </Button>
-        }
-      />
       <div className="rd-toolbar">
         <div className="rd-toolbar__group">
           <Input
@@ -200,6 +193,9 @@ export function UsersPage() {
             onChange={(e) => setQ(e.target.value)}
             style={{ width: 260 }}
           />
+          <Button icon={Plus} onClick={() => setOpenCreate(true)}>
+            Create user
+          </Button>
         </div>
         {selectedIds.length > 0 && (
           <div

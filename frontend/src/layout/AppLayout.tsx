@@ -7,14 +7,13 @@ import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@/store/themeStore';
 
 const TITLE_BY_PATH: Record<string, string> = {
-  '/':         'Dashboard',
-  '/users':    'Users',
-  '/devices':  'Devices',
+  '/':             'Dashboard',
+  '/devices':      'Devices',
   '/address-book': 'Address book',
-  '/join-tokens': 'Join tokens',
-  '/logs':     'Audit logs',
-  '/settings': 'Settings',
-  '/account':  'API tokens',
+  '/join-tokens':  'Join tokens',
+  '/logs':         'Audit logs',
+  '/settings':     'Settings',
+  // /users and /account are redirects into /settings — no breadcrumb.
 };
 
 /** Cmd+K (macOS) / Ctrl+K (other) opens the global search palette,

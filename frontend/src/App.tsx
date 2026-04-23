@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/layout/AppLayout';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { AccountPage } from '@/pages/AccountPage';
 import { AddressBookPage } from '@/pages/AddressBookPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { DevicesPage } from '@/pages/DevicesPage';
@@ -10,11 +9,10 @@ import { JoinPage } from '@/pages/JoinPage';
 import { JoinTokensPage } from '@/pages/JoinTokensPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { LogsPage } from '@/pages/LogsPage';
-import { SettingsPage } from '@/pages/SettingsPage';
-// TagsPage was removed in v6 P5 — tags are now auto-generated from
-// device platform/version/owner and edited in-context inside the Device
-// drawer. The backend /admin/api/tags endpoints still serve reads.
-import { UsersPage } from '@/pages/UsersPage';
+import { RedirectToSettingsTab, SettingsPage } from '@/pages/SettingsPage';
+// v6 P5 — TagsPage removed, tags are now auto-generated.
+// v6 P6-B — UsersPage + AccountPage moved into Settings tabs. Old routes
+// are preserved as redirects so bookmarks keep working.
 import { useAuthHasHydrated, useAuthStore } from '@/store/authStore';
 
 const queryClient = new QueryClient({
@@ -56,13 +54,14 @@ function HydrationGate() {
       <Route path="/join/:token" element={<JoinPage />} />
       <Route element={<AuthedShell />}>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/users" element={<UsersPage />} />
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/address-book" element={<AddressBookPage />} />
         <Route path="/join-tokens" element={<JoinTokensPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/account" element={<AccountPage />} />
+        {/* Legacy routes — redirect to the Settings tab that absorbed them. */}
+        <Route path="/users" element={<RedirectToSettingsTab tab="users" />} />
+        <Route path="/account" element={<RedirectToSettingsTab tab="api-tokens" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

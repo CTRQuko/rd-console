@@ -2,25 +2,24 @@ import { NavLink } from 'react-router-dom';
 import {
   BookUser,
   FileText,
-  KeyRound,
   LayoutDashboard,
   LogOut,
   Monitor,
   Send,
   Settings as SettingsIcon,
-  Users as UsersIcon,
 } from 'lucide-react';
 import type { AuthUser } from '@/types/api';
 
+// Users + API tokens live inside Settings tabs (v6 P6-B). The
+// sidebar keeps only day-to-day destinations; configuration surfaces
+// concentrate under /settings.
 const NAV_ITEMS = [
-  { to: '/',         label: 'Dashboard', Icon: LayoutDashboard },
-  { to: '/users',    label: 'Users',     Icon: UsersIcon },
-  { to: '/devices',  label: 'Devices',   Icon: Monitor },
+  { to: '/',             label: 'Dashboard',    Icon: LayoutDashboard },
+  { to: '/devices',      label: 'Devices',      Icon: Monitor },
   { to: '/address-book', label: 'Address book', Icon: BookUser },
-  { to: '/join-tokens', label: 'Join tokens', Icon: Send },
-  { to: '/logs',     label: 'Logs',      Icon: FileText },
-  { to: '/settings', label: 'Settings',  Icon: SettingsIcon },
-  { to: '/account',  label: 'API tokens', Icon: KeyRound },
+  { to: '/join-tokens',  label: 'Join tokens',  Icon: Send },
+  { to: '/logs',         label: 'Logs',         Icon: FileText },
+  { to: '/settings',     label: 'Settings',     Icon: SettingsIcon },
 ] as const;
 
 interface SidebarProps {
