@@ -61,6 +61,11 @@ def app(engine):
 
 @pytest.fixture()
 def client(app) -> Iterator[TestClient]:
+    # The in-process rate limiter keeps state in a module-level dict; flush
+    # it at the top of every test so suites that fire /login or /join in
+    # quick succession don't trip the 429 threshold.
+    from app.services.rate_limit import reset_for_tests
+    reset_for_tests()
     with TestClient(app) as c:
         yield c
 
