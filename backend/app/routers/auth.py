@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
@@ -16,6 +16,13 @@ from ..security import (
     utcnow_naive,
     verify_password,
 )
+from ..services.rate_limit import rate_limit_dep
+
+# 10 attempts per IP per minute is deliberately lenient — legitimate typos
+# and the occasional "I forgot which password" happen. A credential-stuffing
+# attacker still only gets 10 tries per rollover, and the Retry-After header
+# makes client-side backoff trivial. Tighten if we ever see abuse.
+_login_limiter = rate_limit_dep(bucket="login", limit=10, window_seconds=60)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -42,7 +49,11 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=256)
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    dependencies=[Depends(_login_limiter)],
+)
 def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
     user = session.exec(select(User).where(User.username == body.username)).first()
     # Constant-ish branch: always hit verify_password when user exists to reduce
