@@ -79,7 +79,7 @@ describe('<LogsPage />', () => {
     });
   });
 
-  it('expands a row to show the JSON payload', async () => {
+  it('expands a row to show a readable detail panel (not just raw JSON)', async () => {
     signInAsAdmin();
     mockRoute('GET', rx('/admin/api/logs'), () => ({
       status: 200,
@@ -87,17 +87,27 @@ describe('<LogsPage />', () => {
     }));
     wrap(<LogsPage />);
 
-    // Wait for a row value that only exists in the table (not in a filter
-    // option) so the table is actually rendered before we query it. The
-    // literal "login" also matches the action <option> in the filter select
-    // and appears immediately after mount, before data loads.
     await screen.findByText(/555 666 777/);
     const table = screen.getByRole('table');
     const row = within(table).getByText('login').closest('tr')!;
     await userEvent.click(within(row).getByRole('button', { name: /^expand$/i }));
 
-    const payloadPre = await screen.findByText(/"ua": "Firefox"/);
-    expect(payloadPre).toBeInTheDocument();
+    // Readable fields surface as label/value rows — "Actor" for the
+    // admin who logged in, "When" for the formatted timestamp
+    // (not a raw ISO string).
+    expect(await screen.findByText(/admin \(id 1\)/)).toBeInTheDocument();
+    // IP appears both in the table column and in the detail panel — both
+    // are the right answer, so just assert at least one hit.
+    expect(screen.getAllByText('10.0.0.1').length).toBeGreaterThan(0);
+    expect(screen.getByText(/2025-02-01 12:05:00 UTC/)).toBeInTheDocument();
+
+    // Payload JSON is parsed into a key/value row ("ua" → "Firefox"),
+    // not dumped as source.
+    expect(screen.getByText(/^ua$/)).toBeInTheDocument();
+    expect(screen.getByText('Firefox')).toBeInTheDocument();
+
+    // Raw JSON is still available under a collapsible, for power users.
+    expect(screen.getByText(/Raw JSON/i)).toBeInTheDocument();
   });
 
   it('debounces the actor search into the query params', async () => {

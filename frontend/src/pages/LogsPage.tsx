@@ -389,7 +389,7 @@ function ExpandableLogTable({
                 {isOpen ? (
                   <tr key={`${r.id}-payload`} className="rd-log-row expanded">
                     <td colSpan={columns.length}>
-                      <pre className="rd-log-payload">{formatPayload(r)}</pre>
+                      <LogDetail r={r} />
                     </td>
                   </tr>
                 ) : null}
@@ -402,8 +402,165 @@ function ExpandableLogTable({
   );
 }
 
-function formatPayload(r: ApiAuditLog): string {
-  const meta = {
+/** Parse a payload string into a list of {key, value} pairs.
+ *
+ *  Handles three shapes emitted by backend routers today:
+ *    1. JSON object — pretty-printed as-is.
+ *    2. `key=value key=value …` — our common free-form shape. Values may
+ *       contain spaces (e.g. `label=Abuela — laptop`), so we consume up to
+ *       the next whitespace-separated `key=` token.
+ *    3. Anything else — a single "value" row with the raw string.
+ */
+function parsePayload(raw: string | null): { key: string; value: string }[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const obj = JSON.parse(trimmed);
+      if (obj && typeof obj === 'object') {
+        return Object.entries(obj).map(([key, v]) => ({
+          key,
+          value: typeof v === 'string' ? v : JSON.stringify(v),
+        }));
+      }
+    } catch {
+      // fall through to the key=value branch
+    }
+  }
+  // Match `key=` where key is word-chars followed by `=`. Value is the
+  // smallest slice up to the next ` word=` boundary or end-of-string.
+  const re = /(\w+)=(.*?)(?=\s+\w+=|$)/g;
+  const out: { key: string; value: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(trimmed)) !== null) {
+    out.push({ key: m[1], value: m[2].trim() });
+  }
+  if (out.length === 0) {
+    return [{ key: 'raw', value: trimmed }];
+  }
+  return out;
+}
+
+function fmtTimestamp(iso: string): string {
+  // The API returns `YYYY-MM-DDTHH:MM:SS[.ffff]` UTC. Render as
+  // `YYYY-MM-DD HH:MM:SS UTC` — readable, unambiguous, no client TZ
+  // surprises when comparing against server-side filters.
+  return iso.replace('T', ' ').replace(/\..*$/, '') + ' UTC';
+}
+
+/** Render a row's expanded detail as a key/value table + raw JSON escape hatch.
+ *
+ *  Previously this was `<pre>{JSON.stringify(row)}</pre>` — user feedback
+ *  called it out as unreadable "source code". The new layout surfaces the
+ *  fields an admin actually scans for (who / when / what / target) at the
+ *  top, then lists the parsed payload keys, then keeps a collapsed "raw"
+ *  section for power users who want to grep.
+ */
+function LogDetail({ r }: { r: ApiAuditLog }): ReactElement {
+  const payloadKvs = parsePayload(r.payload);
+
+  const rows: { label: string; value: ReactElement | string }[] = [
+    { label: 'When', value: <span className="rd-mono">{fmtTimestamp(r.created_at)}</span> },
+    { label: 'Action', value: formatAction(r) },
+    {
+      label: 'Actor',
+      value:
+        r.actor_username
+          ? `${r.actor_username}${r.actor_user_id ? ` (id ${r.actor_user_id})` : ''}`
+          : r.actor_user_id
+            ? `user id ${r.actor_user_id}`
+            : 'system / unauthenticated',
+    },
+  ];
+  if (r.from_id) rows.push({ label: 'From', value: <span className="rd-mono">{r.from_id}</span> });
+  if (r.to_id) rows.push({ label: 'To', value: <span className="rd-mono">{r.to_id}</span> });
+  if (r.ip) rows.push({ label: 'IP', value: <span className="rd-mono">{r.ip}</span> });
+  if (r.uuid) rows.push({ label: 'UUID', value: <span className="rd-mono">{r.uuid}</span> });
+
+  return (
+    <div className="rd-log-detail" style={{ padding: '12px 16px' }}>
+      <table
+        className="rd-kv"
+        style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}
+      >
+        <tbody>
+          {rows.map(({ label, value }) => (
+            <tr key={label}>
+              <th
+                scope="row"
+                style={{
+                  textAlign: 'left',
+                  padding: '4px 12px 4px 0',
+                  color: 'var(--fg-muted)',
+                  fontWeight: 500,
+                  width: 120,
+                  verticalAlign: 'top',
+                }}
+              >
+                {label}
+              </th>
+              <td style={{ padding: '4px 0' }}>{value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {payloadKvs.length > 0 && (
+        <>
+          <div
+            style={{
+              marginTop: 12,
+              marginBottom: 4,
+              color: 'var(--fg-muted)',
+              fontSize: 12,
+              textTransform: 'uppercase',
+              letterSpacing: 0.6,
+            }}
+          >
+            Payload
+          </div>
+          <table
+            className="rd-kv"
+            style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}
+          >
+            <tbody>
+              {payloadKvs.map(({ key, value }) => (
+                <tr key={key}>
+                  <th
+                    scope="row"
+                    style={{
+                      textAlign: 'left',
+                      padding: '4px 12px 4px 0',
+                      color: 'var(--fg-muted)',
+                      fontWeight: 500,
+                      width: 120,
+                      verticalAlign: 'top',
+                    }}
+                  >
+                    {key}
+                  </th>
+                  <td style={{ padding: '4px 0' }}>
+                    <span className="rd-mono">{value}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      <details style={{ marginTop: 12 }}>
+        <summary
+          style={{ color: 'var(--fg-muted)', fontSize: 12, cursor: 'pointer' }}
+        >
+          Raw JSON
+        </summary>
+        <pre
+          className="rd-log-payload"
+          style={{ marginTop: 6, fontSize: 12 }}
+        >
+{JSON.stringify(
+  {
     id: r.id,
     created_at: r.created_at,
     action: r.action,
@@ -413,16 +570,15 @@ function formatPayload(r: ApiAuditLog): string {
     to_id: r.to_id,
     ip: r.ip,
     uuid: r.uuid,
-  };
-  let payload: unknown = r.payload;
-  if (typeof r.payload === 'string' && r.payload.trim().startsWith('{')) {
-    try {
-      payload = JSON.parse(r.payload);
-    } catch {
-      // leave as string
-    }
-  }
-  return JSON.stringify({ ...meta, payload }, null, 2);
+    payload: r.payload,
+  },
+  null,
+  2,
+)}
+        </pre>
+      </details>
+    </div>
+  );
 }
 
 /* ── pager ───────────────────────────────────────────────────── */
