@@ -660,3 +660,46 @@ body { margin: 0; }
 .rd-stat--clickable { cursor: pointer; transition: background var(--dur-fast) var(--ease); }
 .rd-stat--clickable:hover { background: var(--bg-subtle); }
 .rd-row--clickable { cursor: pointer; }
+
+/* ── v7: Collapsible (components/Collapsible.tsx) ─────────────── */
+.rd-collapsible {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 10px;
+}
+.rd-collapsible__summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  list-style: none;
+  font-weight: 500;
+  color: var(--fg);
+  user-select: none;
+  outline: none;
+}
+.rd-collapsible__summary::-webkit-details-marker { display: none; }
+.rd-collapsible__summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+  border-radius: calc(var(--radius-md) - 1px);
+}
+.rd-collapsible__chevron {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.rd-collapsible[open] .rd-collapsible__chevron { transform: rotate(90deg); }
+.rd-collapsible__title { flex: 1; }
+.rd-collapsible__hint {
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 0.857rem;
+}
+.rd-collapsible__body {
+  padding: 0 14px 14px 40px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}

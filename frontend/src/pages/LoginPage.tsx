@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Monitor } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { apiErrorMessage, login as apiLogin } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
+import { usePrefs } from '@/store/prefsStore';
 
 export function LoginPage() {
   const setSession = useAuthStore((s) => s.login);
   const navigate = useNavigate();
+  const [prefs] = usePrefs();
+  const [search] = useSearchParams();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,7 +30,13 @@ export function LoginPage() {
     try {
       const { user, token } = await apiLogin(username, password);
       setSession(user, token);
-      navigate('/', { replace: true });
+      // Deep-link takes precedence over the landing pref: if the
+      // auth guard bounced the user to /login?next=/settings?tab=users,
+      // honour that so they land back where they intended.
+      // Otherwise follow the configured landingPage (Settings → General).
+      const next = search.get('next');
+      const target = next && next.startsWith('/') ? next : prefs.landingPage;
+      navigate(target, { replace: true });
     } catch (ex) {
       setErr(apiErrorMessage(ex, 'Sign-in failed'));
     } finally {

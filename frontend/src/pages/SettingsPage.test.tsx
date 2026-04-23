@@ -41,7 +41,8 @@ describe('<SettingsPage />', () => {
     expect(screen.getByRole('tab', { name: /^users$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^api tokens$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^appearance$/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /^language$/i })).toBeInTheDocument();
+    // v7: Language moved inside the General tab — no standalone tab.
+    expect(screen.getByRole('tab', { name: /^general$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^security$/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^advanced$/i })).toBeInTheDocument();
     // Server tab is selected by default.

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileText, Monitor, Search, Users as UsersIcon, X } from 'lucide-react';
 import { useGlobalSearch } from '@/hooks/useGlobalSearch';
+import { useDateTime } from '@/lib/formatters';
 
 interface CommandPaletteProps {
   open: boolean;
@@ -36,6 +37,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const navigate = useNavigate();
 
   const { data, isFetching } = useGlobalSearch(query, open);
+  const { fmt } = useDateTime();
 
   const items: CommandItem[] = useMemo(() => {
     if (!data) return [];
@@ -55,11 +57,11 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       ...data.logs.map<CommandItem>((li) => ({
         kind: 'log',
         label: `${li.action} — ${li.actor_username ?? li.from_id ?? li.to_id ?? 'system'}`,
-        sublabel: li.created_at.slice(0, 19).replace('T', ' '),
+        sublabel: fmt(li.created_at),
         href: '/logs',
       })),
     ];
-  }, [data]);
+  }, [data, fmt]);
 
   // Auto-focus on mount. The parent returns null when `!open`, so each
   // opening is a fresh mount — state resets to its initial useState values

@@ -28,6 +28,7 @@ import {
   useRevokeApiToken,
 } from '@/hooks/useApiTokens';
 import { apiErrorMessage } from '@/lib/api';
+import { useDateTime } from '@/lib/formatters';
 import type { ApiTokenMeta } from '@/types/api';
 
 // UI-only choices for the expiry dropdown. None = never expires.
@@ -39,11 +40,9 @@ const EXPIRY_OPTIONS: { label: string; minutes: number | null }[] = [
   { label: '1 year',     minutes: 365 * 24 * 60 },
 ];
 
-function formatDate(iso: string | null): string {
-  if (!iso) return '—';
-  // Keep it short and stable; full tooltip-style formatting is a nice-to-have.
-  return new Date(iso).toISOString().slice(0, 16).replace('T', ' ');
-}
+// Date formatting moved to `lib/formatters` — `useDateTime()` reads the
+// user's Settings → General prefs (format + timezone) and returns a
+// `fmt(iso)` helper consumed inline below.
 
 function tokenStatus(t: ApiTokenMeta): { label: string; tone: 'ok' | 'warn' | 'dead' } {
   if (t.revoked_at) return { label: 'Revoked', tone: 'dead' };
@@ -57,6 +56,7 @@ export function SettingsApiTokensTab() {
   const { data: rows = [], isLoading } = useApiTokens();
   const create = useCreateApiToken();
   const revoke = useRevokeApiToken();
+  const { fmt: formatDate } = useDateTime();
 
   const [openCreate, setOpenCreate] = useState(false);
   const [pendingName, setPendingName] = useState('');

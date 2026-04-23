@@ -31,6 +31,7 @@ import {
   type LogsQuery,
 } from '@/hooks/useLogs';
 import { apiErrorMessage } from '@/lib/api';
+import { useDateTime } from '@/lib/formatters';
 import type { ApiAuditLog, AuditActionValue, AuditCategory } from '@/types/api';
 
 type RangeKey = 'today' | '7d' | '30d' | 'all';
@@ -116,6 +117,7 @@ export function LogsPage() {
   // action. Cleared whenever the dialog opens fresh.
   const [confirmText, setConfirmText] = useState('');
   const deleteMut = useDeleteLogs();
+  const { fmt } = useDateTime();
   const [toast, setToast] = useState<ToastValue | null>(null);
 
   // Debounce the actor text so we don't thrash the backend on every keystroke.
@@ -268,7 +270,7 @@ export function LogsPage() {
       header: 'Time',
       cell: (r) => (
         <span className="rd-mono" style={{ color: 'var(--fg-muted)', fontSize: 12 }}>
-          {r.created_at.slice(0, 19).replace('T', ' ')}
+          {fmt(r.created_at)}
         </span>
       ),
     },
@@ -605,13 +607,6 @@ function parsePayload(raw: string | null): { key: string; value: string }[] {
   return out;
 }
 
-function fmtTimestamp(iso: string): string {
-  // The API returns `YYYY-MM-DDTHH:MM:SS[.ffff]` UTC. Render as
-  // `YYYY-MM-DD HH:MM:SS UTC` — readable, unambiguous, no client TZ
-  // surprises when comparing against server-side filters.
-  return iso.replace('T', ' ').replace(/\..*$/, '') + ' UTC';
-}
-
 /** Render a row's expanded detail as a key/value table + raw JSON escape hatch.
  *
  *  Previously this was `<pre>{JSON.stringify(row)}</pre>` — user feedback
@@ -622,9 +617,10 @@ function fmtTimestamp(iso: string): string {
  */
 function LogDetail({ r }: { r: ApiAuditLog }): ReactElement {
   const payloadKvs = parsePayload(r.payload);
+  const { fmt } = useDateTime();
 
   const rows: { label: string; value: ReactElement | string }[] = [
-    { label: 'When', value: <span className="rd-mono">{fmtTimestamp(r.created_at)}</span> },
+    { label: 'When', value: <span className="rd-mono">{fmt(r.created_at)}</span> },
     { label: 'Action', value: formatAction(r) },
     {
       label: 'Actor',
