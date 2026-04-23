@@ -224,8 +224,8 @@ export function AddressBookPage() {
         title="Address book"
         subtitle={
           snap?.updated_at
-            ? `Synced with your RustDesk client. Last update: ${new Date(snap.updated_at).toISOString().slice(0, 16).replace('T', ' ')}.`
-            : 'Synced with your RustDesk client. Add peers here and they appear on every device.'
+            ? `Your personal list of peers — aliases, tags, favourites. Synced with your RustDesk client via /api/ab. Independent of Devices (which shows every client the server has seen). Last update: ${new Date(snap.updated_at).toISOString().slice(0, 16).replace('T', ' ')}.`
+            : 'Your personal list of peers — aliases, tags, favourites. Synced with your RustDesk client via /api/ab. Independent of Devices (which shows every client the server has seen). Add peers here and they appear on every device.'
         }
         action={
           <Button icon={Plus} onClick={openNew}>

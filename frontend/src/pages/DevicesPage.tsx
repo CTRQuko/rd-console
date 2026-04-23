@@ -306,7 +306,10 @@ export function DevicesPage() {
 
   return (
     <>
-      <PageHeader title="Devices" subtitle="Auto-refreshes every 30 seconds." />
+      <PageHeader
+        title="Devices"
+        subtitle="Clients that have connected to this server. Rows appear automatically when a RustDesk client points its ID/Relay here — you don't add devices manually. Metadata (hostname, platform, version) populates from the client's own sysinfo or the hbbs sync; a freshly-connected client can take up to ~30s to fill in. Auto-refreshes every 30s."
+      />
 
       <div className="rd-toolbar">
         <div className="rd-toolbar__group">
