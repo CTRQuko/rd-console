@@ -7,6 +7,11 @@ interface CopyableFieldProps {
   label?: string;
   value: string;
   mono?: boolean;
+  /** Fired on successful copy — used by parents that want to track
+   *  whether the admin has already captured a one-shot secret (e.g.
+   *  the join-token disclosure modal skips its dismiss-confirm once
+   *  the admin has copied at least once). */
+  onCopy?: (value: string) => void;
 }
 
 async function copyToClipboard(value: string): Promise<void> {
@@ -31,13 +36,19 @@ async function copyToClipboard(value: string): Promise<void> {
   }
 }
 
-export function CopyableField({ label, value, mono = true }: CopyableFieldProps) {
+export function CopyableField({
+  label,
+  value,
+  mono = true,
+  onCopy: onCopyCb,
+}: CopyableFieldProps) {
   const [state, setState] = useState<CopyState>('idle');
 
   const onCopy = async () => {
     try {
       await copyToClipboard(value);
       setState('copied');
+      onCopyCb?.(value);
     } catch {
       setState('error');
     }

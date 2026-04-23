@@ -77,7 +77,7 @@ describe('<JoinTokensPage />', () => {
     wrap(<JoinTokensPage />);
 
     await userEvent.click(
-      await screen.findByRole('button', { name: /mint token/i }),
+      await screen.findByRole('button', { name: /create invitation/i }),
     );
     // fireEvent.change commits the whole value atomically, avoiding a race
     // where userEvent.type's per-char state updates land after the submit
@@ -86,7 +86,7 @@ describe('<JoinTokensPage />', () => {
       target: { value: 'invite' },
     });
     // Leave default expiry (24h) — it's the most common case.
-    await userEvent.click(screen.getByRole('button', { name: /^create$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^generate link$/i }));
 
     await waitFor(() =>
       expect(captured.at(-1)).toEqual({
@@ -103,7 +103,7 @@ describe('<JoinTokensPage />', () => {
       ).toBeInTheDocument(),
     );
     // And the unmissable warning that backdrop/Esc won't dismiss it.
-    expect(screen.getByRole('alert')).toHaveTextContent(/only.*time/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(/single-use/i);
   });
 
   it('asks for confirmation when the disclosure modal is dismissed via X', async () => {
@@ -131,9 +131,9 @@ describe('<JoinTokensPage />', () => {
     wrap(<JoinTokensPage />);
 
     await userEvent.click(
-      await screen.findByRole('button', { name: /mint token/i }),
+      await screen.findByRole('button', { name: /create invitation/i }),
     );
-    await userEvent.click(screen.getByRole('button', { name: /^create$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^generate link$/i }));
 
     // Disclosure modal visible with plaintext.
     await waitFor(() =>
@@ -149,7 +149,7 @@ describe('<JoinTokensPage />', () => {
 
     // Confirm prompt appears.
     expect(
-      await screen.findByText(/did you copy the token/i),
+      await screen.findByText(/did you copy the invitation/i),
     ).toBeInTheDocument();
     // Token value still present behind the confirm — nothing lost yet.
     expect(
@@ -159,7 +159,7 @@ describe('<JoinTokensPage />', () => {
     // Cancel returns to disclosure.
     await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
     expect(
-      screen.queryByText(/did you copy the token/i),
+      screen.queryByText(/did you copy the invitation/i),
     ).not.toBeInTheDocument();
 
     // Re-trigger + confirm this time closes everything.
@@ -169,6 +169,54 @@ describe('<JoinTokensPage />', () => {
       expect(
         screen.queryByDisplayValue('rdcj_unmissable_plaintext'),
       ).not.toBeInTheDocument(),
+    );
+  });
+
+  it('exposes Email / WhatsApp / Telegram share links with the invite URL', async () => {
+    signInAsAdmin();
+    mockRoute('GET', rx('/admin/api/join-tokens'), () => ({
+      status: 200,
+      data: [] as JoinTokenMeta[],
+    }));
+    const minted: JoinTokenCreated = {
+      id: 10,
+      token: 'rdcj_share_token_for_test',
+      token_prefix: 'rdcj_sha',
+      label: null,
+      created_by_user_id: 1,
+      created_at: '2025-03-01T00:00:00',
+      expires_at: null,
+      used_at: null,
+      revoked: false,
+      status: 'active',
+    };
+    mockRoute('POST', rx('/admin/api/join-tokens'), () => ({
+      status: 201,
+      data: minted,
+    }));
+    wrap(<JoinTokensPage />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /create invitation/i }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /^generate link$/i }),
+    );
+
+    // Each channel renders as a plain anchor with a deterministic href
+    // that embeds the invite URL. `mailto:` has the body pre-filled;
+    // wa.me and t.me are public share URLs the browser opens in a tab.
+    const emailLink = await screen.findByRole('link', { name: /email/i });
+    expect(emailLink.getAttribute('href')).toMatch(
+      /^mailto:\?subject=.*&body=.*rdcj_share_token_for_test/,
+    );
+    const waLink = screen.getByRole('link', { name: /whatsapp/i });
+    expect(waLink.getAttribute('href')).toMatch(
+      /^https:\/\/wa\.me\/\?text=.*rdcj_share_token_for_test/,
+    );
+    const tgLink = screen.getByRole('link', { name: /telegram/i });
+    expect(tgLink.getAttribute('href')).toMatch(
+      /^https:\/\/t\.me\/share\/url\?url=.*rdcj_share_token_for_test/,
     );
   });
 
