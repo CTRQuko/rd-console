@@ -43,6 +43,9 @@ class AuditAction(str, Enum):
     # v4: address book (per-user blob)
     ADDRESS_BOOK_UPDATED = "address_book_updated"
     ADDRESS_BOOK_CLEARED = "address_book_cleared"
+    # v4: join-token lifecycle (admin-minted invites for /api/join/:token)
+    JOIN_TOKEN_CREATED = "join_token_created"
+    JOIN_TOKEN_REVOKED = "join_token_revoked"
 
 
 # Category grouping used by /admin/api/logs?category=...
@@ -61,6 +64,8 @@ AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
         AuditAction.LOGIN_FAILED,
         AuditAction.API_TOKEN_CREATED,
         AuditAction.API_TOKEN_REVOKED,
+        AuditAction.JOIN_TOKEN_CREATED,
+        AuditAction.JOIN_TOKEN_REVOKED,
     ),
     "user_management": (
         AuditAction.USER_CREATED,
