@@ -34,5 +34,12 @@
     "saved": "Saved.",
     "error": "Something went wrong.",
     "copied": "Copied to clipboard."
+  },
+  "device_status": {
+    "just_now": "Seen now",
+    "recent": "Recent ({{ago}})",
+    "old": "Inactive ({{ago}})",
+    "never": "Never seen",
+    "tooltip": "Last registration activity the server observed. RustDesk Server free does not expose real-time per-peer presence."
   }
 }
