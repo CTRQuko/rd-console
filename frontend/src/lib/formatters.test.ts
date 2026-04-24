@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fmtDate, fmtDateTime } from './formatters';
+import { fmtDate, fmtDateTime, lastSeenStatus } from './formatters';
 
 // A fixed instant: 14:30 UTC on 23 April 2026.
 const UTC_ISO = '2026-04-23T14:30:00';
@@ -78,5 +78,87 @@ describe('fmtDate', () => {
 
   it('returns em-dash for null', () => {
     expect(fmtDate(null, { format: 'iso', timezone: 'UTC' })).toBe('—');
+  });
+});
+
+describe('lastSeenStatus', () => {
+  // A deterministic "now" keeps the thresholds stable across timezones /
+  // CI clocks. Pick a date/time in the middle of April so there is no
+  // DST surprise and all minutes are easy to reason about.
+  const NOW = new Date('2026-04-23T12:00:00Z');
+
+  // Fake `t()` — returns the key with interpolation suffix so we can
+  // assert against it without bootstrapping real i18next.
+  const t = (key: string, opts?: Record<string, unknown>) => {
+    if (!opts) return key;
+    const ago = opts.ago;
+    return typeof ago === 'string' ? `${key}[${ago}]` : key;
+  };
+
+  it('null ISO → tier=unknown, "never" label', () => {
+    const s = lastSeenStatus(null, t, NOW);
+    expect(s.tier).toBe('unknown');
+    expect(s.label).toBe('device_status.never');
+    expect(s.tooltip).toBe('device_status.tooltip');
+  });
+
+  it('undefined ISO → tier=unknown (same path as null)', () => {
+    const s = lastSeenStatus(undefined, t, NOW);
+    expect(s.tier).toBe('unknown');
+  });
+
+  it('malformed ISO → tier=unknown', () => {
+    const s = lastSeenStatus('not-a-date', t, NOW);
+    expect(s.tier).toBe('unknown');
+    expect(s.label).toBe('device_status.never');
+  });
+
+  it('0 minutes ago → fresh, "just_now"', () => {
+    const s = lastSeenStatus(NOW.toISOString(), t, NOW);
+    expect(s.tier).toBe('fresh');
+    expect(s.label).toBe('device_status.just_now');
+  });
+
+  it('14 minutes ago → fresh (still within the 15-min cutoff)', () => {
+    const iso = new Date(NOW.getTime() - 14 * 60_000).toISOString();
+    const s = lastSeenStatus(iso, t, NOW);
+    expect(s.tier).toBe('fresh');
+  });
+
+  it('16 minutes ago → stale (just past the 15-min cutoff)', () => {
+    const iso = new Date(NOW.getTime() - 16 * 60_000).toISOString();
+    const s = lastSeenStatus(iso, t, NOW);
+    expect(s.tier).toBe('stale');
+    expect(s.label).toMatch(/^device_status\.recent\[.+\]$/);
+  });
+
+  it('23 hours ago → stale (still within 24h)', () => {
+    const iso = new Date(NOW.getTime() - 23 * 3600 * 1000).toISOString();
+    const s = lastSeenStatus(iso, t, NOW);
+    expect(s.tier).toBe('stale');
+  });
+
+  it('25 hours ago → cold (past the 24h cutoff)', () => {
+    const iso = new Date(NOW.getTime() - 25 * 3600 * 1000).toISOString();
+    const s = lastSeenStatus(iso, t, NOW);
+    expect(s.tier).toBe('cold');
+    expect(s.label).toMatch(/^device_status\.old\[.+\]$/);
+  });
+
+  it('many days ago → cold', () => {
+    const iso = new Date(NOW.getTime() - 30 * 86400 * 1000).toISOString();
+    const s = lastSeenStatus(iso, t, NOW);
+    expect(s.tier).toBe('cold');
+  });
+
+  it('always includes the tooltip key regardless of tier', () => {
+    for (const iso of [
+      null,
+      NOW.toISOString(),
+      new Date(NOW.getTime() - 60 * 60_000).toISOString(),
+      new Date(NOW.getTime() - 48 * 3600 * 1000).toISOString(),
+    ]) {
+      expect(lastSeenStatus(iso, t, NOW).tooltip).toBe('device_status.tooltip');
+    }
   });
 });

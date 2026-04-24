@@ -214,3 +214,60 @@ export function DateTime({ value, mode = 'datetime', className }: DateTimeProps)
   const rendered = mode === 'date' ? fmtDateOnly(value) : fmt(value);
   return <span className={className}>{rendered}</span>;
 }
+
+// ─── Last-seen status (device presence heuristic) ─────────────────────────
+
+/** Tier derived from how fresh a device's `last_seen_at` is. Used by the
+ *  `OnlineBadge` to color-code presence without pretending it's real-time
+ *  (the free-tier rustdesk-server doesn't expose that — see
+ *  `docs/servicios/rustdesk-lxc-105/online-detection-limitation.md`).
+ *
+ *  - `fresh`  — seen within 15 min: very likely connected right now.
+ *  - `stale`  — within the last 24h: was active recently, state unclear now.
+ *  - `cold`   — older than 24h: dormant / powered off / rarely used.
+ *  - `unknown`— never seen (null timestamp).
+ */
+export type LastSeenTier = 'fresh' | 'stale' | 'cold' | 'unknown';
+
+export interface LastSeenStatus {
+  tier: LastSeenTier;
+  /** Human-readable label for the badge — already localised. */
+  label: string;
+  /** Hover text explaining what the badge actually represents. */
+  tooltip: string;
+}
+
+/** i18n-aware computation of the presence tier + label. The second arg is
+ *  a `t()` function (from `react-i18next`'s `useTranslation`); the caller
+ *  injects it so this file doesn't need to import react-i18next directly
+ *  (keeps it unit-testable without a full i18n bootstrap). Expected keys:
+ *
+ *    - `device_status.never`
+ *    - `device_status.just_now`
+ *    - `device_status.recent`   — receives interpolation `{{ago}}`
+ *    - `device_status.old`      — receives interpolation `{{ago}}`
+ *    - `device_status.tooltip`
+ */
+export function lastSeenStatus(
+  iso: string | null | undefined,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  now: Date = new Date(),
+): LastSeenStatus {
+  const tooltip = t('device_status.tooltip');
+  if (!iso) {
+    return { tier: 'unknown', label: t('device_status.never'), tooltip };
+  }
+  const date = parseIso(iso);
+  if (!date) {
+    return { tier: 'unknown', label: t('device_status.never'), tooltip };
+  }
+  const minsAgo = Math.floor((now.getTime() - date.getTime()) / 60_000);
+  if (minsAgo < 15) {
+    return { tier: 'fresh', label: t('device_status.just_now'), tooltip };
+  }
+  const ago = formatRelative(date, now);
+  if (minsAgo < 60 * 24) {
+    return { tier: 'stale', label: t('device_status.recent', { ago }), tooltip };
+  }
+  return { tier: 'cold', label: t('device_status.old', { ago }), tooltip };
+}

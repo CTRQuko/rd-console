@@ -153,6 +153,35 @@ def list_devices(
     tag_id: int | None = Query(default=None),
     favorite: bool | None = Query(default=None),
 ) -> list[DeviceOut]:
+    """List devices with metadata and a derived `online` field.
+
+    **Important — `online` is a heuristic, not a real-time signal.**
+
+    In the free tier of ``rustdesk-server`` (hbbs), there is NO per-peer
+    keepalive exposed to us:
+
+    - ``hbbs.peer`` SQLite table has no ``updated_at`` / ``last_seen`` column.
+      The ``status`` bitmap lives only in hbbs memory and is never flushed
+      (``rustdesk/rustdesk-server#263``, wontfix upstream).
+    - ``hbbs`` stdout emits ``update_pk`` only on peer registration, IP
+      change, or pubkey change — NOT on the periodic 30-second UDP ping.
+    - The ``hbbs-watcher`` sidecar + ``/api/heartbeat`` endpoint populate
+      ``Device.last_seen_at`` **only** when hbbs actually emits one of the
+      events above.
+
+    Consequence: an idle-but-connected peer (UDP alive, no IP/pubkey
+    change) will eventually age past ``ONLINE_WINDOW`` and appear Offline
+    to this endpoint, even though the RustDesk client is still fully
+    functional. There is no gratis fix for this; see
+    ``docs/servicios/rustdesk/online-detection-limitation.md`` for the
+    full write-up and the product decision to accept it.
+
+    Downstream consumers (the SPA especially) should treat ``online`` as
+    "seen recently by hbbs" and expose the underlying ``last_seen_at``
+    honestly to the user. The SPA does this by rendering a tier
+    (fresh/stale/cold) with an explanatory tooltip instead of a binary
+    Online/Offline pill.
+    """
     now = utcnow_naive()
     cutoff = now - ONLINE_WINDOW
 

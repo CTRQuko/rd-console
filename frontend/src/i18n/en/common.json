@@ -48,5 +48,12 @@
     "passwordTooShort": "New password must be at least 8 characters.",
     "missingCredentials": "Missing credentials",
     "signInFailed": "Sign-in failed"
+  },
+  "device_status": {
+    "just_now": "Seen now",
+    "recent": "Recent ({{ago}})",
+    "old": "Inactive ({{ago}})",
+    "never": "Never seen",
+    "tooltip": "Last registration activity the server observed. RustDesk Server free does not expose real-time per-peer presence."
   }
 }
