@@ -23,6 +23,7 @@ from .routers import (
     address_book,
     api_tokens,
     auth,
+    backup,
     devices,
     health as health_router,
     join,
@@ -287,6 +288,14 @@ OPENAPI_TAGS = [
         ),
     },
     {
+        "name": "admin:backup",
+        "description": (
+            "JSON export and restore of panel state (users, tags, runtime "
+            "settings, token metadata). Secrets are NEVER exported. "
+            "Restore supports a ``dry_run`` preview before applying changes."
+        ),
+    },
+    {
         "name": "meta",
         "description": "Process-level metadata (e.g. `GET /health`).",
     },
@@ -374,6 +383,7 @@ def create_app() -> FastAPI:
     # Panel (JWT-authenticated)
     app.include_router(auth.router)
     app.include_router(api_tokens.router)
+    app.include_router(backup.router)
     app.include_router(users.router)
     app.include_router(devices.router)
     app.include_router(logs.router)
