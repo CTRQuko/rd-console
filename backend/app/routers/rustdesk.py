@@ -27,6 +27,7 @@ from ..models.device import Device
 from ..models.user import User, UserRole
 from ..security import (
     create_access_token,
+    decode_access_token,
     hash_password,
     needs_rehash,
     utcnow_naive,
@@ -332,11 +333,45 @@ class LegacyLogoutRequest(BaseModel):
 
 
 @router.post("/logout")
-def legacy_logout(body: LegacyLogoutRequest) -> dict:  # noqa: ARG001 - body kept for wire compat
-    """Stateless JWT — we can't actually invalidate the token server-side
-    without a denylist, so this is a 200 ack. kingmo888 returns `{code: 1}`
-    on success; the Flutter client branches on that key, so matching it
-    verbatim avoids client-side sign-out hangs."""
+def legacy_logout(  # noqa: ARG001 - body kept for wire compat
+    body: LegacyLogoutRequest,
+    session: SessionDep,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """Revoke the Flutter client's JWT and return kingmo888-compatible ack.
+
+    As of v8 we do have a denylist — same `jwt_revocations` table the panel
+    `/api/auth/logout` writes to. The response still has to be `{code: 1}`
+    verbatim because the Flutter client branches on that key and anything
+    else hangs its sign-out flow.
+
+    Auth header is optional: the client sometimes calls logout after the
+    token was already dropped, and we must not 401 there (would leave the
+    client stuck in a retry loop). Missing / malformed token → no-op, still
+    returns `{code: 1}`.
+    """
+    from datetime import datetime
+
+    from ..models.jwt_revocation import JwtRevocation
+
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        claims = decode_access_token(token)
+        if claims and "jti" in claims and "exp" in claims and "sub" in claims:
+            try:
+                user_id = int(claims["sub"])
+            except (ValueError, TypeError):
+                user_id = None
+            jti = claims["jti"]
+            if user_id is not None and session.get(JwtRevocation, jti) is None:
+                session.add(
+                    JwtRevocation(
+                        jti=jti,
+                        user_id=user_id,
+                        expires_at=datetime.utcfromtimestamp(int(claims["exp"])),
+                    )
+                )
+                session.commit()
     return {"code": 1}
 
 
