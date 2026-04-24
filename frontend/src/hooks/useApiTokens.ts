@@ -19,6 +19,9 @@ export function useApiTokens() {
       const { data } = await api.get<ApiTokenMeta[]>('/api/auth/tokens');
       return data;
     },
+    // Poll every 30s so `last_used_at` reflects live usage of the token
+    // without requiring the user to refresh manually.
+    refetchInterval: 30_000,
   });
 }
 

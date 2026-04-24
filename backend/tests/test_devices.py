@@ -41,8 +41,11 @@ def _seed_device(
 
 
 def test_list_devices_computes_online_flag(client, auth_headers, session):
+    # v9: ONLINE_WINDOW is 15 min (was 5). Pick offsets that straddle the
+    # new cutoff on either side so a future widening doesn't silently make
+    # the assertions vacuous.
     _seed_device(session, rustdesk_id="111 111 111", last_seen_offset_min=1)
-    _seed_device(session, rustdesk_id="222 222 222", last_seen_offset_min=10)
+    _seed_device(session, rustdesk_id="222 222 222", last_seen_offset_min=20)
     _seed_device(session, rustdesk_id="333 333 333", last_seen_offset_min=None)
 
     r = client.get("/admin/api/devices", headers=auth_headers)
@@ -51,6 +54,18 @@ def test_list_devices_computes_online_flag(client, auth_headers, session):
     assert by_id["111 111 111"]["online"] is True
     assert by_id["222 222 222"]["online"] is False
     assert by_id["333 333 333"]["online"] is False
+
+
+def test_list_devices_online_boundary_10min_is_online(client, auth_headers, session):
+    """Regression: when ONLINE_WINDOW was bumped from 5→15 min in v9 we
+    want an explicit case showing that 10 min is still Online. If a future
+    refactor drops the window back to <10 min this test fails loud."""
+    _seed_device(session, rustdesk_id="window-check", last_seen_offset_min=10)
+
+    r = client.get("/admin/api/devices", headers=auth_headers)
+    assert r.status_code == 200
+    by_id = {d["rustdesk_id"]: d for d in r.json()}
+    assert by_id["window-check"]["online"] is True
 
 
 def test_list_devices_filter_online_and_platform(client, auth_headers, session):
