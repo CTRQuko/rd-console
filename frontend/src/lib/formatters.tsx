@@ -271,3 +271,38 @@ export function lastSeenStatus(
   }
   return { tier: 'cold', label: t('device_status.old', { ago }), tooltip };
 }
+
+// ─── Misc date utilities ──────────────────────────────────────────────────
+
+/** Whether an ISO timestamp has already passed. `null`/`undefined` returns
+ *  false — a token with `expires_at=null` is "never expires", not "expired".
+ *  Malformed ISO strings also return false (fail-soft: a broken field
+ *  shouldn't nuke the UI into expiry mode). */
+export function isExpired(
+  iso: string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!iso) return false;
+  const date = parseIso(iso);
+  if (!date) return false;
+  return date.getTime() <= now.getTime();
+}
+
+/** Compute the ISO timestamp at the start of a named range — used by the
+ *  LogsPage filter dropdown. Extracted so the lookup logic lives in one
+ *  place instead of scattered inline `new Date()` arithmetic. */
+export function sinceIsoRange(
+  range: 'today' | '7d' | '30d' | 'all',
+  now: Date = new Date(),
+): string | undefined {
+  if (range === 'all') return undefined;
+  const d = new Date(now);
+  if (range === 'today') {
+    d.setHours(0, 0, 0, 0);
+  } else if (range === '7d') {
+    d.setDate(d.getDate() - 7);
+  } else {
+    d.setDate(d.getDate() - 30);
+  }
+  return d.toISOString();
+}

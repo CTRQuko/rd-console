@@ -28,7 +28,7 @@ import {
   useRevokeApiToken,
 } from '@/hooks/useApiTokens';
 import { apiErrorMessage } from '@/lib/api';
-import { useDateTime } from '@/lib/formatters';
+import { isExpired, useDateTime } from '@/lib/formatters';
 import type { ApiTokenMeta } from '@/types/api';
 
 // UI-only choices for the expiry dropdown. None = never expires.
@@ -46,7 +46,7 @@ const EXPIRY_OPTIONS: { label: string; minutes: number | null }[] = [
 
 function tokenStatus(t: ApiTokenMeta): { label: string; tone: 'ok' | 'warn' | 'dead' } {
   if (t.revoked_at) return { label: 'Revoked', tone: 'dead' };
-  if (t.expires_at && new Date(t.expires_at) <= new Date()) {
+  if (isExpired(t.expires_at)) {
     return { label: 'Expired', tone: 'dead' };
   }
   return { label: 'Active', tone: 'ok' };

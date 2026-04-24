@@ -31,7 +31,7 @@ import {
   type LogsQuery,
 } from '@/hooks/useLogs';
 import { apiErrorMessage } from '@/lib/api';
-import { useDateTime } from '@/lib/formatters';
+import { sinceIsoRange, useDateTime } from '@/lib/formatters';
 import type { ApiAuditLog, AuditActionValue, AuditCategory } from '@/types/api';
 
 type RangeKey = 'today' | '7d' | '30d' | 'all';
@@ -51,19 +51,8 @@ const CATEGORIES: { value: '' | AuditCategory; label: string }[] = [
   { value: 'config', label: 'Config / device' },
 ];
 
-/** ISO timestamp that's N days before "now". `all` → undefined. */
-function sinceFromRange(range: RangeKey): string | undefined {
-  if (range === 'all') return undefined;
-  const d = new Date();
-  if (range === 'today') {
-    d.setHours(0, 0, 0, 0);
-  } else if (range === '7d') {
-    d.setDate(d.getDate() - 7);
-  } else {
-    d.setDate(d.getDate() - 30);
-  }
-  return d.toISOString();
-}
+// Range computation moved to `lib/formatters.tsx::sinceIsoRange` so every
+// page that needs "ISO of N-days-ago" doesn't reinvent the Date arithmetic.
 
 const PAGE_SIZE = 25;
 
@@ -128,7 +117,7 @@ export function LogsPage() {
       category: category || undefined,
       action: action || undefined,
       actor: actorDebounced || undefined,
-      since: sinceFromRange(range),
+      since: sinceIsoRange(range),
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     }),
