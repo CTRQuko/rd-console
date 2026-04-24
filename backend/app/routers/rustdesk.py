@@ -78,7 +78,10 @@ def _client_ip(request: Request) -> str | None:
     return None
 
 
-@router.post("/heartbeat")
+@router.post(
+    "/heartbeat",
+    summary="RustDesk client heartbeat — updates Device.last_seen_at",
+)
 def heartbeat(
     body: HeartbeatPayload,
     request: Request,
@@ -119,7 +122,10 @@ def heartbeat(
     return {"ok": True}
 
 
-@router.post("/sysinfo")
+@router.post(
+    "/sysinfo",
+    summary="RustDesk client sysinfo — syncs hostname/platform/cpu/version",
+)
 def sysinfo(
     body: SysinfoPayload,
     session: SessionDep,
@@ -225,7 +231,10 @@ _ACTION_TO_AUDIT = {
 }
 
 
-@router.post("/audit/conn")
+@router.post(
+    "/audit/conn",
+    summary="RustDesk audit — connect/disconnect event from hbbr",
+)
 def audit_conn(
     payload: dict,
     session: SessionDep,
@@ -320,9 +329,14 @@ def _user_payload(user: User) -> dict:
     }
 
 
-@router.post("/login")
+@router.post(
+    "/login",
+    summary="Legacy RustDesk native-client login (kingmo888-compatible)",
+)
 def legacy_login(body: LegacyLoginRequest, session: SessionDep) -> dict:
-    """kingmo888-compatible login for the native RustDesk client."""
+    """kingmo888-compatible login for the native RustDesk client. Mints a
+    JWT using the same machinery as `/api/auth/login` and returns it in
+    the legacy JSON envelope the client expects."""
     user = session.exec(select(User).where(User.username == body.username)).first()
     password_ok = bool(user) and verify_password(body.password, user.password_hash)  # type: ignore[union-attr]
     if not user or not user.is_active or not password_ok:
@@ -362,7 +376,10 @@ def legacy_login(body: LegacyLoginRequest, session: SessionDep) -> dict:
     }
 
 
-@router.post("/currentUser")
+@router.post(
+    "/currentUser",
+    summary="Legacy RustDesk native-client identity echo",
+)
 def legacy_current_user(
     user: CurrentUser,
     authorization: str | None = Header(default=None),
@@ -401,7 +418,10 @@ class LegacyLogoutRequest(BaseModel):
     uuid: str | None = None
 
 
-@router.post("/logout")
+@router.post(
+    "/logout",
+    summary="Legacy RustDesk native-client logout — revokes the JWT",
+)
 def legacy_logout(  # noqa: ARG001 - body kept for wire compat
     body: LegacyLogoutRequest,
     session: SessionDep,
@@ -444,7 +464,10 @@ def legacy_logout(  # noqa: ARG001 - body kept for wire compat
     return {"code": 1}
 
 
-@router.post("/audit/file")
+@router.post(
+    "/audit/file",
+    summary="RustDesk audit — file transfer event from hbbr",
+)
 def audit_file(
     payload: dict,
     session: SessionDep,

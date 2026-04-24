@@ -36,8 +36,12 @@ class JoinConfig(BaseModel):
     "/{token}",
     response_model=JoinConfig,
     dependencies=[Depends(_join_limiter)],
+    summary="Redeem a single-use invite token — returns server config",
 )
 def get_join_config(token: str, session: SessionDep) -> JoinConfig:
+    """Unauthenticated public endpoint. Clients hit this after scanning the
+    QR or clicking the invite URL; they receive the hbbs/hbbr/api URLs and
+    public key needed to register. Token is marked `used_at` on success."""
     # Reject obviously malformed tokens early; secrets.token_urlsafe(32) is ~43 chars.
     if not token or len(token) > 64:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invalid or revoked token")
