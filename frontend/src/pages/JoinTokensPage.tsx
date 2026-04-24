@@ -8,6 +8,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Mail, MessageCircle, MoreHorizontal, Plus, Send, Trash2 } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/Badge';
 import { Button } from '@/components/Button';
@@ -61,6 +62,7 @@ export function JoinTokensPage() {
   // Whether to include revoked tokens in the list. Default OFF per
   // feedback — "revoke = out of sight". Admin can flip the toggle to
   // audit the full history.
+  const { t } = useTranslation();
   const [includeRevoked, setIncludeRevoked] = useState(false);
   const { data: rows = [], isLoading } = useJoinTokens(includeRevoked);
   const create = useCreateJoinToken();
@@ -264,11 +266,14 @@ export function JoinTokensPage() {
         rows={rows}
         columns={columns}
         empty={
-          isLoading
-            ? 'Loading…'
-            : includeRevoked
-              ? 'No invitations yet. Create one to onboard a device.'
-              : 'No active invitations. Toggle "Show revoked" to see history, or Create one to onboard a device.'
+          isLoading ? t('states.loading') : (
+            <div className="rd-empty">
+              <p>{t('empty_states.invites')}</p>
+              <Button size="sm" icon={Plus} onClick={() => setOpenCreate(true)}>
+                {t('actions.create')}
+              </Button>
+            </div>
+          )
         }
         selectable
         selectedIds={selectedIds}

@@ -13,6 +13,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Download, FileJson, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
@@ -82,6 +83,7 @@ const VALID_ACTIONS: readonly AuditActionValue[] = [
 export function LogsPage() {
   // Seed filters from the URL so Dashboard links like /logs?category=session
   // or /logs?actor=<id> land with the filter applied.
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const initRange = (searchParams.get('range') ?? '') as RangeKey;
   const initCategory = (searchParams.get('category') ?? '') as AuditCategory;
@@ -407,7 +409,7 @@ export function LogsPage() {
       <ExpandableLogTable
         rows={rows}
         columns={columns}
-        empty={isFetching ? 'Loading…' : 'No log entries match your filters.'}
+        empty={isFetching ? t('states.loading') : t('empty_states.logs')}
         expanded={expanded}
         onRowClick={(r) => toggleExpand(r.id)}
       />

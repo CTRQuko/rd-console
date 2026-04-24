@@ -15,6 +15,7 @@
  */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -53,6 +54,7 @@ function tokenStatus(t: ApiTokenMeta): { label: string; tone: 'ok' | 'warn' | 'd
 }
 
 export function SettingsApiTokensTab() {
+  const { t } = useTranslation();
   const { data: rows = [], isLoading } = useApiTokens();
   const create = useCreateApiToken();
   const revoke = useRevokeApiToken();
@@ -198,9 +200,14 @@ export function SettingsApiTokensTab() {
         rows={sorted}
         columns={columns}
         empty={
-          isLoading
-            ? 'Loading…'
-            : 'No tokens yet. Create one to authenticate scripts or scheduled jobs.'
+          isLoading ? t('states.loading') : (
+            <div className="rd-empty">
+              <p>{t('empty_states.tokens')}</p>
+              <Button size="sm" icon={Plus} onClick={() => setOpenCreate(true)}>
+                {t('actions.create')}
+              </Button>
+            </div>
+          )
         }
       />
 
