@@ -21,7 +21,14 @@ from ..services.hbbs_sync import delete_hbbs_peer
 
 router = APIRouter(prefix="/admin/api/devices", tags=["admin:devices"])
 
-ONLINE_WINDOW = timedelta(minutes=5)  # device seen within 5 min = online
+ONLINE_WINDOW = timedelta(minutes=15)  # device seen within 15 min = online
+# Note on why 15 and not 5 (v9, 2026-04-24): hbbs (free tier) emits the
+# `update_pk` log line — which the watcher turns into /api/heartbeat — only
+# on peer registration, IP change, or pubkey change, NOT periodically every
+# 30s. An idle-but-connected peer therefore silently ages past a 5-minute
+# window and the panel marks it Offline while the client is still happily
+# pinging UDP 21116. 15 min covers the typical re-register cadence we see
+# in production (one every ~10 min per active peer).
 
 
 class TagSummary(BaseModel):

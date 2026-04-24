@@ -22,6 +22,10 @@ export function useJoinTokens(includeRevoked = false) {
       });
       return data;
     },
+    // Poll every 30s so an admin watching this page sees a token's
+    // `used_at` flip within seconds of a peer claiming the invite, without
+    // having to F5. Matches the cadence on useDevices.
+    refetchInterval: 30_000,
   });
 }
 

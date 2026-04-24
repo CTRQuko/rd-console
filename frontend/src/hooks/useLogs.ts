@@ -55,6 +55,10 @@ export function useLogs(query: LogsQuery) {
     // Keep the previous page visible while filters change so the table
     // doesn't collapse to "No events" mid-keystroke.
     placeholderData: (prev) => prev,
+    // Poll every 30s — audit log is the admin's "is something happening
+    // right now?" view. Without this, new connect/login events are only
+    // visible after F5.
+    refetchInterval: 30_000,
   });
 }
 
