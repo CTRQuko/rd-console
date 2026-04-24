@@ -18,15 +18,25 @@
  *  implicitly UTC in this codebase. The formatter interprets strings
  *  without an explicit offset/Z as UTC, then converts to the pref'd
  *  timezone.
+ *
+ *  Locale handling: `system` and `relative` formats follow the active
+ *  i18n language so "hace 3 minutos" / "il y a 3 minutes" flip in sync
+ *  with the UI language. `eu` / `us` are anchored to their locale
+ *  regardless (that's the whole point of picking them explicitly). The
+ *  hook variant reads `useTranslation().i18n.language` so it re-renders
+ *  on language change; the standalone `fmtDateTime` falls back to the
+ *  i18next singleton.
  */
 
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/lib/i18n';
 import { usePrefs, type DateTimeFormat, type Timezone } from '@/store/prefsStore';
 
 // ─── Supported formats ────────────────────────────────────────────────────
 
 /** Locale strings the non-system formats use. The `system` format uses
- *  `undefined` (the browser's locale). */
+ *  the active i18n language (fallback: browser locale). */
 const LOCALE_BY_FORMAT: Record<Exclude<DateTimeFormat, 'system' | 'iso' | 'relative'>, string> = {
   eu: 'es-ES',
   us: 'en-US',
@@ -49,12 +59,12 @@ function resolveTimezone(tz: Timezone): string | undefined {
 }
 
 /** Relative format with absolute fallback for >7d deltas. */
-function formatRelative(date: Date, now: Date = new Date()): string {
+function formatRelative(date: Date, now: Date = new Date(), locale?: string): string {
   if (typeof Intl === 'undefined' || typeof Intl.RelativeTimeFormat !== 'function') {
     // Fallback — browsers too old for RelativeTimeFormat get ISO-ish.
     return date.toISOString().replace('T', ' ').slice(0, 16);
   }
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
   const diffMs = date.getTime() - now.getTime();
   const absSec = Math.abs(diffMs / 1000);
 
@@ -65,7 +75,7 @@ function formatRelative(date: Date, now: Date = new Date()): string {
 
   // Beyond a week, relative gets unreadable ("3 months ago" vs the actual date).
   // Fall back to an absolute render so the user knows exactly when.
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date);
@@ -76,6 +86,9 @@ function formatRelative(date: Date, now: Date = new Date()): string {
 export interface FmtOptions {
   format: DateTimeFormat;
   timezone: Timezone;
+  /** Locale override. Defaults to the active i18n language. Ignored by
+   *  `eu` / `us` / `iso` formats which anchor to their own locale. */
+  locale?: string;
 }
 
 export function fmtDateTime(
@@ -87,6 +100,7 @@ export function fmtDateTime(
   if (!date) return '—';
 
   const timeZone = resolveTimezone(opts.timezone);
+  const resolvedLocale = opts.locale ?? i18n.language;
 
   switch (opts.format) {
     case 'iso':
@@ -110,10 +124,10 @@ export function fmtDateTime(
         timeZone,
       }).format(date);
     case 'relative':
-      return formatRelative(date);
+      return formatRelative(date, undefined, resolvedLocale);
     case 'system':
     default:
-      return new Intl.DateTimeFormat(undefined, {
+      return new Intl.DateTimeFormat(resolvedLocale, {
         dateStyle: 'medium',
         timeStyle: 'short',
         timeZone,
@@ -131,6 +145,7 @@ export function fmtDate(
   const date = parseIso(iso);
   if (!date) return '—';
   const timeZone = resolveTimezone(opts.timezone);
+  const resolvedLocale = opts.locale ?? i18n.language;
 
   if (opts.format === 'iso') {
     return new Intl.DateTimeFormat('sv-SE', {
@@ -142,7 +157,7 @@ export function fmtDate(
   }
   if (opts.format === 'relative') {
     // Date-only relative rarely makes sense; fall back to absolute.
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(resolvedLocale, {
       dateStyle: 'medium',
       timeZone,
     }).format(date);
@@ -152,7 +167,7 @@ export function fmtDate(
       ? 'es-ES'
       : opts.format === 'us'
         ? 'en-US'
-        : undefined;
+        : resolvedLocale;
   return new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeZone,
@@ -161,24 +176,28 @@ export function fmtDate(
 
 // ─── React hook + component ───────────────────────────────────────────────
 
-/** Hook version — reads prefs once, returns a stable formatter. Reactive
- *  to pref changes because `usePrefs` is. */
+/** Hook version — reads prefs + active i18n language, returns stable
+ *  formatters. Re-renders automatically when either changes. */
 export function useDateTime() {
   const [prefs] = usePrefs();
+  const { i18n: i18nInst } = useTranslation();
+  const lang = i18nInst.language;
   return useMemo(
     () => ({
       fmt: (iso: string | null | undefined) =>
         fmtDateTime(iso, {
           format: prefs.dateTimeFormat,
           timezone: prefs.timezone,
+          locale: lang,
         }),
       fmtDateOnly: (iso: string | null | undefined) =>
         fmtDate(iso, {
           format: prefs.dateTimeFormat,
           timezone: prefs.timezone,
+          locale: lang,
         }),
     }),
-    [prefs.dateTimeFormat, prefs.timezone],
+    [prefs.dateTimeFormat, prefs.timezone, lang],
   );
 }
 

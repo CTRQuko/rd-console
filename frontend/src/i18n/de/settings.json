@@ -45,7 +45,15 @@
     "confirmNewPassword": "Neues Passwort bestätigen",
     "updatePassword": "Passwort aktualisieren",
     "guardrails": "Schutzmaßnahmen",
-    "guardrailsDescription": "Schreibgeschützte Übersicht der aktiven Authentifizierungs- und Missbrauchsverhinderungslimits. Änderungen erfordern einen Redeploy mit den entsprechenden env-Variablen."
+    "guardrailsDescription": "Schreibgeschützte Übersicht der aktiven Authentifizierungs- und Missbrauchsverhinderungslimits. Änderungen erfordern einen Redeploy mit den entsprechenden env-Variablen.",
+    "guardrailsLoginLabel": "Anmelde-Rate-Limit:",
+    "guardrailsLoginValue": "10 Anfragen / Minute pro IP (HTTP 429 nach Überschreitung).",
+    "guardrailsJoinLabel": "Rate-Limit für Einladungseinlösung:",
+    "guardrailsJoinValue": "30 Anfragen / Minute pro IP.",
+    "guardrailsJwtLabel": "Panel-Sitzung (JWT):",
+    "guardrailsJwtValue": "24 Stunden, einstellbar über",
+    "guardrailsHashLabel": "Passwort-Hashing:",
+    "guardrailsHashValue": "Argon2id, automatisches Rehashing bei Anmeldung, wenn sich Parameter ändern."
   },
   "advanced": {
     "exportTitle": "Konfiguration exportieren",
@@ -66,6 +74,8 @@
     "fontSizeDescription": "Die gesamte Oberfläche skalieren. 100 % ist der Standard.",
     "preview": "Vorschau",
     "previewDescription": "Reagiert in Echtzeit, wenn Sie die obigen Einstellungen ändern.",
+    "previewStatOnline": "Online-Geräte",
+    "previewStatSessions": "Sitzungen heute",
     "resetDefaults": "Auf Standardwerte zurücksetzen"
   }
 }

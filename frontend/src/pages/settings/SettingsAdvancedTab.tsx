@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Download } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { Toast, type ToastValue } from '@/components/Toast';
@@ -14,6 +15,7 @@ import { api, apiErrorMessage } from '@/lib/api';
 import { useServerInfo } from '@/hooks/useServerInfo';
 
 export function SettingsAdvancedTab() {
+  const { t } = useTranslation('settings');
   const { data } = useServerInfo();
   const [toast, setToast] = useState<ToastValue | null>(null);
   const [pending, setPending] = useState(false);
@@ -36,7 +38,7 @@ export function SettingsAdvancedTab() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setToast({ kind: 'ok', text: 'Export downloaded.' });
+      setToast({ kind: 'ok', text: t('common:toasts.exportDownloaded') });
     } catch (err) {
       setToast({ kind: 'error', text: apiErrorMessage(err) });
     } finally {
@@ -47,23 +49,19 @@ export function SettingsAdvancedTab() {
   return (
     <>
       <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Export configuration</h2>
+        <h2 className="rd-settings-section__title">{t('advanced.exportTitle')}</h2>
         <p className="rd-settings-section__sub">
-          Download the editable runtime settings as a <code>.env</code>-style
-          file. Useful when migrating to a new host. Secrets
-          (<code>RD_SECRET_KEY</code>, <code>RD_ADMIN_PASSWORD</code>,
-          <code>RD_CLIENT_SHARED_SECRET</code>) are <strong>never</strong>{' '}
-          included — copy those from your source env.
+          {t('advanced.exportDescription')}
         </p>
         <div className="rd-settings-section__foot">
           <Button icon={Download} onClick={onExport} disabled={pending}>
-            {pending ? 'Exporting…' : 'Download rd-console.env'}
+            {pending ? t('common:states.exporting') : t('advanced.downloadEnv')}
           </Button>
         </div>
       </section>
 
       <section className="rd-settings-section">
-        <h2 className="rd-settings-section__title">Build info</h2>
+        <h2 className="rd-settings-section__title">{t('advanced.buildInfo')}</h2>
         <div className="rd-settings-section__body">
           <div style={{ fontSize: 13 }}>
             <div style={{ marginBottom: 6 }}>
@@ -71,16 +69,16 @@ export function SettingsAdvancedTab() {
                 className="rd-field__label"
                 style={{ display: 'inline-block', minWidth: 120, color: 'var(--fg-muted)' }}
               >
-                Version
+                {t('advanced.version')}
               </span>
-              <span className="rd-mono">{data?.version ?? 'unknown'}</span>
+              <span className="rd-mono">{data?.version ?? t('common:states.unknown')}</span>
             </div>
             <div>
               <span
                 className="rd-field__label"
                 style={{ display: 'inline-block', minWidth: 120, color: 'var(--fg-muted)' }}
               >
-                Frontend
+                {t('advanced.frontend')}
               </span>
               <span className="rd-mono">React + Vite</span>
             </div>

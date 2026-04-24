@@ -45,7 +45,15 @@
     "confirmNewPassword": "Confirmar contraseña nueva",
     "updatePassword": "Actualizar contraseña",
     "guardrails": "Límites de seguridad",
-    "guardrailsDescription": "Resumen de solo lectura de los límites de autenticación y prevención de abuso activos. Cambiarlos requiere redesplegar con las env vars correspondientes."
+    "guardrailsDescription": "Resumen de solo lectura de los límites de autenticación y prevención de abuso activos. Cambiarlos requiere redesplegar con las env vars correspondientes.",
+    "guardrailsLoginLabel": "Límite de login:",
+    "guardrailsLoginValue": "10 peticiones / minuto por IP (HTTP 429 al superar el umbral).",
+    "guardrailsJoinLabel": "Límite de canje de invitaciones:",
+    "guardrailsJoinValue": "30 peticiones / minuto por IP.",
+    "guardrailsJwtLabel": "Sesión del panel (JWT):",
+    "guardrailsJwtValue": "24 horas, configurable con",
+    "guardrailsHashLabel": "Hashing de contraseña:",
+    "guardrailsHashValue": "Argon2id, rehash automático en el login cuando cambian los parámetros."
   },
   "advanced": {
     "exportTitle": "Exportar configuración",
@@ -66,6 +74,8 @@
     "fontSizeDescription": "Escala toda la interfaz. 100% es el valor por defecto.",
     "preview": "Vista previa",
     "previewDescription": "Reacciona en tiempo real cuando cambias los ajustes de arriba.",
+    "previewStatOnline": "Dispositivos conectados",
+    "previewStatSessions": "Sesiones hoy",
     "resetDefaults": "Restablecer valores por defecto"
   }
 }

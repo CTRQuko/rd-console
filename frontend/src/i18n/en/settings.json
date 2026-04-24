@@ -45,7 +45,15 @@
     "confirmNewPassword": "Confirm new password",
     "updatePassword": "Update password",
     "guardrails": "Guardrails",
-    "guardrailsDescription": "Read-only summary of the auth and abuse-prevention limits in effect. Changes to these require redeploying with the matching env vars."
+    "guardrailsDescription": "Read-only summary of the auth and abuse-prevention limits in effect. Changes to these require redeploying with the matching env vars.",
+    "guardrailsLoginLabel": "Login rate limit:",
+    "guardrailsLoginValue": "10 requests / minute per IP (HTTP 429 after threshold).",
+    "guardrailsJoinLabel": "Join redemption rate limit:",
+    "guardrailsJoinValue": "30 requests / minute per IP.",
+    "guardrailsJwtLabel": "Panel session (JWT):",
+    "guardrailsJwtValue": "24 hours, set via",
+    "guardrailsHashLabel": "Password hashing:",
+    "guardrailsHashValue": "Argon2id, automatic rehash on login when parameters change."
   },
   "advanced": {
     "exportTitle": "Export configuration",
@@ -66,6 +74,8 @@
     "fontSizeDescription": "Scale the entire UI. 100% is the default.",
     "preview": "Preview",
     "previewDescription": "Reacts in real time as you change the settings above.",
+    "previewStatOnline": "Online devices",
+    "previewStatSessions": "Sessions today",
     "resetDefaults": "Reset to defaults"
   }
 }
