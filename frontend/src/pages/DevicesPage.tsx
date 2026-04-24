@@ -32,7 +32,8 @@ import { TagChip } from '@/components/TagChip';
 import { TagInput } from '@/components/TagInput';
 import { Toast, type ToastValue } from '@/components/Toast';
 import { useDeviceLogs } from '@/hooks/useLogs';
-import { useDateTime } from '@/lib/formatters';
+import { lastSeenStatus, useDateTime } from '@/lib/formatters';
+import { useTranslation } from 'react-i18next';
 import {
   useDevices,
   useDisconnectDevice,
@@ -53,20 +54,6 @@ import type { ApiDevice, Platform, Tag } from '@/types/api';
 
 type StatusFilter = 'All' | 'Online' | 'Offline';
 type PlatformFilter = 'All' | Platform;
-
-/** Minutes since a timestamp, UI-friendly. `null` → "Never". */
-function relativeLastSeen(iso: string | null): string {
-  if (!iso) return 'Never';
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  const secs = Math.max(0, Math.floor((now - then) / 1000));
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 // Normalise a URL search-param value against a whitelist so a bogus value
 // (?status=pony) doesn't break rendering.
@@ -138,6 +125,8 @@ export function DevicesPage() {
   const [bulkTagDialog, setBulkTagDialog] = useState(false);
   const [toast, setToast] = useState<ToastValue | null>(null);
 
+  const { t } = useTranslation();
+
   const usernamesById = useMemo(
     () => Object.fromEntries(users.map((u) => [u.id, u.username] as const)),
     [users],
@@ -188,8 +177,13 @@ export function DevicesPage() {
     {
       key: 'online',
       header: 'Status',
-      width: 100,
-      cell: (r) => <OnlineBadge online={r.online} />,
+      width: 160,
+      cell: (r) => {
+        const s = lastSeenStatus(r.last_seen_at, t);
+        return (
+          <OnlineBadge tier={s.tier} label={s.label} tooltip={s.tooltip} />
+        );
+      },
     },
     {
       key: 'rustdesk_id',
@@ -236,15 +230,10 @@ export function DevicesPage() {
         </span>
       ),
     },
-    {
-      key: 'last_seen_at',
-      header: 'Last seen',
-      cell: (r) => (
-        <span style={{ color: 'var(--fg-muted)' }}>
-          {relativeLastSeen(r.last_seen_at)}
-        </span>
-      ),
-    },
+    // NOTE: the standalone "Last seen" column was removed in v10-last-seen —
+    // its data is now folded into the Status column above, which renders
+    // the fresh/stale/cold tier + relative label in one badge. The drawer
+    // still shows the absolute timestamp for users who want the exact time.
     {
       key: 'owner',
       header: 'Owner',
@@ -643,8 +632,11 @@ function DeviceDrawer({
 }: DeviceDrawerProps) {
   const { data: logs } = useDeviceLogs(device?.id ?? null, 10);
   const { fmt } = useDateTime();
+  const { t } = useTranslation();
 
   if (!device) return null;
+
+  const lastSeen = lastSeenStatus(device.last_seen_at, t);
 
   return (
     <Drawer
@@ -653,7 +645,11 @@ function DeviceDrawer({
       onClose={onClose}
       title={
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <OnlineBadge online={device.online} />
+          <OnlineBadge
+            tier={lastSeen.tier}
+            label={lastSeen.label}
+            tooltip={lastSeen.tooltip}
+          />
           <span className="rd-mono">{device.rustdesk_id}</span>
         </span>
       }
@@ -697,7 +693,7 @@ function DeviceDrawer({
         <dt>Last IP</dt>
         <dd className="mono">{device.last_ip ?? '—'}</dd>
         <dt>Last seen</dt>
-        <dd>{relativeLastSeen(device.last_seen_at)}</dd>
+        <dd>{device.last_seen_at ? fmt(device.last_seen_at) : '—'}</dd>
         <dt>First seen</dt>
         <dd className="mono">{fmt(device.created_at)}</dd>
         <dt>Owner</dt>

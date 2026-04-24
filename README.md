@@ -77,6 +77,29 @@ See [backend/README.md](backend/README.md).
 
 Copy `.env.example` → `.env`. Runtime-editable values (`RD_SERVER_HOST`, `RD_PANEL_URL`, `RD_HBBS_PUBLIC_KEY`) can be overridden from Settings → Server; everything else is env-only.
 
+## Known limitations
+
+### "Online" detection is a heuristic, not real-time presence
+
+`rustdesk-server` (free tier) does not expose a per-peer keepalive: the
+`peer.status` bitmap lives in hbbs memory and is never flushed to SQLite
+(upstream [#263](https://github.com/rustdesk/rustdesk-server/issues/263),
+*wontfix*). hbbs stdout only emits `update_pk` on peer registration, IP
+change, or pubkey change — never on the periodic UDP ping.
+
+The panel therefore derives `online` from `last_seen_at < 15min`, fed by
+the `hbbs-watcher` sidecar that tails hbbs logs. An idle-but-connected
+client can age past that window and appear as "no recent activity" while
+the RustDesk client is still fully functional.
+
+The UI reflects this honestly: devices show a tier (fresh / stale / cold
+/ unknown) with a tooltip explaining the data, instead of a binary
+Online/Offline pill.
+
+Full write-up (incl. the evidence that ruled out every gratis workaround):
+`docs/servicios/rustdesk-lxc-105/online-detection-limitation.md` (in the
+homelab docs repo).
+
 ## Testing
 
 ```bash

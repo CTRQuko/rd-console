@@ -34,5 +34,12 @@
     "saved": "Enregistré.",
     "error": "Une erreur s'est produite.",
     "copied": "Copié dans le presse-papiers."
+  },
+  "device_status": {
+    "just_now": "Vu maintenant",
+    "recent": "Récent ({{ago}})",
+    "old": "Sans activité ({{ago}})",
+    "never": "Jamais vu",
+    "tooltip": "Dernière activité d'enregistrement observée par le serveur. RustDesk Server free n'expose pas la présence en temps réel par peer."
   }
 }

@@ -34,5 +34,12 @@
     "saved": "Gespeichert.",
     "error": "Etwas ist schiefgelaufen.",
     "copied": "In die Zwischenablage kopiert."
+  },
+  "device_status": {
+    "just_now": "Gerade gesehen",
+    "recent": "Kürzlich ({{ago}})",
+    "old": "Keine Aktivität ({{ago}})",
+    "never": "Nie gesehen",
+    "tooltip": "Letzte vom Server beobachtete Registrierungsaktivität. RustDesk Server free stellt keine Echtzeit-Präsenz pro Peer bereit."
   }
 }
