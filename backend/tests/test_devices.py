@@ -165,6 +165,109 @@ def test_disconnect_missing_device_still_logs(client, auth_headers, session, adm
     assert entries[0].from_id is None
 
 
+# ─── v8: ?force=true calls delete_hbbs_peer (best-effort cleanup) ─────────────
+#
+# Upstream hbbr offers no admin interface for kicking active sessions — so
+# "disconnect" remains audit-only by default. The ?force=true flag adds the
+# strongest side effect we can actually achieve: drop the peer row from
+# hbbs's own SQLite. The live tunnel keeps running, but the peer has to
+# re-authenticate on its next reconnect, which is the closest thing to a
+# real kick the panel can offer.
+
+
+def test_disconnect_without_force_does_not_touch_hbbs(
+    client, auth_headers, session, admin_user, monkeypatch
+):
+    d = _seed_device(session)
+    calls: list[str] = []
+    from app.routers import devices as _devices_router
+
+    monkeypatch.setattr(
+        _devices_router,
+        "delete_hbbs_peer",
+        lambda rd_id: calls.append(rd_id) or True,
+    )
+
+    r = client.post(
+        f"/admin/api/devices/{d.id}/disconnect",
+        headers=auth_headers,
+    )
+    assert r.status_code == 202
+    assert calls == [], "no force flag → hbbs untouched"
+
+
+def test_disconnect_with_force_calls_delete_hbbs_peer(
+    client, auth_headers, session, admin_user, monkeypatch
+):
+    d = _seed_device(session, rustdesk_id="kick-me")
+    calls: list[str] = []
+    from app.routers import devices as _devices_router
+
+    monkeypatch.setattr(
+        _devices_router,
+        "delete_hbbs_peer",
+        lambda rd_id: calls.append(rd_id) or True,
+    )
+
+    r = client.post(
+        f"/admin/api/devices/{d.id}/disconnect?force=true",
+        headers=auth_headers,
+    )
+    assert r.status_code == 202
+    assert calls == ["kick-me"]
+
+
+def test_disconnect_force_audit_payload_records_flag(
+    client, auth_headers, session, admin_user, monkeypatch
+):
+    d = _seed_device(session, rustdesk_id="kick-audit")
+    from app.routers import devices as _devices_router
+
+    monkeypatch.setattr(_devices_router, "delete_hbbs_peer", lambda _: True)
+
+    r = client.post(
+        f"/admin/api/devices/{d.id}/disconnect?force=true",
+        headers=auth_headers,
+    )
+    assert r.status_code == 202
+
+    import json as _json
+    audit = session.exec(
+        select(AuditLog).where(
+            AuditLog.action == AuditAction.DEVICE_DISCONNECT_REQUESTED
+        )
+    ).first()
+    payload = _json.loads(audit.payload)
+    assert payload["force"] is True
+    assert payload["hbbs_removed"] is True
+
+
+def test_disconnect_response_frames_limit_as_upstream(
+    client, auth_headers, session, admin_user
+):
+    """The old copy said 'hbbr does not yet expose...' which implied a
+    future rd-console milestone. Upstream RustDesk doesn't expose the
+    primitive at all — framing it as "coming soon" is misleading. New
+    copy must acknowledge the limit is upstream (so an operator reading
+    the response understands they can't wait for us to fix it)."""
+    d = _seed_device(session)
+    r = client.post(
+        f"/admin/api/devices/{d.id}/disconnect",
+        headers=auth_headers,
+    )
+    assert r.status_code == 202
+    body = r.json()
+    note = body.get("note", "")
+    # Must not promise a future feature we don't control.
+    assert "yet" not in note.lower()
+    assert "future" not in note.lower()
+    # Must explicitly tell the operator where the limit lives.
+    assert "upstream" in note.lower()
+    # Must surface the force hint so admins know the one best-effort
+    # action they DO have.
+    assert "force" in note.lower()
+
+
 def test_devices_endpoints_require_auth(client, session):
     _seed_device(session)
     assert client.get("/admin/api/devices").status_code == 401
