@@ -34,7 +34,19 @@
     "panelUrl": "URL publique du panneau",
     "panelUrlHint": "URL publique utilisée lors de l'affichage des liens d'invitation. Doit inclure le schéma (https:// ou http://).",
     "publicKey": "Clé publique hbbs",
-    "publicKeyHint": "Contenu de id_ed25519.pub sur l'hôte hbbs. Les utilisateurs le collent dans le champ « Key » des paramètres du client pour authentifier le serveur."
+    "publicKeyHint": "Contenu de id_ed25519.pub sur l'hôte hbbs. Les utilisateurs le collent dans le champ « Key » des paramètres du client pour authentifier le serveur.",
+    "connectivityTitle": "Vérification de connectivité",
+    "connectivityDescription": "Teste en TCP les ports hbbs + hbbr et affiche le dernier heartbeat reçu. À utiliser quand la liste des appareils est vide ou quand tous les pairs apparaissent Hors ligne — il indique si le relais lui-même est joignable.",
+    "connectivityHint": "Pas encore exécuté. Appuyez sur le bouton pour tester le serveur.",
+    "connectivityProbe": "Tester la connexion",
+    "connectivityProbing": "Test en cours…",
+    "connectivityHost": "Hôte",
+    "connectivityStatus": "État hbbs",
+    "connectivityHealthy": "joignable",
+    "connectivityUnhealthy": "dégradé",
+    "connectivityLastHeartbeat": "Dernier heartbeat",
+    "connectivityNeverSeen": "jamais",
+    "connectivityPortOk": "Port joignable"
   },
   "security": {
     "changePassword": "Changer le mot de passe",
