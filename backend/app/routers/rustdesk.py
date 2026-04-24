@@ -187,18 +187,87 @@ def sysinfo(
     return {"ok": True}
 
 
+_audit_log = __import__("logging").getLogger("rd_console.audit")
+
+
+def _audit_conn_from_id(payload: dict) -> str | None:
+    """Extract the from-peer id. Upstream Flutter packs it as peer[0];
+    older / homebuilt clients use a flat `from_id` key."""
+    peer = payload.get("peer")
+    if isinstance(peer, list) and peer:
+        candidate = peer[0]
+        if isinstance(candidate, str) and candidate:
+            return candidate[:32]
+    # Back-compat flat keys. `id` used to be mistreated as "from" — the
+    # upstream contract says `id` is the receiver. Never fall back to
+    # payload["id"] here to avoid swapping from/to on modern clients.
+    flat = payload.get("from_id")
+    if isinstance(flat, str) and flat:
+        return flat[:32]
+    return None
+
+
+def _audit_conn_to_id(payload: dict) -> str | None:
+    """Extract the receiver peer id. Upstream calls it `id`; older clients
+    use `to_id` / `peer_id`."""
+    for key in ("id", "to_id", "peer_id"):
+        val = payload.get(key)
+        if isinstance(val, str) and val:
+            return val[:32]
+    return None
+
+
+# action → AuditAction mapping. Anything we don't recognise falls back to
+# CONNECT so an unexpected client doesn't silently swallow events.
+_ACTION_TO_AUDIT = {
+    "new": AuditAction.CONNECT,
+    "close": AuditAction.DISCONNECT,
+}
+
+
 @router.post("/audit/conn")
 def audit_conn(
     payload: dict,
     session: SessionDep,
     _: ClientSecretDep,
 ) -> dict:
-    """Connection start/stop events from clients."""
+    """Connection start/stop events from the RustDesk client.
+
+    Upstream contract (AuditConnForm in lejianwen/rustdesk-api):
+
+        {
+          "action": "new" | "close" | "",
+          "id": "<receiver peer id>",
+          "peer": ["<from peer id>", "<from peer name>"],
+          "ip": "<client ip>",
+          "session_id": <float>,
+          "conn_id": <int>,
+          "type": <int>,        # 0=screen, 1=file, 2=port-forward, 3=tcp-tunnel
+          "uuid": "<client uuid>"
+        }
+
+    We translate:
+      * action="new"   → AuditAction.CONNECT
+      * action="close" → AuditAction.DISCONNECT
+      * anything else  → AuditAction.CONNECT (back-compat: older clients and
+        custom forks don't always populate `action`; "something useful" beats
+        "nothing").
+
+    Raw payload logging is gated behind `RD_DEBUG_RAW_AUDIT_CONN=1` for
+    field investigations when a new client build appears.
+    """
+    if get_settings().debug_raw_audit_conn:
+        _audit_log.info("audit_conn raw: %s", payload)
+
+    raw_action = payload.get("action")
+    action_key = raw_action.lower() if isinstance(raw_action, str) else ""
+    audit_action = _ACTION_TO_AUDIT.get(action_key, AuditAction.CONNECT)
+
     session.add(
         AuditLog(
-            action=AuditAction.CONNECT,
-            from_id=str(payload.get("from_id") or payload.get("id") or "")[:32] or None,
-            to_id=str(payload.get("to_id") or payload.get("peer_id") or "")[:32] or None,
+            action=audit_action,
+            from_id=_audit_conn_from_id(payload),
+            to_id=_audit_conn_to_id(payload),
             ip=str(payload.get("ip") or "")[:45] or None,
             uuid=str(payload.get("uuid") or "")[:64] or None,
             payload=_truncated_payload(payload),
