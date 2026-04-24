@@ -34,7 +34,19 @@
     "panelUrl": "Panel public URL",
     "panelUrlHint": "Public URL used when displaying invite links. Must include the scheme (https:// or http://).",
     "publicKey": "hbbs public key",
-    "publicKeyHint": "Contents of id_ed25519.pub on the hbbs host. Users paste this into the \"Key\" field of the client settings so they authenticate the server."
+    "publicKeyHint": "Contents of id_ed25519.pub on the hbbs host. Users paste this into the \"Key\" field of the client settings so they authenticate the server.",
+    "connectivityTitle": "Connectivity check",
+    "connectivityDescription": "TCP-probes the hbbs + hbbr ports and shows the last device heartbeat we received. Use this when the device list looks empty or every peer is Offline — it tells you whether the relay itself is reachable.",
+    "connectivityHint": "Not run yet. Press the button to probe the server.",
+    "connectivityProbe": "Test connection",
+    "connectivityProbing": "Probing…",
+    "connectivityHost": "Host",
+    "connectivityStatus": "hbbs status",
+    "connectivityHealthy": "reachable",
+    "connectivityUnhealthy": "degraded",
+    "connectivityLastHeartbeat": "Last heartbeat",
+    "connectivityNeverSeen": "never",
+    "connectivityPortOk": "Port reachable"
   },
   "security": {
     "changePassword": "Change password",

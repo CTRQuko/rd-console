@@ -21,6 +21,7 @@ from .routers import (
     api_tokens,
     auth,
     devices,
+    health as health_router,
     join,
     join_tokens,
     logs,
@@ -213,6 +214,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router)
     app.include_router(address_book.router)
     app.include_router(join_tokens.router)
+    app.include_router(health_router.router)
 
     # Public
     app.include_router(join.router)

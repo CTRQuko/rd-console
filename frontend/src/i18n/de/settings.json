@@ -34,7 +34,19 @@
     "panelUrl": "Öffentliche Panel-URL",
     "panelUrlHint": "Öffentliche URL, die beim Anzeigen von Einladungslinks verwendet wird. Muss das Schema enthalten (https:// oder http://).",
     "publicKey": "Öffentlicher hbbs-Schlüssel",
-    "publicKeyHint": "Inhalt von id_ed25519.pub auf dem hbbs-Host. Benutzer fügen ihn in das Feld „Key\" der Client-Einstellungen ein, um den Server zu authentifizieren."
+    "publicKeyHint": "Inhalt von id_ed25519.pub auf dem hbbs-Host. Benutzer fügen ihn in das Feld „Key\" der Client-Einstellungen ein, um den Server zu authentifizieren.",
+    "connectivityTitle": "Konnektivitätsprüfung",
+    "connectivityDescription": "Prüft die hbbs- und hbbr-Ports per TCP und zeigt den zuletzt empfangenen Heartbeat. Nutzen Sie das, wenn die Geräteliste leer ist oder alle Peers als Offline angezeigt werden — es zeigt, ob der Relay selbst erreichbar ist.",
+    "connectivityHint": "Noch nicht ausgeführt. Drücken Sie die Schaltfläche, um den Server zu prüfen.",
+    "connectivityProbe": "Verbindung testen",
+    "connectivityProbing": "Wird geprüft…",
+    "connectivityHost": "Host",
+    "connectivityStatus": "hbbs-Status",
+    "connectivityHealthy": "erreichbar",
+    "connectivityUnhealthy": "beeinträchtigt",
+    "connectivityLastHeartbeat": "Letzter Heartbeat",
+    "connectivityNeverSeen": "nie",
+    "connectivityPortOk": "Port erreichbar"
   },
   "security": {
     "changePassword": "Passwort ändern",
