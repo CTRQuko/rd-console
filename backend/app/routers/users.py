@@ -56,14 +56,22 @@ def _count_active_admins(session, exclude_user_id: int | None = None) -> int:
     return session.exec(stmt).one()
 
 
-@router.get("", response_model=list[UserOut])
+@router.get("", response_model=list[UserOut], summary="List panel users")
 def list_users(session: SessionDep, _: AdminUser) -> list[UserOut]:
+    """Return every user newest-first. Admin-only."""
     rows = session.exec(select(User).order_by(User.created_at.desc())).all()
     return [UserOut.model_validate(r, from_attributes=True) for r in rows]
 
 
-@router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=UserOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a panel user",
+)
 def create_user(body: UserCreate, session: SessionDep, admin: AdminUser) -> UserOut:
+    """Create a new user with the given role. Username must be unique;
+    password is hashed with argon2 before storage. Emits `USER_CREATED`."""
     if session.exec(select(User).where(User.username == body.username)).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Username already exists")
     user = User(
@@ -83,8 +91,15 @@ def create_user(body: UserCreate, session: SessionDep, admin: AdminUser) -> User
     return UserOut.model_validate(user, from_attributes=True)
 
 
-@router.patch("/{user_id}", response_model=UserOut)
+@router.patch(
+    "/{user_id}",
+    response_model=UserOut,
+    summary="Update a panel user's profile",
+)
 def update_user(user_id: int, body: UserUpdate, session: SessionDep, admin: AdminUser) -> UserOut:
+    """Patch one or more fields on a user (email, role, is_active, password).
+    Only the provided fields are touched; unset fields keep their value.
+    Emits `USER_UPDATED` with a diff of what changed."""
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
@@ -215,7 +230,11 @@ def _hard_delete_user(session, *, user: User, actor_user_id: int) -> None:
     session.delete(user)
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Disable (soft) or delete (hard) a user",
+)
 def delete_or_disable_user(
     user_id: int,
     session: SessionDep,
@@ -280,7 +299,11 @@ class BulkUsersResult(BaseModel):
     skipped: list[dict]  # {user_id, reason}
 
 
-@router.post("/bulk", response_model=BulkUsersResult)
+@router.post(
+    "/bulk",
+    response_model=BulkUsersResult,
+    summary="Bulk action across multiple users (disable/enable/delete)",
+)
 def bulk_users(
     body: BulkUsersBody,
     session: SessionDep,

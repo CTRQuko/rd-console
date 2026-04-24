@@ -11,6 +11,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -71,6 +72,7 @@ type RowId = string & { __ab: true };
 type TableRow = AbPeer & { id: RowId };
 
 export function AddressBookPage() {
+  const { t } = useTranslation();
   const { data: snap, isLoading } = useAddressBook();
   const { fmt } = useDateTime();
   const save = useSaveAddressBook();
@@ -238,11 +240,7 @@ export function AddressBookPage() {
       <DataTable<TableRow>
         rows={rows}
         columns={columns}
-        empty={
-          isLoading
-            ? 'Loading…'
-            : 'No peers yet. Add one to start syncing across your clients.'
-        }
+        empty={isLoading ? t('states.loading') : t('empty_states.address_book')}
         // Row-click edit, matching UsersPage + DevicesPage. The actions
         // column already stops propagation so the inline pencil/delete
         // buttons don't double-fire.

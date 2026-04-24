@@ -20,7 +20,7 @@ export interface Column<T> {
 interface DataTableProps<T extends { id?: number | string }> {
   columns: Column<T>[];
   rows: T[];
-  empty?: string;
+  empty?: ReactNode;
   pageSize?: number;
   onRowClick?: (row: T) => void;
   rowClassName?: (row: T) => string | undefined;

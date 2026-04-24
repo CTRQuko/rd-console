@@ -13,6 +13,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Download, FileJson, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
@@ -31,7 +32,7 @@ import {
   type LogsQuery,
 } from '@/hooks/useLogs';
 import { apiErrorMessage } from '@/lib/api';
-import { useDateTime } from '@/lib/formatters';
+import { sinceIsoRange, useDateTime } from '@/lib/formatters';
 import type { ApiAuditLog, AuditActionValue, AuditCategory } from '@/types/api';
 
 type RangeKey = 'today' | '7d' | '30d' | 'all';
@@ -51,19 +52,8 @@ const CATEGORIES: { value: '' | AuditCategory; label: string }[] = [
   { value: 'config', label: 'Config / device' },
 ];
 
-/** ISO timestamp that's N days before "now". `all` → undefined. */
-function sinceFromRange(range: RangeKey): string | undefined {
-  if (range === 'all') return undefined;
-  const d = new Date();
-  if (range === 'today') {
-    d.setHours(0, 0, 0, 0);
-  } else if (range === '7d') {
-    d.setDate(d.getDate() - 7);
-  } else {
-    d.setDate(d.getDate() - 30);
-  }
-  return d.toISOString();
-}
+// Range computation moved to `lib/formatters.tsx::sinceIsoRange` so every
+// page that needs "ISO of N-days-ago" doesn't reinvent the Date arithmetic.
 
 const PAGE_SIZE = 25;
 
@@ -93,6 +83,7 @@ const VALID_ACTIONS: readonly AuditActionValue[] = [
 export function LogsPage() {
   // Seed filters from the URL so Dashboard links like /logs?category=session
   // or /logs?actor=<id> land with the filter applied.
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const initRange = (searchParams.get('range') ?? '') as RangeKey;
   const initCategory = (searchParams.get('category') ?? '') as AuditCategory;
@@ -128,7 +119,7 @@ export function LogsPage() {
       category: category || undefined,
       action: action || undefined,
       actor: actorDebounced || undefined,
-      since: sinceFromRange(range),
+      since: sinceIsoRange(range),
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     }),
@@ -418,7 +409,7 @@ export function LogsPage() {
       <ExpandableLogTable
         rows={rows}
         columns={columns}
-        empty={isFetching ? 'Loading…' : 'No log entries match your filters.'}
+        empty={isFetching ? t('states.loading') : t('empty_states.logs')}
         expanded={expanded}
         onRowClick={(r) => toggleExpand(r.id)}
       />

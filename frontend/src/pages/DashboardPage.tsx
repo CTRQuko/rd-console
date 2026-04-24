@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Activity, Monitor, Users as UsersIcon, Zap } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
@@ -11,6 +12,7 @@ import type { DashboardStats, RecentEntry } from '@/types/api';
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
 
@@ -149,7 +151,7 @@ export function DashboardPage() {
       <DataTable<RecentEntry>
         rows={recent}
         pageSize={10}
-        empty="No recent connections."
+        empty={t('empty_states.recent_connections')}
         columns={recentCols}
         onRowClick={(r) =>
           // Each row navigates to the Logs page with the `actor` prefilled

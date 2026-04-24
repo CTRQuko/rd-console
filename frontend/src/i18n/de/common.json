@@ -55,5 +55,15 @@
     "old": "Keine Aktivität ({{ago}})",
     "never": "Nie gesehen",
     "tooltip": "Letzte vom Server beobachtete Registrierungsaktivität. RustDesk Server free stellt keine Echtzeit-Präsenz pro Peer bereit."
+  },
+  "empty_states": {
+    "devices": "Noch keine Geräte. Teilen Sie einen Einladungslink, um das erste Gerät einzubinden.",
+    "users": "Nur Sie hier. Fügen Sie Benutzer mit der Schaltfläche «Neuer Benutzer» hinzu.",
+    "invites": "Keine aktiven Einladungen. Erstellen Sie eine, damit sich ein neuer Client verbinden kann.",
+    "tokens": "Keine Personal Access Tokens. Erstellen Sie einen mit «Neues Token» für Skripte oder Integrationen.",
+    "logs": "Keine Ereignisse für diese Filter. Versuchen Sie, den Zeitraum zu erweitern oder Filter zu löschen.",
+    "address_book": "Leeres Adressbuch. Peers werden hinzugefügt, wenn Sie sich mit einem RustDesk-Client verbinden.",
+    "tags": "Keine Tags. Erstellen Sie sie zum Gruppieren von Geräten (z. B. «Zuhause», «Werkstatt»).",
+    "recent_connections": "Keine aktuellen Verbindungen."
   }
 }

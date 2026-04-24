@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { fmtDate, fmtDateTime, lastSeenStatus } from './formatters';
+import {
+  fmtDate,
+  fmtDateTime,
+  isExpired,
+  lastSeenStatus,
+  sinceIsoRange,
+} from './formatters';
 
 // A fixed instant: 14:30 UTC on 23 April 2026.
 const UTC_ISO = '2026-04-23T14:30:00';
@@ -160,5 +166,70 @@ describe('lastSeenStatus', () => {
     ]) {
       expect(lastSeenStatus(iso, t, NOW).tooltip).toBe('device_status.tooltip');
     }
+  });
+});
+
+describe('isExpired', () => {
+  const NOW = new Date('2026-04-23T12:00:00Z');
+
+  it('null → false (token never expires)', () => {
+    expect(isExpired(null, NOW)).toBe(false);
+  });
+
+  it('undefined → false', () => {
+    expect(isExpired(undefined, NOW)).toBe(false);
+  });
+
+  it('malformed → false (fail-soft, never nukes UI into expiry mode)', () => {
+    expect(isExpired('not-a-date', NOW)).toBe(false);
+  });
+
+  it('future timestamp → false', () => {
+    const future = new Date(NOW.getTime() + 86400_000).toISOString();
+    expect(isExpired(future, NOW)).toBe(false);
+  });
+
+  it('past timestamp → true', () => {
+    const past = new Date(NOW.getTime() - 60_000).toISOString();
+    expect(isExpired(past, NOW)).toBe(true);
+  });
+
+  it('exactly now → true (boundary is inclusive on the past side)', () => {
+    expect(isExpired(NOW.toISOString(), NOW)).toBe(true);
+  });
+});
+
+describe('sinceIsoRange', () => {
+  // Pick a now that's mid-day so "today" midnight is unambiguously earlier.
+  const NOW = new Date('2026-04-23T15:30:00Z');
+
+  it('"all" → undefined (caller omits since= query param)', () => {
+    expect(sinceIsoRange('all', NOW)).toBeUndefined();
+  });
+
+  it('"today" → midnight of the current local day', () => {
+    const out = sinceIsoRange('today', NOW);
+    // Back to a Date to assert on components — the exact ISO depends on
+    // the runner's local timezone, so we check the shape not the string.
+    const d = new Date(out!);
+    expect(d.getHours()).toBe(0);
+    expect(d.getMinutes()).toBe(0);
+    expect(d.getSeconds()).toBe(0);
+    // Must still be <= NOW.
+    expect(d.getTime()).toBeLessThanOrEqual(NOW.getTime());
+  });
+
+  it('"7d" → exactly 7 × 24h earlier', () => {
+    const out = sinceIsoRange('7d', NOW);
+    const expected = new Date(NOW);
+    expected.setDate(expected.getDate() - 7);
+    expect(out).toBe(expected.toISOString());
+  });
+
+  it('"30d" → exactly 30 × 24h earlier', () => {
+    const out = sinceIsoRange('30d', NOW);
+    const expected = new Date(NOW);
+    expected.setDate(expected.getDate() - 30);
+    expect(out).toBe(expected.toISOString());
   });
 });

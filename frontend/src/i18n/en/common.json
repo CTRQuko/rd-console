@@ -55,5 +55,15 @@
     "old": "Inactive ({{ago}})",
     "never": "Never seen",
     "tooltip": "Last registration activity the server observed. RustDesk Server free does not expose real-time per-peer presence."
+  },
+  "empty_states": {
+    "devices": "No devices yet. Share an invite link to onboard the first one.",
+    "users": "Just you here. Add users with the «New user» button.",
+    "invites": "No active invites. Create one so a new client can connect.",
+    "tokens": "No Personal Access Tokens. Create one with «New token» for scripts or integrations.",
+    "logs": "No events for these filters. Try expanding the range or clearing filters.",
+    "address_book": "Empty address book. Peers are added when you connect with a RustDesk client.",
+    "tags": "No tags. Create them to group devices (e.g. «Home», «Workshop»).",
+    "recent_connections": "No recent connections."
   }
 }

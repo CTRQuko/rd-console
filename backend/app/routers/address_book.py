@@ -67,7 +67,11 @@ class AbPutResponse(BaseModel):
 # ─── Routes ─────────────────────────────────────────────────────────────────
 
 
-@router.post("/get", response_model=AbGetResponse)
+@router.post(
+    "/get",
+    response_model=AbGetResponse,
+    summary="Fetch the current user's address book (RustDesk Flutter client)",
+)
 def ab_get(
     _body: AbGetRequest,
     user: CurrentUser,
@@ -80,7 +84,11 @@ def ab_get(
     return AbGetResponse(updated_at=row.updated_at, data=row.data)
 
 
-@router.post("", response_model=AbPutResponse)
+@router.post(
+    "",
+    response_model=AbPutResponse,
+    summary="Upsert the current user's address book payload",
+)
 def ab_put(
     body: AbPutRequest,
     user: CurrentUser,

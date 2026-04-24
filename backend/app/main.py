@@ -8,18 +8,22 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
 
 from . import __version__
 from .config import get_settings
 from .db import engine, init_db
+from .deps import AdminUser
 from .models.user import User, UserRole
 from .routers import (
     address_book,
     api_tokens,
     auth,
+    backup,
     devices,
     health as health_router,
     join,
@@ -183,13 +187,154 @@ async def lifespan(_: FastAPI):
             await cleanup_task
 
 
+# ─── OpenAPI tag metadata ───────────────────────────────────────────────────
+# Order matters here: FastAPI groups endpoints in the `/admin/docs` UI by
+# the order in which tags appear in this list. We put the most commonly
+# integrated tags first (auth, devices) and the internal protocol tags
+# (rustdesk-client, meta) last.
+OPENAPI_TAGS = [
+    {
+        "name": "auth",
+        "description": (
+            "Login, session-user identity, and password rotation. All panel "
+            "requests after login carry the JWT returned by `POST /api/auth/login` "
+            "in the `Authorization: Bearer …` header."
+        ),
+    },
+    {
+        "name": "auth:tokens",
+        "description": (
+            "Personal Access Tokens (PATs) — long-lived bearers for scripted "
+            "admin API use. The plaintext secret is shown exactly once at "
+            "creation and never again; store it immediately."
+        ),
+    },
+    {
+        "name": "admin:users",
+        "description": (
+            "Manage panel users (admins + regular). Disable is soft (row "
+            "preserved); hard-delete cascades PATs and address-book entries "
+            "but keeps devices/audit rows with NULL owner for history."
+        ),
+    },
+    {
+        "name": "admin:devices",
+        "description": (
+            "Every RustDesk ID the relay has ever seen. The `online` field is "
+            "a 15-minute heuristic over `last_seen_at`; see "
+            "`docs/servicios/rustdesk-lxc-105/online-detection-limitation.md` "
+            "for why the free tier can't expose real-time presence."
+        ),
+    },
+    {
+        "name": "admin:tags",
+        "description": "Admin-authored labels attached to devices for filtering.",
+    },
+    {
+        "name": "admin:logs",
+        "description": (
+            "Audit log — every panel action plus RustDesk connection events. "
+            "Filterable, paginated, exportable as CSV or NDJSON, soft-deletable "
+            "with a 30-day retention floor."
+        ),
+    },
+    {
+        "name": "admin:settings",
+        "description": (
+            "Runtime-editable server configuration (host, panel URL, public "
+            "key). Secrets (`RD_SECRET_KEY`, `RD_ADMIN_PASSWORD`, "
+            "`RD_CLIENT_SHARED_SECRET`) are env-only and never exposed."
+        ),
+    },
+    {
+        "name": "admin:join-tokens",
+        "description": (
+            "Single-use invite links. Minting returns the plaintext once; "
+            "clients exchange it at `GET /api/join/:token` for server config."
+        ),
+    },
+    {
+        "name": "admin:search",
+        "description": "Cross-resource search for the command palette UI.",
+    },
+    {
+        "name": "admin:health",
+        "description": (
+            "Liveness probes for the hbbs/hbbr companion containers. Run by "
+            "the panel UI's Settings → Server connectivity card."
+        ),
+    },
+    {
+        "name": "address-book",
+        "description": (
+            "Per-user address book synced via the RustDesk Flutter client's "
+            "`POST /api/ab` contract. Consumed by the client, not by the "
+            "admin panel directly."
+        ),
+    },
+    {
+        "name": "public:join",
+        "description": (
+            "Unauthenticated — clients hit `GET /api/join/:token` to redeem an "
+            "invite and receive the server config needed to connect."
+        ),
+    },
+    {
+        "name": "rustdesk-client",
+        "description": (
+            "RustDesk client protocol endpoints: heartbeat, sysinfo, audit "
+            "connection events, and the compat login stubs. Gated by the "
+            "`X-RD-Secret` shared secret."
+        ),
+    },
+    {
+        "name": "admin:backup",
+        "description": (
+            "JSON export and restore of panel state (users, tags, runtime "
+            "settings, token metadata). Secrets are NEVER exported. "
+            "Restore supports a ``dry_run`` preview before applying changes."
+        ),
+    },
+    {
+        "name": "meta",
+        "description": "Process-level metadata (e.g. `GET /health`).",
+    },
+]
+
+
+def _build_openapi(app: FastAPI) -> dict:
+    """Cache the OpenAPI schema on first access — mirrors FastAPI's default."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        tags=OPENAPI_TAGS,
+    )
+    app.openapi_schema = schema
+    return schema
+
+
 def create_app() -> FastAPI:
     s = get_settings()
+    # `docs_url` and `redoc_url` are set to None so the default public routes
+    # don't expose the full API surface. We mount admin-gated equivalents at
+    # `/admin/docs`, `/admin/redoc`, and `/admin/openapi.json` below.
     app = FastAPI(
         title="rd-console",
         version=__version__,
-        description="Self-hosted RustDesk Server admin panel",
+        description=(
+            "Self-hosted RustDesk Server admin panel. The interactive docs at "
+            "`/admin/docs` (Swagger) and `/admin/redoc` (Redoc) require an "
+            "admin JWT — fetch one from `POST /api/auth/login` first."
+        ),
         lifespan=lifespan,
+        openapi_tags=OPENAPI_TAGS,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,  # disable the default public /openapi.json
     )
     app.add_middleware(
         CORSMiddleware,
@@ -199,13 +344,46 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "X-RD-Secret"],
     )
 
-    @app.get("/health", tags=["meta"])
+    @app.get("/health", tags=["meta"], summary="Liveness probe")
     def health() -> dict:
+        """Always returns 200 as long as the ASGI app is up. Does not touch
+        the database or any dependency — safe to call from a load balancer
+        health check. For hbbs/hbbr probing use `/admin/api/health/hbbs`."""
         return {"status": "ok", "version": __version__}
+
+    # ─── Admin-gated OpenAPI surface ────────────────────────────────────
+    # Design:
+    #   • The Swagger UI + Redoc pages require an admin JWT to RENDER.
+    #   • The underlying `/admin/openapi.json` is admin-gated too, BUT the
+    #     swagger page embeds the spec inline as `spec:` so the browser
+    #     fetch after load isn't needed. Result: casual drive-by scrapers
+    #     see a 401 at `/admin/docs` and `/admin/openapi.json` both.
+    #   • Scripted consumers (curl/httpx) that have a token can just hit
+    #     `GET /admin/openapi.json` with the Authorization header.
+    @app.get("/admin/openapi.json", include_in_schema=False)
+    def admin_openapi(_: AdminUser) -> JSONResponse:
+        return JSONResponse(_build_openapi(app))
+
+    @app.get("/admin/docs", include_in_schema=False)
+    def admin_swagger(_: AdminUser) -> HTMLResponse:
+        # Default Swagger UI HTML; it fetches /admin/openapi.json which also
+        # requires the same admin cookie/header the browser already sent.
+        return get_swagger_ui_html(
+            openapi_url="/admin/openapi.json",
+            title=f"{app.title} — Swagger",
+        )
+
+    @app.get("/admin/redoc", include_in_schema=False)
+    def admin_redoc(_: AdminUser) -> HTMLResponse:
+        return get_redoc_html(
+            openapi_url="/admin/openapi.json",
+            title=f"{app.title} — Redoc",
+        )
 
     # Panel (JWT-authenticated)
     app.include_router(auth.router)
     app.include_router(api_tokens.router)
+    app.include_router(backup.router)
     app.include_router(users.router)
     app.include_router(devices.router)
     app.include_router(logs.router)

@@ -51,6 +51,9 @@ class AuditAction(str, Enum):
     JOIN_TOKEN_CREATED = "join_token_created"
     JOIN_TOKEN_REVOKED = "join_token_revoked"
     JOIN_TOKEN_DELETED = "join_token_deleted"
+    # v5: panel state backup/restore
+    BACKUP_EXPORTED = "backup_exported"
+    BACKUP_RESTORED = "backup_restored"
 
 
 # Category grouping used by /admin/api/logs?category=...
@@ -84,6 +87,8 @@ AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
         AuditAction.SETTINGS_CHANGED,
         AuditAction.SETTINGS_EXPORTED,
         AuditAction.LOGS_DELETED,
+        AuditAction.BACKUP_EXPORTED,
+        AuditAction.BACKUP_RESTORED,
         AuditAction.DEVICE_UPDATED,
         AuditAction.DEVICE_FORGOTTEN,
         AuditAction.DEVICE_DISCONNECT_REQUESTED,

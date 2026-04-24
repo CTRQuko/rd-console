@@ -14,6 +14,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
@@ -40,6 +41,7 @@ import type { ApiUser, ApiUserRole } from '@/types/api';
 type ToastState = { kind: 'ok' | 'error'; text: string } | null;
 
 export function SettingsUsersTab() {
+  const { t } = useTranslation();
   const { data: rows = [], isLoading } = useUsers();
   const create = useCreateUser();
   const update = useUpdateUser();
@@ -238,11 +240,14 @@ export function SettingsUsersTab() {
         rows={filtered}
         pageSize={10}
         empty={
-          isLoading
-            ? 'Loading…'
-            : q
-              ? 'No users match your search.'
-              : 'No users yet.'
+          isLoading ? t('states.loading') : q ? t('empty_states.users') : (
+            <div className="rd-empty">
+              <p>{t('empty_states.users')}</p>
+              <Button size="sm" icon={Plus} onClick={() => setOpenCreate(true)}>
+                {t('actions.create')}
+              </Button>
+            </div>
+          )
         }
         columns={columns}
         selectable

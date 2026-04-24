@@ -207,7 +207,11 @@ def list_devices(
     return _devices_with_tags_and_cutoff(session, rows, now)
 
 
-@router.get("/{device_id}", response_model=DeviceOut)
+@router.get(
+    "/{device_id}",
+    response_model=DeviceOut,
+    summary="Fetch one device by numeric ID with tags",
+)
 def get_device(device_id: int, session: SessionDep, _: AdminUser) -> DeviceOut:
     d = session.get(Device, device_id)
     if not d:
@@ -215,13 +219,20 @@ def get_device(device_id: int, session: SessionDep, _: AdminUser) -> DeviceOut:
     return DeviceOut.from_model(d, tags=_tags_for_device(session, device_id))
 
 
-@router.patch("/{device_id}", response_model=DeviceOut)
+@router.patch(
+    "/{device_id}",
+    response_model=DeviceOut,
+    summary="Update editable device fields (hostname, owner, note, favourite)",
+)
 def update_device(
     device_id: int,
     body: DeviceUpdate,
     session: SessionDep,
     admin: AdminUser,
 ) -> DeviceOut:
+    """Patch device metadata. Unknown `owner_user_id` values are rejected
+    with 422. No-op patches (no field actually changed) don't emit an
+    audit entry to keep the log signal-to-noise high."""
     d = session.get(Device, device_id)
     if not d:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Device not found")
@@ -269,8 +280,15 @@ def update_device(
     return DeviceOut.from_model(d, tags=_tags_for_device(session, device_id))
 
 
-@router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{device_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Forget a device — remove from both panel and hbbs",
+)
 def forget_device(device_id: int, session: SessionDep, admin: AdminUser) -> None:
+    """Coordinated forget: deletes the row from our `devices` table AND
+    from `hbbs.peer` so the next hbbs_sync tick doesn't resurrect it.
+    Emits `DEVICE_FORGOTTEN`."""
     d = session.get(Device, device_id)
     if not d:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Device not found")
@@ -314,7 +332,11 @@ def forget_device(device_id: int, session: SessionDep, admin: AdminUser) -> None
     session.commit()
 
 
-@router.post("/{device_id}/disconnect", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{device_id}/disconnect",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Request disconnect — panel-side only (hbbs free can't force it)",
+)
 def request_disconnect(
     device_id: int,
     session: SessionDep,
@@ -493,7 +515,12 @@ class BulkResult(BaseModel):
     action: str
 
 
-@router.post("/bulk", response_model=BulkResult, status_code=status.HTTP_200_OK)
+@router.post(
+    "/bulk",
+    response_model=BulkResult,
+    status_code=status.HTTP_200_OK,
+    summary="Bulk device action (tag, untag, assign_owner, forget, favorite, unfavorite)",
+)
 def bulk_update(
     body: BulkAction,
     session: SessionDep,

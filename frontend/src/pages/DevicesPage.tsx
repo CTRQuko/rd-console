@@ -15,8 +15,8 @@
 
 import { useMemo, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { MoreHorizontal, Star, Tag as TagIcon } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { MoreHorizontal, Plus, Star, Tag as TagIcon } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -75,6 +75,7 @@ export function DevicesPage() {
   // mount we just keep local state — we don't push back to the URL because
   // the filter UI is ephemeral and URL-sync would fight React Router's
   // history model for no real benefit.
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initStatus = clampFilter<StatusFilter>(
     searchParams.get('status')?.replace(/^./, (c) => c.toUpperCase()) ?? null,
@@ -397,9 +398,14 @@ export function DevicesPage() {
         rows={filtered}
         pageSize={10}
         empty={
-          isLoading
-            ? 'Loading…'
-            : 'No devices match your filters.'
+          isLoading ? t('states.loading') : rows.length === 0 ? (
+            <div className="rd-empty">
+              <p>{t('empty_states.devices')}</p>
+              <Button size="sm" icon={Plus} onClick={() => navigate('/invites')}>
+                {t('actions.create')}
+              </Button>
+            </div>
+          ) : t('empty_states.devices')
         }
         columns={columns}
         onRowClick={(r) => setSelected(r)}

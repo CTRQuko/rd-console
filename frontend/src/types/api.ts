@@ -244,3 +244,69 @@ export interface JoinConfig {
   public_key: string;
   label: string | null;
 }
+
+// ─── Backup / Restore (Sprint A1 Bloque 4) ──────────────────────────────────
+
+/** A single user inside a backup bundle. No password_hash — restore mints a
+ *  random one for new accounts; existing accounts keep their hash untouched. */
+export interface BackupUser {
+  username: string;
+  email: string | null;
+  role: ApiUserRole;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface BackupTag {
+  name: string;
+  color: string;
+}
+
+export interface BackupSetting {
+  key: string;
+  value: string;
+}
+
+/** Token metadata only — the plaintext is gone, so restore can't recreate
+ *  the token. The export is for audit visibility. */
+export interface BackupApiTokenMeta {
+  name: string;
+  token_prefix: string;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface BackupJoinTokenMeta {
+  token_prefix: string;
+  label: string | null;
+  created_at: string;
+  expires_at: string | null;
+}
+
+/** Full backup bundle — what GET /admin/api/backup returns and what
+ *  POST /admin/api/backup/restore accepts. */
+export interface BackupBundle {
+  schema_version: 1;
+  exported_at: string;
+  users: BackupUser[];
+  tags: BackupTag[];
+  settings: BackupSetting[];
+  api_tokens: BackupApiTokenMeta[];
+  join_tokens: BackupJoinTokenMeta[];
+}
+
+/** Per-entity diff returned by the restore endpoint. */
+export interface BackupRestoreDiff {
+  users: { add: number; update: number };
+  tags: { add: number; update: number };
+  settings: { add: number; update: number };
+  api_tokens: { add: number; skip: number };
+  join_tokens: { add: number; skip: number };
+}
+
+export type BackupRestoreMode = 'dry_run' | 'apply';
+
+export interface BackupRestoreResult {
+  mode: BackupRestoreMode;
+  diff: BackupRestoreDiff;
+}

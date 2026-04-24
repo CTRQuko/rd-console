@@ -48,7 +48,11 @@ class SearchResults(BaseModel):
     logs: list[LogHit]
 
 
-@router.get("", response_model=SearchResults)
+@router.get(
+    "",
+    response_model=SearchResults,
+    summary="Cross-resource search (users + devices + audit log) for command palette",
+)
 def global_search(
     session: SessionDep,
     _: AdminUser,

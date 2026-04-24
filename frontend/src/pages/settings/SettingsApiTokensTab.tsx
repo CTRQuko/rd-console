@@ -15,6 +15,7 @@
  */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -28,7 +29,7 @@ import {
   useRevokeApiToken,
 } from '@/hooks/useApiTokens';
 import { apiErrorMessage } from '@/lib/api';
-import { useDateTime } from '@/lib/formatters';
+import { isExpired, useDateTime } from '@/lib/formatters';
 import type { ApiTokenMeta } from '@/types/api';
 
 // UI-only choices for the expiry dropdown. None = never expires.
@@ -46,13 +47,14 @@ const EXPIRY_OPTIONS: { label: string; minutes: number | null }[] = [
 
 function tokenStatus(t: ApiTokenMeta): { label: string; tone: 'ok' | 'warn' | 'dead' } {
   if (t.revoked_at) return { label: 'Revoked', tone: 'dead' };
-  if (t.expires_at && new Date(t.expires_at) <= new Date()) {
+  if (isExpired(t.expires_at)) {
     return { label: 'Expired', tone: 'dead' };
   }
   return { label: 'Active', tone: 'ok' };
 }
 
 export function SettingsApiTokensTab() {
+  const { t } = useTranslation();
   const { data: rows = [], isLoading } = useApiTokens();
   const create = useCreateApiToken();
   const revoke = useRevokeApiToken();
@@ -198,9 +200,14 @@ export function SettingsApiTokensTab() {
         rows={sorted}
         columns={columns}
         empty={
-          isLoading
-            ? 'Loading…'
-            : 'No tokens yet. Create one to authenticate scripts or scheduled jobs.'
+          isLoading ? t('states.loading') : (
+            <div className="rd-empty">
+              <p>{t('empty_states.tokens')}</p>
+              <Button size="sm" icon={Plus} onClick={() => setOpenCreate(true)}>
+                {t('actions.create')}
+              </Button>
+            </div>
+          )
         }
       />
 

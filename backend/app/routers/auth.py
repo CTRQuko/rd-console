@@ -57,8 +57,17 @@ class ChangePasswordRequest(BaseModel):
     "/login",
     response_model=LoginResponse,
     dependencies=[Depends(_login_limiter)],
+    summary="Panel login — exchange username/password for a JWT",
 )
 def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
+    """Authenticate a panel user and return a short-lived JWT.
+
+    On invalid credentials this endpoint emits a `LOGIN_FAILED` audit entry
+    and returns 401 with a constant-time branch to reduce user-enumeration
+    timing leaks. The returned `access_token` must be sent in the
+    `Authorization: Bearer …` header on every subsequent call to
+    `/admin/api/**`.
+    """
     user = session.exec(select(User).where(User.username == body.username)).first()
     # Constant-ish branch: always hit verify_password when user exists to reduce
     # user-enumeration timing skew.
@@ -86,8 +95,17 @@ def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
     return LoginResponse(access_token=token)
 
 
-@router.get("/me", response_model=MeResponse)
+@router.get(
+    "/me",
+    response_model=MeResponse,
+    summary="Return the currently authenticated panel user",
+)
 def me(user: CurrentUser) -> MeResponse:
+    """Identity endpoint — echoes the JWT subject as a `MeResponse`.
+
+    Used by the frontend after login to populate the user menu and gate
+    admin-only routes client-side. Does not extend the token TTL.
+    """
     return MeResponse(id=user.id, username=user.username, email=user.email, role=user.role.value)
 
 
@@ -131,8 +149,18 @@ def logout(
     session.commit()
 
 
-@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Change the current user's password",
+)
 def change_password(body: ChangePasswordRequest, user: CurrentUser, session: SessionDep) -> None:
+    """Rotate the password of the authenticated user.
+
+    Requires the current password to confirm. Rejects no-op rotations
+    (same password in and out). Does not revoke existing JWTs — the
+    caller's token remains valid until natural expiry.
+    """
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
     if body.new_password == body.current_password:

@@ -199,7 +199,7 @@ def _ndjson_iter(rows: Iterator[AuditLog], username_by_id: dict[int, str]) -> It
         yield json.dumps(obj, ensure_ascii=False) + "\n"
 
 
-@router.get("")
+@router.get("", summary="Query audit log with filters + pagination or export")
 def list_logs(
     session: SessionDep,
     _: AdminUser,
@@ -293,7 +293,11 @@ class DeleteLogsResult(BaseModel):
 _MIN_RETENTION_DAYS = 30
 
 
-@router.delete("", response_model=DeleteLogsResult)
+@router.delete(
+    "",
+    response_model=DeleteLogsResult,
+    summary="Soft-delete audit rows by id (30-day retention floor)",
+)
 def delete_logs(
     body: DeleteLogsBody,
     session: SessionDep,

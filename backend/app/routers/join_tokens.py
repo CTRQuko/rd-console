@@ -123,7 +123,12 @@ def _to_create_out(t: JoinToken, now: datetime) -> JoinTokenCreateOut:
 # ─── Routes ─────────────────────────────────────────────────────────────────
 
 
-@router.post("", response_model=JoinTokenCreateOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=JoinTokenCreateOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Mint a single-use invite link (plaintext shown once)",
+)
 def create_join_token(
     body: JoinTokenCreate,
     admin: AdminUser,
@@ -156,7 +161,11 @@ def create_join_token(
     return _to_create_out(row, now)
 
 
-@router.get("", response_model=list[JoinTokenOut])
+@router.get(
+    "",
+    response_model=list[JoinTokenOut],
+    summary="List join tokens (hides revoked by default)",
+)
 def list_join_tokens(
     admin: AdminUser,  # noqa: ARG001 — require admin
     session: SessionDep,
@@ -180,7 +189,11 @@ def list_join_tokens(
     return [_to_out(r, now) for r in rows]
 
 
-@router.delete("/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{token_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke (soft) or delete (hard) a join token",
+)
 def revoke_or_delete_join_token(
     token_id: int,
     admin: AdminUser,
@@ -249,7 +262,11 @@ class BulkJoinTokensResult(BaseModel):
     skipped: list[dict]  # {id, reason}
 
 
-@router.post("/bulk", response_model=BulkJoinTokensResult)
+@router.post(
+    "/bulk",
+    response_model=BulkJoinTokensResult,
+    summary="Bulk revoke or delete join tokens",
+)
 def bulk_join_tokens(
     body: BulkJoinTokensBody,
     session: SessionDep,
