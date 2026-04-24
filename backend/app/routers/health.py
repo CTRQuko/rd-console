@@ -42,6 +42,18 @@ _HBBS_CORE_PORTS: tuple[int, ...] = (21115, 21116, 21118)
 _HBBR_RELAY_PORT: int = 21117
 _ALL_PORTS: tuple[int, ...] = (*_HBBS_CORE_PORTS, _HBBR_RELAY_PORT)
 
+# Mapping port → container hostname. In the default docker-compose setup the
+# backend (this process) runs alongside `rustdesk-hbbs-1` and
+# `rustdesk-hbbr-1` on the same user-defined network, so docker's embedded
+# DNS resolves these names. Override via RD_PROBE_HOST env if the operator
+# ever splits the services across networks.
+_PORT_TO_HOST: dict[int, str] = {
+    21115: "rustdesk-hbbs-1",
+    21116: "rustdesk-hbbs-1",
+    21118: "rustdesk-hbbs-1",
+    21117: "rustdesk-hbbr-1",
+}
+
 # TCP connect timeout per probe. 3s is enough to distinguish "firewall is
 # blackholing packets" (→ timeout) from "service not listening" (→ quick
 # RST / ConnectionRefusedError). We run probes in parallel so total latency
@@ -113,8 +125,8 @@ def _probe_tcp(host: str, port: int) -> _ProbeResult:
 @router.get("/hbbs", response_model=HbbsHealth)
 def hbbs_health(session: SessionDep, _: AdminUser) -> HbbsHealth:
     s = get_settings()
-    host = s.server_host.strip()
-    if not host:
+    raw_host = s.server_host.strip()
+    if not raw_host:
         # Can't probe an unset host. 503 + a message the UI can display
         # verbatim beats returning a fake "all ok" from localhost.
         raise HTTPException(
@@ -123,11 +135,21 @@ def hbbs_health(session: SessionDep, _: AdminUser) -> HbbsHealth:
             "before running the health check.",
         )
 
+    # What we SHOW to the operator is the full `host[:port]` they configured
+    # (so they can spot typos). What we PROBE is the hbbs / hbbr container
+    # by its docker-network name — the backend lives in the same compose
+    # network, so `rustdesk-hbbs-1` and `rustdesk-hbbr-1` resolve via
+    # docker's embedded DNS. That answers "are the relay processes alive?"
+    # without depending on DNS, NAT hairpin, or the public port-forward.
+    display_host = raw_host
+
     # Probe all four ports in parallel so total wall time is max(timeouts)
     # rather than sum. Four threads is trivial; no reason to keep the
     # pool around between requests.
     with ThreadPoolExecutor(max_workers=len(_ALL_PORTS)) as pool:
-        results = list(pool.map(lambda p: _probe_tcp(host, p), _ALL_PORTS))
+        results = list(
+            pool.map(lambda p: _probe_tcp(_PORT_TO_HOST[p], p), _ALL_PORTS)
+        )
 
     ports = [
         PortProbe(
@@ -162,7 +184,7 @@ def hbbs_health(session: SessionDep, _: AdminUser) -> HbbsHealth:
         ago_seconds = None
 
     return HbbsHealth(
-        host=host,
+        host=display_host,
         ports=ports,
         healthy=healthy,
         last_heartbeat_at=last_at_iso,
