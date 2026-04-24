@@ -19,7 +19,13 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      staleTime: 30_000,
+      // 5s was 30s before v8. At 30s + refetchInterval: 30s on useDevices
+      // the dead window between "still fresh" and "next poll" stretched to
+      // nearly 60s, which the operator saw as "the list doesn't update when
+      // I plug in a new peer". 5s ensures every hook's refetchInterval
+      // actually hits the backend rather than dedup'ing against a
+      // still-fresh cache.
+      staleTime: 5_000,
     },
   },
 });

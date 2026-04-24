@@ -78,7 +78,16 @@ def get_current_user(
     # valid and not expired — we just need to verify the jti isn't denied.
     # Same generic 401 message as the other failure modes: never tell the
     # caller WHY their token was rejected.
-    if session.get(JwtRevocation, claims["jti"]) is not None:
+    #
+    # Pre-v8 tokens minted before the jti rollout don't carry the claim. We
+    # observed in prod that python-jose's `require=["jti"]` option doesn't
+    # actually reject those (jose only enforces `require` for a fixed set of
+    # standard claims, not custom ones), so they reach this code path. Treat
+    # missing jti as "no revocation entry possible" rather than crashing —
+    # the alternative is forcing every operator to log out + back in across
+    # the upgrade, which the brief explicitly avoids.
+    jti = claims.get("jti")
+    if jti is not None and session.get(JwtRevocation, jti) is not None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
     user = session.get(User, user_id)
     if not user or not user.is_active:

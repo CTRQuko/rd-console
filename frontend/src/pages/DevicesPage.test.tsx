@@ -98,9 +98,19 @@ describe('<DevicesPage />', () => {
 
     expect(await screen.findByText('DESKTOP-ALPHA')).toBeInTheDocument();
     expect(screen.getByText('MBP-BETA')).toBeInTheDocument();
-    // Online device shows the online badge copy, offline shows "Offline".
+    // v10 presence: DESKTOP-ALPHA has last_seen_at = now() (see DEVICES_SEED),
+    // so its badge renders the "fresh" tier. MBP-BETA has a 2025 timestamp,
+    // i.e. well past the 24h cold cutoff, so it's "cold". We assert via the
+    // `data-tier` attribute on the badge wrapper — stable across i18n
+    // changes (the tooltip text gets translated, the attribute doesn't).
     const alpha = screen.getByText('DESKTOP-ALPHA').closest('tr')!;
-    expect(within(alpha).getByText(/online/i)).toBeInTheDocument();
+    expect(
+      alpha.querySelector('.rd-online[data-tier="fresh"]'),
+    ).not.toBeNull();
+    const beta = screen.getByText('MBP-BETA').closest('tr')!;
+    expect(
+      beta.querySelector('.rd-online[data-tier="cold"]'),
+    ).not.toBeNull();
   });
 
   it('filters offline devices', async () => {

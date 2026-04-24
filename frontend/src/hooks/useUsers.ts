@@ -19,6 +19,9 @@ export function useUsers() {
       const r = await api.get<ApiUser[]>('/admin/api/users');
       return r.data;
     },
+    // Admins occasionally do `last_login_at` audits while a user is logging
+    // in. 30s is enough cadence without being chatty.
+    refetchInterval: 30_000,
   });
 }
 

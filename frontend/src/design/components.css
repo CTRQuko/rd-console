@@ -116,6 +116,8 @@ body { margin: 0; }
 /* ── OnlineBadge ───────────────────────────────────────────── */
 .rd-online { display: inline-flex; align-items: center; gap: 8px; font-size: 0.929rem; color: var(--fg); }
 .rd-online__dot { width: 8px; height: 8px; border-radius: 50%; position: relative; flex-shrink: 0; }
+
+/* Legacy (binary) variants — still used if only `online` prop is passed. */
 .rd-online__dot.on { background: var(--green-500); }
 .rd-online__dot.off { background: var(--fg-muted); }
 .rd-online__dot.on::after {
@@ -124,6 +126,26 @@ body { margin: 0; }
   animation: rd-pulse 2s ease-in-out infinite;
 }
 .rd-online__label.off { color: var(--fg-muted); }
+
+/* Tier-based variants — new since v10-last-seen. Match `LastSeenTier` in
+ * `src/lib/formatters.tsx`. `fresh` pulses like legacy `.on` to preserve
+ * the "alive right now" feel; the others are static since their whole
+ * point is to convey uncertainty. */
+.rd-online__dot.fresh { background: var(--green-500); }
+.rd-online__dot.fresh::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%;
+  background: var(--green-500); opacity: .35;
+  animation: rd-pulse 2s ease-in-out infinite;
+}
+.rd-online__dot.stale { background: #d97706; }  /* amber-600 */
+.rd-online__dot.cold { background: var(--fg-muted); }
+.rd-online__dot.unknown { background: #4b5563; }  /* slate-600 */
+
+.rd-online__label.fresh { color: var(--fg); }
+.rd-online__label.stale { color: var(--fg); }
+.rd-online__label.cold { color: var(--fg-muted); }
+.rd-online__label.unknown { color: var(--fg-muted); font-style: italic; }
+
 @keyframes rd-pulse {
   0%, 100% { transform: scale(1); opacity: .35; }
   50% { transform: scale(1.7); opacity: 0; }
@@ -131,7 +153,8 @@ body { margin: 0; }
 
 /* Respect users who asked the OS to reduce motion. */
 @media (prefers-reduced-motion: reduce) {
-  .rd-online__dot.on::after { animation: none; }
+  .rd-online__dot.on::after,
+  .rd-online__dot.fresh::after { animation: none; }
   .rd-dialog-backdrop { animation: none; }
   .rd-btn,
   .rd-iconbtn,

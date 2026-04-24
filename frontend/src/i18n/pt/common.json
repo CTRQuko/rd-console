@@ -48,5 +48,12 @@
     "passwordTooShort": "A nova palavra-passe deve ter pelo menos 8 caracteres.",
     "missingCredentials": "Credenciais em falta",
     "signInFailed": "Falha ao iniciar sessão"
+  },
+  "device_status": {
+    "just_now": "Visto agora",
+    "recent": "Recente ({{ago}})",
+    "old": "Sem atividade ({{ago}})",
+    "never": "Nunca visto",
+    "tooltip": "Última atividade de registo observada pelo servidor. O RustDesk Server free não expõe presença em tempo real por peer."
   }
 }

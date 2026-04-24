@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     # events. Prevents a malicious client from filling the DB.
     max_audit_payload_bytes: int = Field(default=4096, ge=256, le=65536)
 
+    # Debug switch: when true, log the full raw body of every POST to
+    # /api/audit/conn at INFO level under the "rd_console.audit" logger.
+    # Used during Flutter-client investigation spikes to discover any new
+    # fields upstream started sending. Keep OFF in normal production —
+    # peer IDs + IPs landing in application logs is PII for some ops.
+    debug_raw_audit_conn: bool = Field(default=False)
+
     # ─── Database ───
     db_path: Path = Field(default=Path("/data/rd_console.sqlite3"))
 
