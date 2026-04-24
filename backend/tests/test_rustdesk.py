@@ -336,3 +336,169 @@ def test_sysinfo_multiple_fields_changed_single_audit(client, session):
         "platform": "Linux",
         "version": "1.2.9",
     }
+
+
+# ─── /api/audit/conn — CONNECT vs DISCONNECT (Sprint 2 A.2) ───────────────────
+#
+# The Flutter RustDesk client sends an `action` field that tells the server
+# whether the session is starting or ending. Contract comes from the upstream
+# kingmo888-compatible implementation at lejianwen/rustdesk-api (AuditConnForm):
+#
+#   action = "new"   → session started  → AuditAction.CONNECT
+#   action = "close" → session ended    → AuditAction.DISCONNECT
+#   action = ""      → update existing  → also CONNECT (audit log is append-only,
+#                                         we don't merge; this is the back-compat
+#                                         path for older clients / forks)
+#   action unknown   → CONNECT (never 400 — the client can't recover from a
+#                      rejected audit event, we'd rather record SOMETHING)
+#
+# The Flutter client also packs the from-peer info as `"peer": [id, name]`
+# rather than a flat `from_id`. We accept both so older homebuilt clients
+# that still send `from_id` don't regress.
+
+
+def test_audit_conn_action_new_logs_as_connect(client, session):
+    r = client.post(
+        "/api/audit/conn",
+        json={
+            "action": "new",
+            "id": "peer-receiver",
+            "peer": ["peer-initiator", "alice"],
+            "ip": "10.0.0.5",
+            "session_id": 1234567890.0,
+            "conn_id": 42,
+            "type": 0,
+            "uuid": "cafe-1",
+        },
+    )
+    assert r.status_code == 200
+
+    from sqlmodel import select
+
+    from app.models.audit_log import AuditAction, AuditLog
+    row = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.CONNECT)
+    ).first()
+    assert row is not None
+    # from_id comes from the peer[] array now, not the flat from_id key.
+    assert row.from_id == "peer-initiator"
+    assert row.to_id == "peer-receiver"
+    assert row.ip == "10.0.0.5"
+
+
+def test_audit_conn_action_close_logs_as_disconnect(client, session):
+    r = client.post(
+        "/api/audit/conn",
+        json={
+            "action": "close",
+            "id": "peer-receiver",
+            "peer": ["peer-initiator", "alice"],
+            "ip": "10.0.0.5",
+            "session_id": 1234567890.0,
+            "conn_id": 42,
+            "type": 0,
+            "uuid": "cafe-1",
+        },
+    )
+    assert r.status_code == 200
+
+    from sqlmodel import select
+
+    from app.models.audit_log import AuditAction, AuditLog
+    row = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DISCONNECT)
+    ).first()
+    assert row is not None
+    assert row.from_id == "peer-initiator"
+    assert row.to_id == "peer-receiver"
+
+
+def test_audit_conn_empty_action_defaults_to_connect(client, session):
+    """Back-compat: older clients / custom forks don't send `action`. The
+    upstream behaviour there is 'update existing by (peer_id, conn_id)',
+    but our audit log is append-only — easiest honest thing is to log it
+    as CONNECT so operators still see something."""
+    r = client.post(
+        "/api/audit/conn",
+        json={"id": "peer-receiver", "peer": ["peer-initiator", ""], "conn_id": 1},
+    )
+    assert r.status_code == 200
+
+    from sqlmodel import select
+
+    from app.models.audit_log import AuditAction, AuditLog
+    rows = session.exec(
+        select(AuditLog).where(
+            AuditLog.action.in_([AuditAction.CONNECT, AuditAction.DISCONNECT])
+        )
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].action == AuditAction.CONNECT
+
+
+def test_audit_conn_unknown_action_defaults_to_connect(client, session):
+    """Defensive: a rogue/forked client sending action='zombie' must not 400.
+    We log it as CONNECT — something useful rather than nothing."""
+    r = client.post(
+        "/api/audit/conn",
+        json={
+            "action": "zombie",
+            "id": "peer-x",
+            "peer": ["peer-y", "name"],
+        },
+    )
+    assert r.status_code == 200
+
+    from sqlmodel import select
+
+    from app.models.audit_log import AuditAction, AuditLog
+    row = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.CONNECT)
+    ).first()
+    assert row is not None
+
+
+def test_audit_conn_accepts_legacy_from_id_flat_key(client, session):
+    """Regression guard: some older clients (and the pre-v8 tests in this
+    suite) use a flat `from_id` instead of the `peer` array. Both shapes
+    must keep working."""
+    r = client.post(
+        "/api/audit/conn",
+        json={"action": "new", "from_id": "legacy-peer", "to_id": "recv"},
+    )
+    assert r.status_code == 200
+
+    from sqlmodel import select
+
+    from app.models.audit_log import AuditAction, AuditLog
+    row = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.CONNECT)
+    ).first()
+    assert row is not None
+    assert row.from_id == "legacy-peer"
+    assert row.to_id == "recv"
+
+
+def test_audit_conn_debug_raw_env_logs_payload(client, session, monkeypatch, caplog):
+    """With RD_DEBUG_RAW_AUDIT_CONN=1 the raw payload lands in the logs.
+    Ops uses this during the next Flutter-client investigation spike to
+    confirm any new fields the client started sending."""
+    import logging
+
+    from app import config
+
+    config.get_settings.cache_clear()
+    monkeypatch.setenv("RD_DEBUG_RAW_AUDIT_CONN", "1")
+
+    with caplog.at_level(logging.INFO, logger="rd_console.audit"):
+        r = client.post(
+            "/api/audit/conn",
+            json={"action": "new", "id": "peer-dbg", "peer": ["p2", "n"]},
+        )
+    assert r.status_code == 200
+    # The raw-payload log line is tagged so ops can grep it. Assert on
+    # a distinctive token rather than the whole body to stay robust
+    # against dict ordering.
+    assert any("audit_conn raw" in rec.message for rec in caplog.records), caplog.text
+    # Reset so subsequent tests see fresh settings.
+    config.get_settings.cache_clear()
