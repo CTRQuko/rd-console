@@ -127,7 +127,22 @@ def sysinfo(
     from ..services.auto_tags import sync_auto_tags_for_device
 
     device = session.exec(select(Device).where(Device.rustdesk_id == body.id)).first()
-    if not device:
+    is_new = device is None
+    # Snapshot the three identity fields BEFORE overwrite so we can detect
+    # drift and write a single audit row covering all changes. Only the
+    # triple that operators care about (hostname / platform / version) is
+    # tracked — cpu flips too noisily across reboots on some distros, and
+    # username is per-session noise.
+    before: dict[str, str | None] = (
+        {}
+        if is_new
+        else {
+            "hostname": device.hostname,
+            "platform": device.platform,
+            "version": device.version,
+        }
+    )
+    if device is None:
         device = Device(rustdesk_id=body.id)
     device.hostname = body.hostname or device.hostname
     device.username = body.username or device.username
@@ -139,6 +154,34 @@ def sysinfo(
     # Flush so a brand-new device gets an id before tag reconciliation.
     session.flush()
     sync_auto_tags_for_device(session, device)
+
+    # Diff AFTER auto-tags so the audit payload reflects what actually got
+    # committed. Skipped for brand-new peers: the first sysinfo is "first
+    # seen", and the heartbeat side already records the CONNECT event, so
+    # a DEVICE_UPDATED there would be redundant.
+    if not is_new:
+        after = {
+            "hostname": device.hostname,
+            "platform": device.platform,
+            "version": device.version,
+        }
+        changed = [k for k in ("hostname", "platform", "version") if before[k] != after[k]]
+        if changed:
+            session.add(
+                AuditLog(
+                    action=AuditAction.DEVICE_UPDATED,
+                    from_id=body.id[:32],
+                    payload=json.dumps(
+                        {
+                            "rustdesk_id": body.id,
+                            "changed": changed,
+                            "before": {k: before[k] for k in changed},
+                            "after": {k: after[k] for k in changed},
+                        },
+                        default=str,
+                    ),
+                )
+            )
     session.commit()
     return {"ok": True}
 
