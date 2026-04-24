@@ -222,3 +222,117 @@ def test_audit_payload_is_valid_json_string(client, session):
     import json
     data = json.loads(row.payload)
     assert data["from_id"] == "a"
+
+
+# ─── Sysinfo diff → DEVICE_UPDATED audit (Sprint 1 A.1) ───────────────────────
+#
+# Before this feature the panel silently overwrote hostname/platform/version
+# on every sysinfo tick. Admins had no way to see "this peer's OS flipped
+# from Windows 10 to 11" or "the client jumped 2 major versions".
+#
+# The contract:
+#   - First sysinfo for an unknown peer: creates the Device row, emits NO
+#     audit entry (the CONNECT log from heartbeat already covers "new peer").
+#   - Subsequent sysinfo with identical fields: no audit (idempotent).
+#   - Subsequent sysinfo where hostname / platform / version changed:
+#     ONE audit row of action=DEVICE_UPDATED with payload
+#     {"rustdesk_id": ..., "changed": [<fields>], "before": {...}, "after": {...}}.
+
+
+def test_sysinfo_first_seen_emits_no_audit(client, session):
+    r = client.post(
+        "/api/sysinfo",
+        json={
+            "id": "peer-firstseen",
+            "hostname": "brand-new",
+            "os": "Linux",
+            "version": "1.2.3",
+        },
+    )
+    assert r.status_code == 200
+
+    from sqlmodel import select
+
+    from app.models.audit_log import AuditAction, AuditLog
+    rows = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DEVICE_UPDATED)
+    ).all()
+    assert rows == [], "first sysinfo must not produce a DEVICE_UPDATED row"
+
+
+def test_sysinfo_no_change_emits_no_audit(client, session):
+    payload = {
+        "id": "peer-same",
+        "hostname": "same-host",
+        "os": "Linux",
+        "version": "1.2.3",
+    }
+    client.post("/api/sysinfo", json=payload)
+    client.post("/api/sysinfo", json=payload)
+
+    from sqlmodel import select
+
+    from app.models.audit_log import AuditAction, AuditLog
+    rows = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DEVICE_UPDATED)
+    ).all()
+    assert rows == [], "identical sysinfo must be idempotent"
+
+
+def test_sysinfo_hostname_change_emits_device_updated(client, session):
+    client.post(
+        "/api/sysinfo",
+        json={"id": "peer-renamed", "hostname": "old-name", "os": "Linux", "version": "1.2.3"},
+    )
+    r = client.post(
+        "/api/sysinfo",
+        json={"id": "peer-renamed", "hostname": "new-name", "os": "Linux", "version": "1.2.3"},
+    )
+    assert r.status_code == 200
+
+    import json
+    from sqlmodel import select
+
+    from app.models.audit_log import AuditAction, AuditLog
+    rows = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DEVICE_UPDATED)
+    ).all()
+    assert len(rows) == 1
+    data = json.loads(rows[0].payload)
+    assert data["rustdesk_id"] == "peer-renamed"
+    assert data["changed"] == ["hostname"]
+    assert data["before"]["hostname"] == "old-name"
+    assert data["after"]["hostname"] == "new-name"
+    assert rows[0].from_id == "peer-renamed"
+
+
+def test_sysinfo_multiple_fields_changed_single_audit(client, session):
+    client.post(
+        "/api/sysinfo",
+        json={"id": "peer-upg", "hostname": "host", "os": "Windows", "version": "1.2.3"},
+    )
+    client.post(
+        "/api/sysinfo",
+        json={"id": "peer-upg", "hostname": "host-renamed", "os": "Linux", "version": "1.2.9"},
+    )
+
+    import json
+    from sqlmodel import select
+
+    from app.models.audit_log import AuditAction, AuditLog
+    rows = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DEVICE_UPDATED)
+    ).all()
+    assert len(rows) == 1, "expected ONE audit row covering all changes"
+    data = json.loads(rows[0].payload)
+    assert set(data["changed"]) == {"hostname", "platform", "version"}
+    assert data["before"] == {
+        "hostname": "host",
+        "platform": "Windows",
+        "version": "1.2.3",
+    }
+    assert data["after"] == {
+        "hostname": "host-renamed",
+        "platform": "Linux",
+        "version": "1.2.9",
+    }

@@ -11,6 +11,7 @@ from sqlmodel import Session
 from .config import get_settings
 from .db import get_session
 from .models.api_token import ApiToken
+from .models.jwt_revocation import JwtRevocation
 from .models.user import User, UserRole
 from .security import (
     decode_access_token,
@@ -73,6 +74,12 @@ def get_current_user(
         user_id = int(claims["sub"])
     except (KeyError, ValueError, TypeError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Malformed token") from None
+    # Revocation check. Decode already passed, so the token is syntactically
+    # valid and not expired — we just need to verify the jti isn't denied.
+    # Same generic 401 message as the other failure modes: never tell the
+    # caller WHY their token was rejected.
+    if session.get(JwtRevocation, claims["jti"]) is not None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
     user = session.get(User, user_id)
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")

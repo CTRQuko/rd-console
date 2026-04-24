@@ -279,28 +279,85 @@ def forget_device(device_id: int, session: SessionDep, admin: AdminUser) -> None
 
 
 @router.post("/{device_id}/disconnect", status_code=status.HTTP_202_ACCEPTED)
-def request_disconnect(device_id: int, session: SessionDep, admin: AdminUser) -> dict:
-    """Stub disconnect — emits an audit event regardless of whether the row
-    exists. The real hbbr-side disconnect is a future F5 milestone.
+def request_disconnect(
+    device_id: int,
+    session: SessionDep,
+    admin: AdminUser,
+    force: bool = Query(
+        default=False,
+        description=(
+            "Best-effort cleanup: if true, also remove the peer row from "
+            "hbbs's SQLite so the next reconnect forces a re-auth. The "
+            "live tunnel keeps running — this is the strongest side effect "
+            "the panel can achieve without upstream changes."
+        ),
+    ),
+) -> dict:
+    """Request a disconnect; write audit; optionally drop hbbs peer row.
 
-    Idempotent: repeated calls simply produce additional audit entries (which
-    is what ops wants — every "please kill it" is on the record).
+    Upstream RustDesk (rustdesk/rustdesk-server) does NOT expose an admin
+    interface for kicking a live hbbr session — the relay is designed as
+    a transparent pipe. That means a "real" disconnect is out of reach
+    from this panel, period. The best we can do:
+
+      * default (no flag): write an audit event. The in-flight tunnel is
+        untouched but we have a record of "please kill it" for ops.
+      * `?force=true`: additionally call delete_hbbs_peer so the peer
+        has to re-authenticate on its next reconnect. The live tunnel
+        still runs — you cannot kill a bit mid-flight from here — but
+        this is the closest thing to a kick we can offer.
+
+    Idempotent: repeated calls simply produce additional audit entries.
     """
     d = session.get(Device, device_id)
     rd_id = d.rustdesk_id if d else None
+
+    hbbs_removed = False
+    if force and rd_id:
+        # delete_hbbs_peer swallows its own failure modes (DB not mounted,
+        # unknown peer) so it's safe to call unconditionally. Return is
+        # "did anything change" — record that in the audit payload so a
+        # future incident can distinguish "nothing to clean" from "cleaned".
+        try:
+            hbbs_removed = delete_hbbs_peer(rd_id)
+        except Exception:  # noqa: BLE001 - defensive; never leak to caller
+            hbbs_removed = False
+
     session.add(
         AuditLog(
             action=AuditAction.DEVICE_DISCONNECT_REQUESTED,
             actor_user_id=admin.id,
             from_id=rd_id,
-            payload=json.dumps({"device_id": device_id, "rustdesk_id": rd_id}),
+            payload=json.dumps(
+                {
+                    "device_id": device_id,
+                    "rustdesk_id": rd_id,
+                    "force": force,
+                    "hbbs_removed": hbbs_removed,
+                }
+            ),
         )
     )
     session.commit()
+
+    if force:
+        note = (
+            "Disconnect requested with force. Upstream RustDesk exposes no API "
+            "to kick a live hbbr tunnel, but the hbbs peer row was removed so "
+            "the next reconnect forces a re-auth."
+        )
+    else:
+        note = (
+            "Disconnect requested. Upstream RustDesk exposes no API to kick a "
+            "live hbbr tunnel, so this action is audit-only. Retry with "
+            "?force=true to also evict the hbbs peer row (re-auth on next "
+            "reconnect)."
+        )
     return {
         "ok": True,
-        "note": "Disconnect requested. hbbr does not yet expose a kill endpoint; "
-        "this action is logged for audit.",
+        "force": force,
+        "hbbs_removed": hbbs_removed,
+        "note": note,
     }
 
 

@@ -151,6 +151,7 @@ async def lifespan(_: FastAPI):
     import asyncio
 
     from .services.hbbs_sync import run_sync_loop
+    from .services.jwt_cleanup import run_cleanup_loop
 
     logging.basicConfig(
         level=logging.INFO,
@@ -164,14 +165,21 @@ async def lifespan(_: FastAPI):
     import contextlib
 
     sync_task = asyncio.create_task(run_sync_loop(), name="hbbs-sync")
+    # JWT revocation list grows without bound unless someone prunes it. A
+    # 6h tick keeps the table size bounded by "tokens revoked in the last
+    # access_token_expire_minutes window", which is tiny.
+    cleanup_task = asyncio.create_task(run_cleanup_loop(), name="jwt-cleanup")
     try:
         yield
     finally:
         sync_task.cancel()
+        cleanup_task.cancel()
         # Swallow both the CancelledError we just triggered and any
         # tick-level exception — a shutdown hook should never raise.
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await sync_task
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await cleanup_task
 
 
 def create_app() -> FastAPI:

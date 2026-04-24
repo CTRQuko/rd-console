@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -65,10 +66,14 @@ def create_access_token(
         "iat": int(now.timestamp()),
         "nbf": int(now.timestamp()),
         "exp": int((now + exp_delta).timestamp()),
+        # Unique per-token identifier used by the revocation deny-list
+        # (see app.models.jwt_revocation). uuid4 is 128 bits of entropy —
+        # collisions are not a concern.
+        "jti": str(uuid.uuid4()),
     }
     if extra_claims:
         # Never let extra_claims override the standard claims.
-        for reserved in ("sub", "iat", "nbf", "exp"):
+        for reserved in ("sub", "iat", "nbf", "exp", "jti"):
             extra_claims.pop(reserved, None)
         payload.update(extra_claims)
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
@@ -117,7 +122,13 @@ def constant_time_equals(a: str, b: str) -> bool:
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:
-    """Decode and validate a JWT. Returns claims dict or None if invalid/expired."""
+    """Decode and validate a JWT. Returns claims dict or None if invalid/expired.
+
+    Revocation is NOT checked here — that lives in deps.get_current_user
+    because it needs DB session access. Keeping decode pure means the
+    function stays callable from tests / CLI / background jobs without a
+    full app context.
+    """
     settings = get_settings()
     try:
         return jwt.decode(
@@ -125,7 +136,11 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
             settings.secret_key,
             algorithms=[settings.jwt_algorithm],
             options={
-                "require": ["exp", "iat", "sub"],
+                # jti required so the revocation path has something to key
+                # on. Old tokens minted before the jti rollout don't decode
+                # — they'd be rejected here, forcing a fresh login. OK by
+                # us: those were pre-v8 dev builds.
+                "require": ["exp", "iat", "sub", "jti"],
                 "verify_exp": True,
                 "verify_iat": True,
                 "verify_signature": True,

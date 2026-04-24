@@ -518,8 +518,8 @@ export function DevicesPage() {
         title="Disconnect this device?"
         body={
           confirmDisconnect
-            ? `${confirmDisconnect.hostname ?? confirmDisconnect.rustdesk_id} will be asked to drop its relay session. ` +
-              `Audit entry is written regardless of delivery.`
+            ? `${confirmDisconnect.hostname ?? confirmDisconnect.rustdesk_id}: upstream RustDesk exposes no API to kick a live hbbr tunnel, so this action is audit-only. ` +
+              `The event is recorded and the peer will re-authenticate on its next reconnect.`
             : ''
         }
         onConfirm={() => {
@@ -528,7 +528,10 @@ export function DevicesPage() {
           disconnect.mutate(target.id, {
             onSuccess: () => {
               setConfirmDisconnect(null);
-              setToast({ kind: 'ok', text: 'Disconnect requested — event logged.' });
+              setToast({
+                kind: 'ok',
+                text: 'Disconnect recorded. Upstream RustDesk doesn\u2019t expose a kill API, so the live tunnel keeps running — audit entry written.',
+              });
             },
             onError: (err) => {
               setConfirmDisconnect(null);

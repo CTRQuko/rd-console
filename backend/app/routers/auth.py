@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
 from ..deps import CurrentUser, SessionDep
 from ..models.audit_log import AuditAction, AuditLog
+from ..models.jwt_revocation import JwtRevocation
 from ..models.user import User
 from ..security import (
     create_access_token,
+    decode_access_token,
     hash_password,
     needs_rehash,
     utcnow_naive,
@@ -85,6 +89,46 @@ def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
 @router.get("/me", response_model=MeResponse)
 def me(user: CurrentUser) -> MeResponse:
     return MeResponse(id=user.id, username=user.username, email=user.email, role=user.role.value)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    user: CurrentUser,
+    session: SessionDep,
+    authorization: str | None = Header(default=None),
+) -> None:
+    """Revoke the exact JWT that made this call.
+
+    The CurrentUser dep already validated the token end-to-end (signature,
+    exp, revocation list) — by the time we're in here the token is
+    legitimate and we know who's logging out. We decode again to extract
+    the jti + exp; if anything's off (no header, malformed claims) we
+    return 204 silently rather than leaking state.
+
+    Granularity is per-token, not per-user: other sessions of the same
+    user stay alive. That matches how iOS / Gmail / GitHub handle logout,
+    and avoids surprise "logging out on my laptop killed my phone".
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return
+    token = authorization.split(" ", 1)[1].strip()
+    claims = decode_access_token(token)
+    if not claims or "jti" not in claims or "exp" not in claims:
+        return
+    jti = claims["jti"]
+    # Upsert — a second logout with the same token is a no-op. Uses
+    # session.get because the PK is jti; no unique index race to worry
+    # about since it's the PK.
+    if session.get(JwtRevocation, jti) is not None:
+        return
+    session.add(
+        JwtRevocation(
+            jti=jti,
+            user_id=user.id,
+            expires_at=datetime.utcfromtimestamp(int(claims["exp"])),
+        )
+    )
+    session.commit()
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)

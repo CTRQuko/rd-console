@@ -5,6 +5,7 @@ from .api_token import ApiToken
 from .audit_log import AuditLog
 from .device import Device
 from .join_token import JoinToken
+from .jwt_revocation import JwtRevocation
 from .runtime_setting import RuntimeSetting
 from .tag import DeviceTag, Tag
 from .user import User
@@ -16,6 +17,7 @@ __all__ = [
     "Device",
     "DeviceTag",
     "JoinToken",
+    "JwtRevocation",
     "RuntimeSetting",
     "Tag",
     "User",

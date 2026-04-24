@@ -27,6 +27,7 @@ from ..models.device import Device
 from ..models.user import User, UserRole
 from ..security import (
     create_access_token,
+    decode_access_token,
     hash_password,
     needs_rehash,
     utcnow_naive,
@@ -127,7 +128,22 @@ def sysinfo(
     from ..services.auto_tags import sync_auto_tags_for_device
 
     device = session.exec(select(Device).where(Device.rustdesk_id == body.id)).first()
-    if not device:
+    is_new = device is None
+    # Snapshot the three identity fields BEFORE overwrite so we can detect
+    # drift and write a single audit row covering all changes. Only the
+    # triple that operators care about (hostname / platform / version) is
+    # tracked — cpu flips too noisily across reboots on some distros, and
+    # username is per-session noise.
+    before: dict[str, str | None] = (
+        {}
+        if is_new
+        else {
+            "hostname": device.hostname,
+            "platform": device.platform,
+            "version": device.version,
+        }
+    )
+    if device is None:
         device = Device(rustdesk_id=body.id)
     device.hostname = body.hostname or device.hostname
     device.username = body.username or device.username
@@ -139,6 +155,34 @@ def sysinfo(
     # Flush so a brand-new device gets an id before tag reconciliation.
     session.flush()
     sync_auto_tags_for_device(session, device)
+
+    # Diff AFTER auto-tags so the audit payload reflects what actually got
+    # committed. Skipped for brand-new peers: the first sysinfo is "first
+    # seen", and the heartbeat side already records the CONNECT event, so
+    # a DEVICE_UPDATED there would be redundant.
+    if not is_new:
+        after = {
+            "hostname": device.hostname,
+            "platform": device.platform,
+            "version": device.version,
+        }
+        changed = [k for k in ("hostname", "platform", "version") if before[k] != after[k]]
+        if changed:
+            session.add(
+                AuditLog(
+                    action=AuditAction.DEVICE_UPDATED,
+                    from_id=body.id[:32],
+                    payload=json.dumps(
+                        {
+                            "rustdesk_id": body.id,
+                            "changed": changed,
+                            "before": {k: before[k] for k in changed},
+                            "after": {k: after[k] for k in changed},
+                        },
+                        default=str,
+                    ),
+                )
+            )
     session.commit()
     return {"ok": True}
 
@@ -289,11 +333,45 @@ class LegacyLogoutRequest(BaseModel):
 
 
 @router.post("/logout")
-def legacy_logout(body: LegacyLogoutRequest) -> dict:  # noqa: ARG001 - body kept for wire compat
-    """Stateless JWT — we can't actually invalidate the token server-side
-    without a denylist, so this is a 200 ack. kingmo888 returns `{code: 1}`
-    on success; the Flutter client branches on that key, so matching it
-    verbatim avoids client-side sign-out hangs."""
+def legacy_logout(  # noqa: ARG001 - body kept for wire compat
+    body: LegacyLogoutRequest,
+    session: SessionDep,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """Revoke the Flutter client's JWT and return kingmo888-compatible ack.
+
+    As of v8 we do have a denylist — same `jwt_revocations` table the panel
+    `/api/auth/logout` writes to. The response still has to be `{code: 1}`
+    verbatim because the Flutter client branches on that key and anything
+    else hangs its sign-out flow.
+
+    Auth header is optional: the client sometimes calls logout after the
+    token was already dropped, and we must not 401 there (would leave the
+    client stuck in a retry loop). Missing / malformed token → no-op, still
+    returns `{code: 1}`.
+    """
+    from datetime import datetime
+
+    from ..models.jwt_revocation import JwtRevocation
+
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        claims = decode_access_token(token)
+        if claims and "jti" in claims and "exp" in claims and "sub" in claims:
+            try:
+                user_id = int(claims["sub"])
+            except (ValueError, TypeError):
+                user_id = None
+            jti = claims["jti"]
+            if user_id is not None and session.get(JwtRevocation, jti) is None:
+                session.add(
+                    JwtRevocation(
+                        jti=jti,
+                        user_id=user_id,
+                        expires_at=datetime.utcfromtimestamp(int(claims["exp"])),
+                    )
+                )
+                session.commit()
     return {"code": 1}
 
 
