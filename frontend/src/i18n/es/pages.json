@@ -10,5 +10,72 @@
   "signInSubtitle": "Gestor de Servidor RustDesk",
   "username": "Usuario",
   "password": "Contraseña",
-  "haveInvitation": "¿Tienes una invitación? Abrir página de acceso →"
+  "haveInvitation": "¿Tienes una invitación? Abrir página de acceso →",
+  "logs": {
+    "title": "Registros de auditoría",
+    "ranges": {
+      "today": "Hoy",
+      "7d": "Últimos 7 días",
+      "30d": "Últimos 30 días",
+      "all": "Todo el tiempo"
+    },
+    "categories": {
+      "all": "Todas las categorías",
+      "session": "Sesión",
+      "auth": "Autenticación",
+      "user_management": "Gestión de usuarios",
+      "config": "Configuración / dispositivo",
+      "address_book": "Agenda"
+    },
+    "all_actions": "Todas las acciones",
+    "actor_placeholder": "Actor o ID de RustDesk…",
+    "events_one": "{{count}} evento",
+    "events_other": "{{count}} eventos",
+    "delete_selected": "Eliminar {{count}}",
+    "export": "Exportar",
+    "export_csv": "Exportar CSV",
+    "export_ndjson": "Exportar NDJSON",
+    "export_ready": "Exportación ({{format}}) lista.",
+    "columns": {
+      "time": "Hora",
+      "action": "Acción",
+      "actor": "Actor",
+      "target": "Destino",
+      "ip": "IP"
+    },
+    "aria": {
+      "select_all_page": "Seleccionar todo en esta página",
+      "select_row": "Seleccionar registro {{id}}",
+      "expand": "Expandir",
+      "collapse": "Contraer",
+      "export_menu": "Menú de exportación"
+    },
+    "system_actor": "sistema",
+    "system_unauthenticated": "sistema / sin autenticar",
+    "user_id_only": "id de usuario {{id}}",
+    "confirm": {
+      "title_one": "¿Eliminar {{count}} entrada de auditoría?",
+      "title_other": "¿Eliminar {{count}} entradas de auditoría?",
+      "body": "Las entradas de auditoría son el registro forense de las acciones en este panel. La eliminación es blanda — se escribe una entrada LOGS_DELETED indicando qué IDs se purgaron, y las filas creadas en los últimos 30 días nunca pueden eliminarse, independientemente de la selección.",
+      "type_to_confirm": "Escribe DELETE para confirmar",
+      "deleting": "Eliminando…",
+      "delete": "Eliminar",
+      "deleted_one": "{{count}} entrada eliminada.",
+      "deleted_other": "{{count}} entradas eliminadas.",
+      "deleted_with_skipped": "{{affected}} eliminadas, {{skipped}} omitidas ({{reasons}})."
+    },
+    "drawer": {
+      "when": "Cuándo",
+      "from": "Desde",
+      "to": "Hasta",
+      "uuid": "UUID",
+      "payload_heading": "Payload",
+      "raw_json": "JSON crudo"
+    },
+    "pager": {
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "range": "{{from}}–{{to}} de {{total}}"
+    }
+  }
 }

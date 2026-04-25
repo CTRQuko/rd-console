@@ -37,19 +37,22 @@ import type { ApiAuditLog, AuditActionValue, AuditCategory } from '@/types/api';
 
 type RangeKey = 'today' | '7d' | '30d' | 'all';
 
-const RANGES: { value: RangeKey; label: string }[] = [
-  { value: 'today', label: 'Today' },
-  { value: '7d', label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: 'all', label: 'All time' },
+// Static value+labelKey mapping. Labels are translation keys consumed via
+// `t(r.labelKey)` inside the component so changes propagate on language
+// switch without rebuilding the array.
+const RANGES: { value: RangeKey; labelKey: string }[] = [
+  { value: 'today', labelKey: 'pages:logs.ranges.today' },
+  { value: '7d', labelKey: 'pages:logs.ranges.7d' },
+  { value: '30d', labelKey: 'pages:logs.ranges.30d' },
+  { value: 'all', labelKey: 'pages:logs.ranges.all' },
 ];
 
-const CATEGORIES: { value: '' | AuditCategory; label: string }[] = [
-  { value: '', label: 'All categories' },
-  { value: 'session', label: 'Session' },
-  { value: 'auth', label: 'Auth' },
-  { value: 'user_management', label: 'User management' },
-  { value: 'config', label: 'Config / device' },
+const CATEGORIES: { value: '' | AuditCategory; labelKey: string }[] = [
+  { value: '', labelKey: 'pages:logs.categories.all' },
+  { value: 'session', labelKey: 'pages:logs.categories.session' },
+  { value: 'auth', labelKey: 'pages:logs.categories.auth' },
+  { value: 'user_management', labelKey: 'pages:logs.categories.user_management' },
+  { value: 'config', labelKey: 'pages:logs.categories.config' },
 ];
 
 // Range computation moved to `lib/formatters.tsx::sinceIsoRange` so every
@@ -186,10 +189,12 @@ export function LogsPage() {
         const skipped = result.skipped.length;
         const msg =
           skipped === 0
-            ? `${result.affected} log entr${result.affected === 1 ? 'y' : 'ies'} deleted.`
-            : `${result.affected} deleted, ${skipped} skipped (${result.skipped
-                .map((s) => s.reason)
-                .join(', ')}).`;
+            ? t('pages:logs.confirm.deleted', { count: result.affected })
+            : t('pages:logs.confirm.deleted_with_skipped', {
+                affected: result.affected,
+                skipped,
+                reasons: result.skipped.map((s) => s.reason).join(', '),
+              });
         setToast({ kind: skipped === 0 ? 'ok' : 'error', text: msg });
       },
       onError: (err) =>
@@ -204,7 +209,12 @@ export function LogsPage() {
 
   const triggerExport = (format: 'csv' | 'ndjson') => {
     downloadLogs({ ...query, limit: undefined, offset: undefined }, format)
-      .then(() => setToast({ kind: 'ok', text: `Export (${format}) ready.` }))
+      .then(() =>
+        setToast({
+          kind: 'ok',
+          text: t('pages:logs.export_ready', { format: format.toUpperCase() }),
+        }),
+      )
       .catch((err) => setToast({ kind: 'error', text: apiErrorMessage(err) }));
   };
 
@@ -214,7 +224,7 @@ export function LogsPage() {
       header: (
         <input
           type="checkbox"
-          aria-label="Select all on this page"
+          aria-label={t('pages:logs.aria.select_all_page')}
           checked={allSelectedOnPage}
           ref={(el) => {
             // React has no native "indeterminate" attribute — poke the DOM
@@ -230,7 +240,7 @@ export function LogsPage() {
       cell: (r) => (
         <input
           type="checkbox"
-          aria-label={`Select log ${r.id}`}
+          aria-label={t('pages:logs.aria.select_row', { id: r.id })}
           checked={selected.has(r.id)}
           onChange={() => toggleSelect(r.id)}
           onClick={(e) => e.stopPropagation()}
@@ -245,7 +255,11 @@ export function LogsPage() {
         <button
           type="button"
           className="rd-log-expand-btn"
-          aria-label={expanded.has(r.id) ? 'Collapse' : 'Expand'}
+          aria-label={
+            expanded.has(r.id)
+              ? t('pages:logs.aria.collapse')
+              : t('pages:logs.aria.expand')
+          }
           aria-expanded={expanded.has(r.id)}
           onClick={(e) => {
             e.stopPropagation();
@@ -258,7 +272,7 @@ export function LogsPage() {
     },
     {
       key: 'created_at',
-      header: 'Time',
+      header: t('pages:logs.columns.time'),
       cell: (r) => (
         <span className="rd-mono" style={{ color: 'var(--fg-muted)', fontSize: 12 }}>
           {fmt(r.created_at)}
@@ -267,12 +281,12 @@ export function LogsPage() {
     },
     {
       key: 'action',
-      header: 'Action',
+      header: t('pages:logs.columns.action'),
       cell: (r) => <Badge variant={variantForAction(r.action)}>{formatAction(r)}</Badge>,
     },
     {
       key: 'actor',
-      header: 'Actor',
+      header: t('pages:logs.columns.actor'),
       cell: (r) => {
         if (r.actor_username) return <span>{r.actor_username}</span>;
         if (r.from_id)
@@ -281,12 +295,12 @@ export function LogsPage() {
               {r.from_id}
             </span>
           );
-        return <span style={{ color: 'var(--fg-muted)' }}>system</span>;
+        return <span style={{ color: 'var(--fg-muted)' }}>{t('pages:logs.system_actor')}</span>;
       },
     },
     {
       key: 'to_id',
-      header: 'Target',
+      header: t('pages:logs.columns.target'),
       cell: (r) => (
         <span className="rd-mono" style={{ color: 'var(--fg-muted)' }}>
           {r.to_id ?? '—'}
@@ -295,7 +309,7 @@ export function LogsPage() {
     },
     {
       key: 'ip',
-      header: 'IP',
+      header: t('pages:logs.columns.ip'),
       cell: (r) => (
         <span className="rd-mono" style={{ color: 'var(--fg-muted)' }}>
           {r.ip ?? '—'}
@@ -310,7 +324,7 @@ export function LogsPage() {
   // renderers, we wrap the whole table in our own expandable <table> below.
   return (
     <>
-      <PageHeader title="Audit logs" />
+      <PageHeader title={t('pages:logs.title')} />
       <div className="rd-toolbar">
         <div className="rd-toolbar__group" style={{ flexWrap: 'wrap' }}>
           <Select
@@ -319,7 +333,7 @@ export function LogsPage() {
           >
             {RANGES.map((r) => (
               <option key={r.value} value={r.value}>
-                {r.label}
+                {t(r.labelKey)}
               </option>
             ))}
           </Select>
@@ -331,7 +345,7 @@ export function LogsPage() {
           >
             {CATEGORIES.map((c) => (
               <option key={c.value} value={c.value}>
-                {c.label}
+                {t(c.labelKey)}
               </option>
             ))}
           </Select>
@@ -341,7 +355,12 @@ export function LogsPage() {
               setAction(e.target.value as '' | AuditActionValue),
             )}
           >
-            <option value="">All actions</option>
+            <option value="">{t('pages:logs.all_actions')}</option>
+            {/* Action values are kept untranslated — they mirror the backend
+                AuditAction enum and the Badge in the table column shows the
+                same raw "connect / file transfer / login failed" via
+                formatAction(). Localising one without the other would be
+                inconsistent; out of scope for this PR. */}
             <option value="connect">connect</option>
             <option value="disconnect">disconnect</option>
             <option value="file_transfer">file transfer</option>
@@ -357,7 +376,7 @@ export function LogsPage() {
             <option value="device_disconnect_requested">device disconnect</option>
           </Select>
           <Input
-            placeholder="Actor or RustDesk ID…"
+            placeholder={t('pages:logs.actor_placeholder')}
             value={actor}
             onChange={resetPageOnFilter((e) => setActor(e.target.value))}
             style={{ width: 220 }}
@@ -365,7 +384,9 @@ export function LogsPage() {
         </div>
         <div className="rd-toolbar__group">
           <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-            {isFetching ? 'Loading…' : `${total.toLocaleString()} event${total === 1 ? '' : 's'}`}
+            {isFetching
+              ? t('common:states.loading')
+              : t('pages:logs.events', { count: total })}
           </span>
           {selected.size > 0 && (
             <Button
@@ -374,27 +395,27 @@ export function LogsPage() {
               icon={Trash2}
               onClick={openConfirm}
             >
-              Delete {selected.size}
+              {t('pages:logs.delete_selected', { count: selected.size })}
             </Button>
           )}
           <DropdownMenu
-            ariaLabel="Export menu"
+            ariaLabel={t('pages:logs.aria.export_menu')}
             trigger={
               <Button variant="secondary" size="sm" icon={Download}>
-                Export
+                {t('pages:logs.export')}
               </Button>
             }
             items={[
               {
                 id: 'csv',
-                label: 'Export CSV',
+                label: t('pages:logs.export_csv'),
                 onSelect: () => triggerExport('csv'),
               },
               {
                 id: 'ndjson',
                 label: (
                   <>
-                    <FileJson size={14} /> Export NDJSON
+                    <FileJson size={14} /> {t('pages:logs.export_ndjson')}
                   </>
                 ),
                 onSelect: () => triggerExport('ndjson'),
@@ -425,19 +446,21 @@ export function LogsPage() {
       <Dialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        title={`Delete ${selected.size} log entr${selected.size === 1 ? 'y' : 'ies'}?`}
+        title={t('pages:logs.confirm.title', { count: selected.size })}
         width={480}
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
-              Cancel
+              {t('common:actions.cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={submitDelete}
               disabled={confirmText !== 'DELETE' || deleteMut.isPending}
             >
-              {deleteMut.isPending ? 'Deleting…' : 'Delete'}
+              {deleteMut.isPending
+                ? t('pages:logs.confirm.deleting')
+                : t('pages:logs.confirm.delete')}
             </Button>
           </>
         }
@@ -453,17 +476,11 @@ export function LogsPage() {
               color: 'var(--fg)', fontSize: 13, lineHeight: 1.45,
             }}
           >
-            <div>
-              Audit entries are the forensic record of actions on this panel.
-              Deletion is <strong>soft</strong> — a <code>LOGS_DELETED</code>
-              entry is written showing which IDs were purged, and rows
-              created in the last <strong>30 days</strong> can never be
-              deleted regardless of selection.
-            </div>
+            <div>{t('pages:logs.confirm.body')}</div>
           </div>
           <div className="rd-form__field" style={{ marginTop: 12 }}>
             <label className="rd-form__label" htmlFor="delete-confirm">
-              Type <code>DELETE</code> to confirm
+              {t('pages:logs.confirm.type_to_confirm')}
             </label>
             <input
               id="delete-confirm"
@@ -609,24 +626,44 @@ function parsePayload(raw: string | null): { key: string; value: string }[] {
 function LogDetail({ r }: { r: ApiAuditLog }): ReactElement {
   const payloadKvs = parsePayload(r.payload);
   const { fmt } = useDateTime();
+  const { t } = useTranslation();
 
   const rows: { label: string; value: ReactElement | string }[] = [
-    { label: 'When', value: <span className="rd-mono">{fmt(r.created_at)}</span> },
-    { label: 'Action', value: formatAction(r) },
     {
-      label: 'Actor',
+      label: t('pages:logs.drawer.when'),
+      value: <span className="rd-mono">{fmt(r.created_at)}</span>,
+    },
+    { label: t('pages:logs.columns.action'), value: formatAction(r) },
+    {
+      label: t('pages:logs.columns.actor'),
       value:
         r.actor_username
           ? `${r.actor_username}${r.actor_user_id ? ` (id ${r.actor_user_id})` : ''}`
           : r.actor_user_id
-            ? `user id ${r.actor_user_id}`
-            : 'system / unauthenticated',
+            ? t('pages:logs.user_id_only', { id: r.actor_user_id })
+            : t('pages:logs.system_unauthenticated'),
     },
   ];
-  if (r.from_id) rows.push({ label: 'From', value: <span className="rd-mono">{r.from_id}</span> });
-  if (r.to_id) rows.push({ label: 'To', value: <span className="rd-mono">{r.to_id}</span> });
-  if (r.ip) rows.push({ label: 'IP', value: <span className="rd-mono">{r.ip}</span> });
-  if (r.uuid) rows.push({ label: 'UUID', value: <span className="rd-mono">{r.uuid}</span> });
+  if (r.from_id)
+    rows.push({
+      label: t('pages:logs.drawer.from'),
+      value: <span className="rd-mono">{r.from_id}</span>,
+    });
+  if (r.to_id)
+    rows.push({
+      label: t('pages:logs.drawer.to'),
+      value: <span className="rd-mono">{r.to_id}</span>,
+    });
+  if (r.ip)
+    rows.push({
+      label: t('pages:logs.columns.ip'),
+      value: <span className="rd-mono">{r.ip}</span>,
+    });
+  if (r.uuid)
+    rows.push({
+      label: t('pages:logs.drawer.uuid'),
+      value: <span className="rd-mono">{r.uuid}</span>,
+    });
 
   return (
     <div className="rd-log-detail" style={{ padding: '12px 16px' }}>
@@ -668,7 +705,7 @@ function LogDetail({ r }: { r: ApiAuditLog }): ReactElement {
               letterSpacing: 0.6,
             }}
           >
-            Payload
+            {t('pages:logs.drawer.payload_heading')}
           </div>
           <table
             className="rd-kv"
@@ -704,7 +741,7 @@ function LogDetail({ r }: { r: ApiAuditLog }): ReactElement {
         <summary
           style={{ color: 'var(--fg-muted)', fontSize: 12, cursor: 'pointer' }}
         >
-          Raw JSON
+          {t('pages:logs.drawer.raw_json')}
         </summary>
         <pre
           className="rd-log-payload"
@@ -743,6 +780,7 @@ interface PagerProps {
 }
 
 function Pager({ page, lastPage, total, pageSize, onPage }: PagerProps) {
+  const { t } = useTranslation();
   const from = total === 0 ? 0 : page * pageSize + 1;
   const to = Math.min(total, (page + 1) * pageSize);
   return (
@@ -759,7 +797,11 @@ function Pager({ page, lastPage, total, pageSize, onPage }: PagerProps) {
       <span>
         {total === 0
           ? '—'
-          : `${from}–${to} of ${total.toLocaleString()}`}
+          : t('pages:logs.pager.range', {
+              from,
+              to,
+              total: total.toLocaleString(),
+            })}
       </span>
       <div style={{ display: 'flex', gap: 6 }}>
         <Button
@@ -768,7 +810,7 @@ function Pager({ page, lastPage, total, pageSize, onPage }: PagerProps) {
           disabled={page === 0}
           onClick={() => onPage(Math.max(0, page - 1))}
         >
-          Previous
+          {t('pages:logs.pager.previous')}
         </Button>
         <Button
           variant="secondary"
@@ -776,7 +818,7 @@ function Pager({ page, lastPage, total, pageSize, onPage }: PagerProps) {
           disabled={page >= lastPage}
           onClick={() => onPage(Math.min(lastPage, page + 1))}
         >
-          Next
+          {t('pages:logs.pager.next')}
         </Button>
       </div>
     </div>
