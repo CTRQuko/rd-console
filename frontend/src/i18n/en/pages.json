@@ -10,5 +10,23 @@
   "signInSubtitle": "RustDesk Server Manager",
   "username": "Username",
   "password": "Password",
-  "haveInvitation": "Have an invitation? Open join page →"
+  "haveInvitation": "Have an invitation? Open join page →",
+  "dashboard_page": {
+    "subtitle": "Overview of your RustDesk relay.",
+    "stats": {
+      "total_users": "Total users",
+      "online_devices": "Online devices",
+      "total_devices": "Total devices",
+      "connections_today": "Connections today"
+    },
+    "recent_connections_heading": "Recent connections",
+    "view_all_logs": "View all logs",
+    "columns": {
+      "from": "From",
+      "to": "To",
+      "action": "Action",
+      "time": "Time",
+      "ip": "IP"
+    }
+  }
 }

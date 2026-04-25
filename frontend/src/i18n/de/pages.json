@@ -10,5 +10,23 @@
   "signInSubtitle": "RustDesk-Server-Verwaltung",
   "username": "Benutzername",
   "password": "Passwort",
-  "haveInvitation": "Haben Sie eine Einladung? Beitrittsseite öffnen →"
+  "haveInvitation": "Haben Sie eine Einladung? Beitrittsseite öffnen →",
+  "dashboard_page": {
+    "subtitle": "Übersicht über Ihr RustDesk-Relay.",
+    "stats": {
+      "total_users": "Benutzer gesamt",
+      "online_devices": "Online-Geräte",
+      "total_devices": "Geräte gesamt",
+      "connections_today": "Verbindungen heute"
+    },
+    "recent_connections_heading": "Letzte Verbindungen",
+    "view_all_logs": "Alle Protokolle anzeigen",
+    "columns": {
+      "from": "Von",
+      "to": "Nach",
+      "action": "Aktion",
+      "time": "Zeit",
+      "ip": "IP"
+    }
+  }
 }
