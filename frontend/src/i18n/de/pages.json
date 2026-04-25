@@ -10,5 +10,72 @@
   "signInSubtitle": "RustDesk-Server-Verwaltung",
   "username": "Benutzername",
   "password": "Passwort",
-  "haveInvitation": "Haben Sie eine Einladung? Beitrittsseite öffnen →"
+  "haveInvitation": "Haben Sie eine Einladung? Beitrittsseite öffnen →",
+  "logs": {
+    "title": "Audit-Protokolle",
+    "ranges": {
+      "today": "Heute",
+      "7d": "Letzte 7 Tage",
+      "30d": "Letzte 30 Tage",
+      "all": "Gesamte Zeit"
+    },
+    "categories": {
+      "all": "Alle Kategorien",
+      "session": "Sitzung",
+      "auth": "Authentifizierung",
+      "user_management": "Benutzerverwaltung",
+      "config": "Konfiguration / Gerät",
+      "address_book": "Adressbuch"
+    },
+    "all_actions": "Alle Aktionen",
+    "actor_placeholder": "Akteur oder RustDesk-ID…",
+    "events_one": "{{count}} Ereignis",
+    "events_other": "{{count}} Ereignisse",
+    "delete_selected": "{{count}} löschen",
+    "export": "Exportieren",
+    "export_csv": "Als CSV exportieren",
+    "export_ndjson": "Als NDJSON exportieren",
+    "export_ready": "Export ({{format}}) fertig.",
+    "columns": {
+      "time": "Zeit",
+      "action": "Aktion",
+      "actor": "Akteur",
+      "target": "Ziel",
+      "ip": "IP"
+    },
+    "aria": {
+      "select_all_page": "Alle auf dieser Seite auswählen",
+      "select_row": "Eintrag {{id}} auswählen",
+      "expand": "Aufklappen",
+      "collapse": "Zuklappen",
+      "export_menu": "Export-Menü"
+    },
+    "system_actor": "System",
+    "system_unauthenticated": "System / nicht authentifiziert",
+    "user_id_only": "Benutzer-ID {{id}}",
+    "confirm": {
+      "title_one": "{{count}} Protokoll-Eintrag löschen?",
+      "title_other": "{{count}} Protokoll-Einträge löschen?",
+      "body": "Audit-Einträge sind der forensische Datensatz der Aktionen in diesem Panel. Das Löschen ist weich — es wird ein LOGS_DELETED-Eintrag geschrieben, der angibt, welche IDs gelöscht wurden, und in den letzten 30 Tagen erstellte Zeilen können unabhängig von der Auswahl niemals gelöscht werden.",
+      "type_to_confirm": "Geben Sie DELETE zur Bestätigung ein",
+      "deleting": "Wird gelöscht…",
+      "delete": "Löschen",
+      "deleted_one": "{{count}} Eintrag gelöscht.",
+      "deleted_other": "{{count}} Einträge gelöscht.",
+      "deleted_with_skipped": "{{affected}} gelöscht, {{skipped}} übersprungen ({{reasons}})."
+    },
+    "drawer": {
+      "when": "Wann",
+      "from": "Von",
+      "to": "Nach",
+      "uuid": "UUID",
+      "payload_heading": "Payload",
+      "raw_json": "Roh-JSON"
+    },
+    "pager": {
+      "previous": "Zurück",
+      "next": "Weiter",
+      "range": "{{from}}–{{to}} von {{total}}"
+    }
+  }
 }

@@ -10,5 +10,72 @@
   "signInSubtitle": "Gestionnaire de Serveur RustDesk",
   "username": "Nom d'utilisateur",
   "password": "Mot de passe",
-  "haveInvitation": "Vous avez une invitation ? Ouvrir la page →"
+  "haveInvitation": "Vous avez une invitation ? Ouvrir la page →",
+  "logs": {
+    "title": "Journaux d'audit",
+    "ranges": {
+      "today": "Aujourd'hui",
+      "7d": "7 derniers jours",
+      "30d": "30 derniers jours",
+      "all": "Tout"
+    },
+    "categories": {
+      "all": "Toutes les catégories",
+      "session": "Session",
+      "auth": "Authentification",
+      "user_management": "Gestion des utilisateurs",
+      "config": "Configuration / appareil",
+      "address_book": "Carnet d'adresses"
+    },
+    "all_actions": "Toutes les actions",
+    "actor_placeholder": "Acteur ou ID RustDesk…",
+    "events_one": "{{count}} événement",
+    "events_other": "{{count}} événements",
+    "delete_selected": "Supprimer {{count}}",
+    "export": "Exporter",
+    "export_csv": "Exporter en CSV",
+    "export_ndjson": "Exporter en NDJSON",
+    "export_ready": "Exportation ({{format}}) prête.",
+    "columns": {
+      "time": "Heure",
+      "action": "Action",
+      "actor": "Acteur",
+      "target": "Cible",
+      "ip": "IP"
+    },
+    "aria": {
+      "select_all_page": "Tout sélectionner sur cette page",
+      "select_row": "Sélectionner le journal {{id}}",
+      "expand": "Développer",
+      "collapse": "Réduire",
+      "export_menu": "Menu d'exportation"
+    },
+    "system_actor": "système",
+    "system_unauthenticated": "système / non authentifié",
+    "user_id_only": "id utilisateur {{id}}",
+    "confirm": {
+      "title_one": "Supprimer {{count}} entrée du journal ?",
+      "title_other": "Supprimer {{count}} entrées du journal ?",
+      "body": "Les entrées d'audit sont le registre forensique des actions sur ce panneau. La suppression est douce — une entrée LOGS_DELETED est écrite indiquant les IDs purgés, et les lignes créées au cours des 30 derniers jours ne peuvent jamais être supprimées, quelle que soit la sélection.",
+      "type_to_confirm": "Tapez DELETE pour confirmer",
+      "deleting": "Suppression…",
+      "delete": "Supprimer",
+      "deleted_one": "{{count}} entrée supprimée.",
+      "deleted_other": "{{count}} entrées supprimées.",
+      "deleted_with_skipped": "{{affected}} supprimées, {{skipped}} ignorées ({{reasons}})."
+    },
+    "drawer": {
+      "when": "Quand",
+      "from": "De",
+      "to": "Vers",
+      "uuid": "UUID",
+      "payload_heading": "Payload",
+      "raw_json": "JSON brut"
+    },
+    "pager": {
+      "previous": "Précédent",
+      "next": "Suivant",
+      "range": "{{from}}–{{to}} sur {{total}}"
+    }
+  }
 }

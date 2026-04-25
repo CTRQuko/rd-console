@@ -10,5 +10,72 @@
   "signInSubtitle": "RustDesk Server Manager",
   "username": "Username",
   "password": "Password",
-  "haveInvitation": "Have an invitation? Open join page →"
+  "haveInvitation": "Have an invitation? Open join page →",
+  "logs": {
+    "title": "Audit logs",
+    "ranges": {
+      "today": "Today",
+      "7d": "Last 7 days",
+      "30d": "Last 30 days",
+      "all": "All time"
+    },
+    "categories": {
+      "all": "All categories",
+      "session": "Session",
+      "auth": "Auth",
+      "user_management": "User management",
+      "config": "Config / device",
+      "address_book": "Address book"
+    },
+    "all_actions": "All actions",
+    "actor_placeholder": "Actor or RustDesk ID…",
+    "events_one": "{{count}} event",
+    "events_other": "{{count}} events",
+    "delete_selected": "Delete {{count}}",
+    "export": "Export",
+    "export_csv": "Export CSV",
+    "export_ndjson": "Export NDJSON",
+    "export_ready": "Export ({{format}}) ready.",
+    "columns": {
+      "time": "Time",
+      "action": "Action",
+      "actor": "Actor",
+      "target": "Target",
+      "ip": "IP"
+    },
+    "aria": {
+      "select_all_page": "Select all on this page",
+      "select_row": "Select log {{id}}",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "export_menu": "Export menu"
+    },
+    "system_actor": "system",
+    "system_unauthenticated": "system / unauthenticated",
+    "user_id_only": "user id {{id}}",
+    "confirm": {
+      "title_one": "Delete {{count}} log entry?",
+      "title_other": "Delete {{count}} log entries?",
+      "body": "Audit entries are the forensic record of actions on this panel. Deletion is soft — a LOGS_DELETED entry is written showing which IDs were purged, and rows created in the last 30 days can never be deleted regardless of selection.",
+      "type_to_confirm": "Type DELETE to confirm",
+      "deleting": "Deleting…",
+      "delete": "Delete",
+      "deleted_one": "{{count}} log entry deleted.",
+      "deleted_other": "{{count}} log entries deleted.",
+      "deleted_with_skipped": "{{affected}} deleted, {{skipped}} skipped ({{reasons}})."
+    },
+    "drawer": {
+      "when": "When",
+      "from": "From",
+      "to": "To",
+      "uuid": "UUID",
+      "payload_heading": "Payload",
+      "raw_json": "Raw JSON"
+    },
+    "pager": {
+      "previous": "Previous",
+      "next": "Next",
+      "range": "{{from}}–{{to}} of {{total}}"
+    }
+  }
 }
