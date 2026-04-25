@@ -155,22 +155,58 @@ export type BulkAction =
   | 'favorite'
   | 'unfavorite';
 
+/** Mirrors `AuditAction` in `backend/app/models/audit_log.py`. Add new
+ *  values here whenever the backend enum grows — the LogsPage filter
+ *  dropdown is keyed off this union. */
 export type AuditActionValue =
+  // Client-protocol events
   | 'connect'
   | 'disconnect'
   | 'file_transfer'
   | 'close'
+  // Auth
   | 'login'
   | 'login_failed'
+  // Users
   | 'user_created'
   | 'user_updated'
   | 'user_disabled'
+  | 'user_enabled'
+  | 'user_deleted'
+  // Settings + log lifecycle
   | 'settings_changed'
+  | 'settings_exported'
+  | 'logs_deleted'
+  // Devices (panel-initiated)
   | 'device_updated'
   | 'device_forgotten'
-  | 'device_disconnect_requested';
+  | 'device_disconnect_requested'
+  | 'device_bulk_updated'
+  // Tagging
+  | 'tag_created'
+  | 'tag_deleted'
+  | 'device_tagged'
+  | 'device_untagged'
+  // Personal Access Tokens
+  | 'api_token_created'
+  | 'api_token_revoked'
+  // Address book
+  | 'address_book_updated'
+  | 'address_book_cleared'
+  // Join tokens (admin-minted invites)
+  | 'join_token_created'
+  | 'join_token_revoked'
+  | 'join_token_deleted'
+  // Panel state backup/restore (Sprint A1 Bloque 4)
+  | 'backup_exported'
+  | 'backup_restored';
 
-export type AuditCategory = 'session' | 'auth' | 'user_management' | 'config';
+export type AuditCategory =
+  | 'session'
+  | 'auth'
+  | 'user_management'
+  | 'config'
+  | 'address_book';
 
 export interface ApiAuditLog {
   id: number;
