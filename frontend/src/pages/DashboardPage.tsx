@@ -21,22 +21,22 @@ export function DashboardPage() {
     mockApi.recent().then(setRecent);
   }, []);
 
-  if (!stats) return <div style={{ color: 'var(--fg-muted)' }}>Loading…</div>;
+  if (!stats) return <div style={{ color: 'var(--fg-muted)' }}>{t('common:states.loading')}</div>;
 
   const recentCols: Column<RecentEntry>[] = [
     {
       key: 'fromId',
-      header: 'From',
+      header: t('pages:dashboard_page.columns.from'),
       cell: (r) => <span className="rd-mono">{r.fromId}</span>,
     },
     {
       key: 'toId',
-      header: 'To',
+      header: t('pages:dashboard_page.columns.to'),
       cell: (r) => <span className="rd-mono">{r.toId}</span>,
     },
     {
       key: 'action',
-      header: 'Action',
+      header: t('pages:dashboard_page.columns.action'),
       cell: (r) => (
         <Badge
           variant={
@@ -53,19 +53,22 @@ export function DashboardPage() {
     },
     {
       key: 'time',
-      header: 'Time',
+      header: t('pages:dashboard_page.columns.time'),
       cell: (r) => <span style={{ color: 'var(--fg-muted)' }}>{r.time}</span>,
     },
     {
       key: 'ip',
-      header: 'IP',
+      header: t('pages:dashboard_page.columns.ip'),
       cell: (r) => <span className="rd-mono" style={{ color: 'var(--fg-muted)' }}>{r.ip}</span>,
     },
   ];
 
   return (
     <>
-      <PageHeader title="Dashboard" subtitle="Overview of your RustDesk relay." />
+      <PageHeader
+        title={t('pages:dashboard')}
+        subtitle={t('pages:dashboard_page.subtitle')}
+      />
       <div className="rd-grid-4" style={{ marginBottom: 20 }}>
         {/* Each stat card navigates to the corresponding detail page. Filters
             are encoded as query params that the target pages already honour. */}
@@ -79,7 +82,7 @@ export function DashboardPage() {
           <StatCard
             icon={UsersIcon}
             iconTone="blue"
-            label="Total users"
+            label={t('pages:dashboard_page.stats.total_users')}
             value={stats.totalUsers}
             trend={stats.trends.users}
             trendTone="up"
@@ -95,7 +98,7 @@ export function DashboardPage() {
           <StatCard
             icon={Activity}
             iconTone="green"
-            label="Online devices"
+            label={t('pages:dashboard_page.stats.online_devices')}
             value={stats.onlineDevices}
             trend={stats.trends.online}
             trendTone="up"
@@ -111,7 +114,7 @@ export function DashboardPage() {
           <StatCard
             icon={Monitor}
             iconTone="zinc"
-            label="Total devices"
+            label={t('pages:dashboard_page.stats.total_devices')}
             value={stats.totalDevices}
             trend={stats.trends.devices}
           />
@@ -126,7 +129,7 @@ export function DashboardPage() {
           <StatCard
             icon={Zap}
             iconTone="violet"
-            label="Connections today"
+            label={t('pages:dashboard_page.stats.connections_today')}
             value={stats.connectionsToday.toLocaleString()}
             trend={stats.trends.connections}
             trendTone="up"
@@ -143,9 +146,9 @@ export function DashboardPage() {
           flexWrap: 'wrap',
         }}
       >
-        <h2 className="rd-section-title">Recent connections</h2>
+        <h2 className="rd-section-title">{t('pages:dashboard_page.recent_connections_heading')}</h2>
         <Button variant="ghost" size="sm" onClick={() => navigate('/logs')}>
-          View all logs
+          {t('pages:dashboard_page.view_all_logs')}
         </Button>
       </div>
       <DataTable<RecentEntry>

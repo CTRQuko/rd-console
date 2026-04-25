@@ -64,6 +64,8 @@
     "logs": "Aucun événement pour ces filtres. Essayez d'élargir la plage ou de supprimer les filtres.",
     "address_book": "Carnet d'adresses vide. Les peers sont ajoutés lors de la connexion avec un client RustDesk.",
     "tags": "Aucun tag. Créez-en pour regrouper les appareils (ex. : «Maison», «Atelier»).",
-    "recent_connections": "Aucune connexion récente."
+    "recent_connections": "Aucune connexion récente.",
+    "devices_filtered": "Aucun appareil ne correspond aux filtres actifs.",
+    "users_filtered": "Aucun utilisateur ne correspond à votre recherche."
   }
 }

@@ -64,6 +64,8 @@
     "logs": "Keine Ereignisse für diese Filter. Versuchen Sie, den Zeitraum zu erweitern oder Filter zu löschen.",
     "address_book": "Leeres Adressbuch. Peers werden hinzugefügt, wenn Sie sich mit einem RustDesk-Client verbinden.",
     "tags": "Keine Tags. Erstellen Sie sie zum Gruppieren von Geräten (z. B. «Zuhause», «Werkstatt»).",
-    "recent_connections": "Keine aktuellen Verbindungen."
+    "recent_connections": "Keine aktuellen Verbindungen.",
+    "devices_filtered": "Keine Geräte entsprechen den aktiven Filtern.",
+    "users_filtered": "Keine Benutzer entsprechen deiner Suche."
   }
 }

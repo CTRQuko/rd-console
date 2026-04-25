@@ -10,5 +10,23 @@
   "signInSubtitle": "Gestor de Servidor RustDesk",
   "username": "Usuario",
   "password": "Contraseña",
-  "haveInvitation": "¿Tienes una invitación? Abrir página de acceso →"
+  "haveInvitation": "¿Tienes una invitación? Abrir página de acceso →",
+  "dashboard_page": {
+    "subtitle": "Vista general de tu relay RustDesk.",
+    "stats": {
+      "total_users": "Usuarios totales",
+      "online_devices": "Dispositivos conectados",
+      "total_devices": "Dispositivos totales",
+      "connections_today": "Conexiones hoy"
+    },
+    "recent_connections_heading": "Conexiones recientes",
+    "view_all_logs": "Ver todos los registros",
+    "columns": {
+      "from": "Desde",
+      "to": "Hasta",
+      "action": "Acción",
+      "time": "Hora",
+      "ip": "IP"
+    }
+  }
 }

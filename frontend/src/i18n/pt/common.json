@@ -64,6 +64,8 @@
     "logs": "Sem eventos para estes filtros. Tente alargar o intervalo ou limpar os filtros.",
     "address_book": "Agenda vazia. Os peers são adicionados ao conectar-se com um cliente RustDesk.",
     "tags": "Sem etiquetas. Crie-as para agrupar dispositivos (ex.: «Casa», «Oficina»).",
-    "recent_connections": "Sem conexões recentes."
+    "recent_connections": "Sem conexões recentes.",
+    "devices_filtered": "Nenhum dispositivo corresponde aos filtros ativos.",
+    "users_filtered": "Nenhum utilizador corresponde à sua pesquisa."
   }
 }

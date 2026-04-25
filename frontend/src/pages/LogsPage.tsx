@@ -50,6 +50,7 @@ const CATEGORIES: { value: '' | AuditCategory; label: string }[] = [
   { value: 'auth', label: 'Auth' },
   { value: 'user_management', label: 'User management' },
   { value: 'config', label: 'Config / device' },
+  { value: 'address_book', label: 'Address book' },
 ];
 
 // Range computation moved to `lib/formatters.tsx::sinceIsoRange` so every
@@ -63,6 +64,7 @@ const VALID_CATEGORIES: readonly AuditCategory[] = [
   'auth',
   'user_management',
   'config',
+  'address_book',
 ];
 const VALID_ACTIONS: readonly AuditActionValue[] = [
   'connect',
@@ -74,10 +76,28 @@ const VALID_ACTIONS: readonly AuditActionValue[] = [
   'user_created',
   'user_updated',
   'user_disabled',
+  'user_enabled',
+  'user_deleted',
   'settings_changed',
+  'settings_exported',
+  'logs_deleted',
   'device_updated',
   'device_forgotten',
   'device_disconnect_requested',
+  'device_bulk_updated',
+  'tag_created',
+  'tag_deleted',
+  'device_tagged',
+  'device_untagged',
+  'api_token_created',
+  'api_token_revoked',
+  'address_book_updated',
+  'address_book_cleared',
+  'join_token_created',
+  'join_token_revoked',
+  'join_token_deleted',
+  'backup_exported',
+  'backup_restored',
 ];
 
 export function LogsPage() {
