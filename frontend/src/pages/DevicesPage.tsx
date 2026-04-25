@@ -405,7 +405,7 @@ export function DevicesPage() {
                 {t('actions.create')}
               </Button>
             </div>
-          ) : t('empty_states.devices')
+          ) : t('empty_states.devices_filtered')
         }
         columns={columns}
         onRowClick={(r) => setSelected(r)}

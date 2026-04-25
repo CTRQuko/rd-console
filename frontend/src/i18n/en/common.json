@@ -64,6 +64,8 @@
     "logs": "No events for these filters. Try expanding the range or clearing filters.",
     "address_book": "Empty address book. Peers are added when you connect with a RustDesk client.",
     "tags": "No tags. Create them to group devices (e.g. «Home», «Workshop»).",
-    "recent_connections": "No recent connections."
+    "recent_connections": "No recent connections.",
+    "devices_filtered": "No devices match the active filters.",
+    "users_filtered": "No users match your search."
   }
 }

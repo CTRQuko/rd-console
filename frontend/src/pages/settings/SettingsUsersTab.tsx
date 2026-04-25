@@ -240,7 +240,7 @@ export function SettingsUsersTab() {
         rows={filtered}
         pageSize={10}
         empty={
-          isLoading ? t('states.loading') : q ? t('empty_states.users') : (
+          isLoading ? t('states.loading') : q ? t('empty_states.users_filtered') : (
             <div className="rd-empty">
               <p>{t('empty_states.users')}</p>
               <Button size="sm" icon={Plus} onClick={() => setOpenCreate(true)}>
