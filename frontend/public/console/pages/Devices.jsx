@@ -72,7 +72,7 @@ function _dvAdaptDevice(api, usersById) {
 // Map backend Tag (with .device_count) → the {name, color, count} shape
 // the original mock catalog used.
 function _dvAdaptTag(api) {
-  return { name: api.name, color: api.color, count: api.device_count ?? 0 };
+  return { id: api.id, name: api.name, color: api.color, count: api.device_count ?? 0 };
 }
 
 const TAG_PALETTE = ["violet", "amber", "green", "blue", "rose", "teal", "orange", "slate"];
@@ -676,27 +676,63 @@ function DevicesPage({ route }) {
   const toast = useToast();
 
   const handleSave = async (id, draft) => {
-    // Map the JSX draft shape onto the backend's PATCH payload.
-    // Tags are NOT round-tripped here yet — the backend manages them
-    // through POST/DELETE /admin/api/devices/:id/tags/:tag_id pairs,
-    // which the design's TagInput doesn't drive yet. TODO: wire up.
+    // PATCH alias/notes in one shot, then sync tag membership through
+    // POST/DELETE /admin/api/devices/:id/tags/:tag_id pairs (backend
+    // models tags as a join table, not as a JSON field).
+    const before = devices.find((d) => d.id === id);
+    const prevTags = new Set(before?.tags || []);
+    const nextTags = new Set(draft.tags || []);
+    const added = [...nextTags].filter((t) => !prevTags.has(t));
+    const removed = [...prevTags].filter((t) => !nextTags.has(t));
+
     const body = {};
     if (draft.alias !== undefined) body.hostname = draft.alias;
     if (draft.notes !== undefined) body.note = draft.notes;
-    if (Object.keys(body).length === 0) {
+    const hasFieldChanges = Object.keys(body).length > 0;
+    const hasTagChanges = added.length > 0 || removed.length > 0;
+
+    if (!hasFieldChanges && !hasTagChanges) {
       toast("Sin cambios que guardar", { tone: "info" });
       return;
     }
+
     try {
-      await _dvApi(`/admin/api/devices/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      });
-      // Optimistic local update so the drawer reflects the change at
-      // once. The next 30 s poll re-syncs from server-of-truth.
+      if (hasFieldChanges) {
+        await _dvApi(`/admin/api/devices/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+      }
+
+      // Tags need name → id resolution against the catalog. Tags created
+      // inline via TagInput hit handleCreateTag first, so by the time we
+      // get here every name should already exist in tagCatalog.
+      const nameToId = new Map(tagCatalog.map((t) => [t.name, t.id]));
+      const failedTags = [];
+      for (const name of added) {
+        const tagId = nameToId.get(name);
+        if (!tagId) { failedTags.push(name); continue; }
+        try {
+          await _dvApi(`/admin/api/devices/${id}/tags/${tagId}`, { method: "POST" });
+        } catch { failedTags.push(name); }
+      }
+      for (const name of removed) {
+        const tagId = nameToId.get(name);
+        if (!tagId) continue;
+        try {
+          await _dvApi(`/admin/api/devices/${id}/tags/${tagId}`, { method: "DELETE" });
+        } catch { failedTags.push(name); }
+      }
+
+      // Optimistic local update; the next 30 s poll re-syncs.
       setDevices((ds) => ds.map((d) => d.id === id ? { ...d, ...draft } : d));
       setSelected((s) => s && s.id === id ? { ...s, ...draft } : s);
-      toast("Cambios guardados", { tone: "success" });
+
+      if (failedTags.length) {
+        toast(`Guardado, pero fallaron tags: ${failedTags.join(", ")}`, { tone: "warning" });
+      } else {
+        toast("Cambios guardados", { tone: "success" });
+      }
     } catch (err) {
       toast("No se pudo guardar — reintenta", { tone: "danger" });
     }
