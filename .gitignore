@@ -49,6 +49,13 @@ Thumbs.db
 _design-import/
 _design-import-fixes/
 _design-import-pages/
+_design-import-2026-04-26/
+
+# ───── Archive of frontend v1 (preserved local copy for reuse elsewhere) ─────
+_frontend-legacy/
+
+# ───── Source ZIP of the design system (kept local, not committed) ─────
+backend/rd-console Design System.zip
 
 # ───── Logs ─────
 *.log
