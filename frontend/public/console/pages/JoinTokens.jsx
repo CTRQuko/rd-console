@@ -5,12 +5,61 @@
 
 const { useState: _jtS, useEffect: _jtE, useRef: _jtR, useMemo: _jtM } = React;
 
-const MOCK_INVITES = [
-  { id: "tok_8a31c", name: "ci-bot",       created: "12 sep 2025", expires: "12 dic 2025", status: "active",  used: false, prefix: "rdt_8a31c4d6\u2026", url: "https://rustdesk.casaredes.cc/join/8a31c4d6e9f0b2c5" },
-  { id: "tok_2bf90", name: "design-team",  created: "30 ago 2025", expires: "Nunca",        status: "active",  used: false, prefix: "rdt_2bf90aef\u2026", url: "https://rustdesk.casaredes.cc/join/2bf90aef1c4d2a93" },
-  { id: "tok_f120e", name: "lab-rollout",  created: "15 jul 2025", expires: "15 oct 2025", status: "expired", used: true,  prefix: "rdt_f120ecca\u2026", url: "https://rustdesk.casaredes.cc/join/f120eccab17a9d12" },
-  { id: "tok_3e8d1", name: "demo-event",   created: "25 sep 2025", expires: "26 sep 2025", status: "expired", used: true,  prefix: "rdt_3e8d1882\u2026", url: "https://rustdesk.casaredes.cc/join/3e8d18820c5e431a" },
-];
+// \u2500\u2500\u2500 Auth-aware fetch (Etapa 3.10) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+function _jtAuthToken() {
+  try {
+    const raw = localStorage.getItem("cm-auth");
+    return raw ? (JSON.parse(raw)?.token || null) : null;
+  } catch { return null; }
+}
+async function _jtApi(path, init = {}) {
+  const token = _jtAuthToken();
+  const headers = {
+    ...(init.headers || {}),
+    ...(token ? { Authorization: "Bearer " + token } : {}),
+  };
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { ...init, headers });
+  if (res.status === 401) {
+    try { localStorage.removeItem("cm-auth"); } catch {}
+    window.location.hash = "/login";
+    throw new Error("unauthenticated");
+  }
+  if (res.status === 204) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${init.method || "GET"} ${path} -> ${res.status} ${body.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+function _jtFmtDate(ts) {
+  if (!ts) return "\u2014";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "\u2014";
+  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+// JoinTokenOut \u2192 JSX shape. The full plaintext is unavailable for
+// existing rows (one-shot reveal at create time); the URL therefore
+// only includes the 8-char prefix and an ellipsis. Newly-created
+// tokens carry the full token in `JoinTokenCreateOut.token` and the
+// caller stitches the live URL.
+function _jtAdaptInvite(api, panelUrl, plaintext = null) {
+  const tokenForUrl = plaintext || `${api.token_prefix}\u2026`;
+  return {
+    id: String(api.id),
+    rawId: api.id,
+    name: api.label || `token-${api.id}`,
+    created: _jtFmtDate(api.created_at),
+    expires: api.expires_at ? _jtFmtDate(api.expires_at) : "Nunca",
+    status: api.status,
+    used: !!api.used_at,
+    prefix: `rdt_${api.token_prefix}\u2026`,
+    url: `${panelUrl}/join/${tokenForUrl}`,
+    plaintextAvailable: !!plaintext,
+  };
+}
 
 // ─── helpers ────────────────────────────────────────────
 const _statusTone = (s) => s === "active" ? "green" : s === "used" ? "default" : "default";
@@ -69,15 +118,14 @@ function CreateInviteModal({ open, onClose, onCreate }) {
 
   const submit = () => {
     if (!name.trim()) { setError("Pon un nombre para identificar la invitación."); return; }
-    const id = "tok_" + Math.random().toString(36).slice(2, 8);
-    const rawToken = "rdt_" + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    const url = "https://rustdesk.casaredes.cc/join/" + rawToken.slice(4, 24);
+    // Backend expects {label, expires_in_minutes}. Page-level handleCreate
+    // does the POST + adapt; we just hand off the raw form. The
+    // ShareInviteModal that opens after the create receives the live URL
+    // with the plaintext token from the server response.
     const days = exp === "never" ? null : parseInt(exp, 10);
-    const expires = days ? new Date(Date.now() + days * 86400000).toLocaleDateString("es", { day: "2-digit", month: "short", year: "numeric" }) : "Nunca";
     onCreate({
-      id, name: name.trim(), created: "Hoy", expires, status: "active", used: false,
-      prefix: rawToken.slice(0, 12) + "\u2026",
-      url, rawToken, // raw solo en este momento
+      name: name.trim(),
+      expires_in_minutes: days != null ? days * 24 * 60 : null,
     });
   };
 
@@ -503,7 +551,8 @@ function InviteDetailsModal({ invite, onClose }) {
 
 // ─── Página ────────────────────────────────────────────
 function JoinTokensPage() {
-  const [invites, setInvites] = _jtS(MOCK_INVITES);
+  const [invites, setInvites] = _jtS([]);
+  const [panelUrl, setPanelUrl] = _jtS("");
   const [createOpen, setCreateOpen] = _jtS(false);
   const [shareInvite, setShareInvite] = _jtS(null);
   const [detailsInvite, setDetailsInvite] = _jtS(null);
@@ -512,6 +561,32 @@ function JoinTokensPage() {
   const [showRevoked, setShowRevoked] = _jtS(true);
   const toast = useToast();
 
+  const _refresh = async (currentPanelUrl) => {
+    try {
+      const list = await _jtApi("/admin/api/join-tokens");
+      const url = currentPanelUrl || panelUrl;
+      setInvites((list || []).map((api) => _jtAdaptInvite(api, url)));
+    } catch {}
+  };
+
+  _jtE(() => {
+    let cancelled = false;
+    (async () => {
+      // panel_url drives the "join" link rendered alongside each token.
+      // Falls back to window.location.origin if /admin/api/server-info
+      // hasn't been configured yet.
+      let url = window.location.origin;
+      try {
+        const info = await _jtApi("/admin/api/server-info");
+        if (info?.panel_url) url = info.panel_url.replace(/\/$/, "");
+      } catch {}
+      if (cancelled) return;
+      setPanelUrl(url);
+      await _refresh(url);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const visible = _jtM(() => showRevoked ? invites : invites.filter((i) => i.status !== "revoked"), [invites, showRevoked]);
   const stats = _jtM(() => ({
     active: invites.filter((i) => i.status === "active").length,
@@ -519,24 +594,55 @@ function JoinTokensPage() {
     expired: invites.filter((i) => i.status === "expired" || i.status === "revoked").length,
   }), [invites]);
 
-  const handleCreate = (inv) => {
-    setInvites((xs) => [inv, ...xs]);
-    setCreateOpen(false);
-    setShareInvite(inv); // abre share inmediatamente
+  // The CreateInviteModal calls onCreate with a JSX-shape invite that it
+  // built from a /POST response we already fetched here in handleCreate.
+  // We bypass that by giving it a direct backend payload {label,
+  // expires_in_minutes} and doing the POST + adapt ourselves so the
+  // live URL contains the plaintext token (one-shot reveal).
+  const handleCreate = async (form) => {
+    const body = {
+      label: form?.name || form?.label || null,
+      expires_in_minutes: typeof form?.expires_in_minutes === "number" ? form.expires_in_minutes : null,
+    };
+    try {
+      const created = await _jtApi("/admin/api/join-tokens", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      // `created.token` is the plaintext, only available here. Use it
+      // to build the share URL with the full token; subsequent reads
+      // can only use the prefix.
+      const inv = _jtAdaptInvite(created, panelUrl, created.token);
+      setInvites((xs) => [inv, ...xs]);
+      setCreateOpen(false);
+      setShareInvite(inv);
+    } catch (err) {
+      toast(`No se pudo crear: ${err.message}`, { tone: "danger" });
+    }
   };
 
-  const handleRevoke = () => {
+  const handleRevoke = async () => {
     if (!revokeInvite) return;
-    setInvites((xs) => xs.map((x) => x.id === revokeInvite.id ? { ...x, status: "revoked" } : x));
-    toast(`Invitación «${revokeInvite.name}» revocada`, { tone: "success" });
+    try {
+      await _jtApi(`/admin/api/join-tokens/${revokeInvite.rawId}`, { method: "DELETE" });
+      toast(`Invitación «${revokeInvite.name}» revocada`, { tone: "success" });
+    } catch (err) {
+      toast(`No se pudo revocar: ${err.message}`, { tone: "danger" });
+    }
     setRevokeInvite(null);
+    _refresh();
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteInvite) return;
-    setInvites((xs) => xs.filter((x) => x.id !== deleteInvite.id));
-    toast(`Invitación «${deleteInvite.name}» eliminada definitivamente`, { tone: "success" });
+    try {
+      await _jtApi(`/admin/api/join-tokens/${deleteInvite.rawId}?hard=true`, { method: "DELETE" });
+      toast(`Invitación «${deleteInvite.name}» eliminada definitivamente`, { tone: "success" });
+    } catch (err) {
+      toast(`No se pudo eliminar: ${err.message}`, { tone: "danger" });
+    }
     setDeleteInvite(null);
+    _refresh();
   };
 
   return (
