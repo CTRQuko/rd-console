@@ -6,6 +6,51 @@
 
 const { useState: _stS, useMemo: _stM, useEffect: _stE } = React;
 
+// ─── Auth-aware fetch (Etapa 3.8) ────────────────────────
+function _stAuthToken() {
+  try {
+    const raw = localStorage.getItem("cm-auth");
+    return raw ? (JSON.parse(raw)?.token || null) : null;
+  } catch { return null; }
+}
+async function _stApi(path, init = {}) {
+  const token = _stAuthToken();
+  const headers = {
+    ...(init.headers || {}),
+    ...(token ? { Authorization: "Bearer " + token } : {}),
+  };
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { ...init, headers });
+  if (res.status === 401) {
+    try { localStorage.removeItem("cm-auth"); } catch {}
+    window.location.hash = "/login";
+    throw new Error("unauthenticated");
+  }
+  if (res.status === 204) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${init.method || "GET"} ${path} -> ${res.status} ${body.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+function _stFmtRelative(ts) {
+  if (!ts) return "—";
+  const t = new Date(ts).getTime();
+  if (!Number.isFinite(t)) return "—";
+  const dt = Math.max(0, (Date.now() - t) / 1000);
+  if (dt < 60) return "ahora";
+  if (dt < 3600) return `hace ${Math.floor(dt / 60)} min`;
+  if (dt < 86400) return `hace ${Math.floor(dt / 3600)} h`;
+  return `hace ${Math.floor(dt / 86400)} d`;
+}
+function _stFmtDate(ts) {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 const SETTINGS_TABS = [
   { id: "general",   label: "General",         icon: "globe",    path: "/settings/general" },
   { id: "servidor",  label: "Servidor",        icon: "network",  path: "/settings/servidor" },
@@ -146,14 +191,54 @@ function GeneralPanel({ theme, setTheme }) {
 
 // ─── Servidor (host hbbs/hbbr, claves, TLS, DB) ─────────
 function ServidorPanel() {
-  const [dbStatus, setDbStatus] = _stS("ok"); // idle | checking | ok | error
-  const checkDb = () => {
-    setDbStatus("checking");
-    setTimeout(() => setDbStatus(Math.random() > 0.15 ? "ok" : "error"), 900);
+  const [dbStatus, setDbStatus] = _stS("idle"); // idle | checking | ok | error
+  const [host, setHost] = _stS("");
+  const [panel, setPanel] = _stS("");
+  const [pubkey, setPubkey] = _stS("");
+  const [saving, setSaving] = _stS(false);
+  const toast = useToast();
+
+  // Pull current ServerInfo on mount.
+  _stE(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const info = await _stApi("/admin/api/settings/server-info");
+        if (cancelled || !info) return;
+        setHost(info.server_host || "");
+        setPanel(info.panel_url || "");
+        setPubkey(info.hbbs_public_key || "");
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await _stApi("/admin/api/settings/server-info", {
+        method: "PATCH",
+        body: JSON.stringify({
+          server_host: host,
+          panel_url: panel,
+          hbbs_public_key: pubkey,
+        }),
+      });
+      toast("Servidor actualizado", { tone: "success" });
+    } catch (err) {
+      toast("No se pudo guardar: " + err.message, { tone: "danger" });
+    } finally {
+      setSaving(false);
+    }
   };
-  const [host, setHost] = _stS("rustdeskserver.casaredes.cc:45116");
-  const [panel, setPanel] = _stS("https://rustdesk.casaredes.cc");
-  const [pubkey, setPubkey] = _stS("5fAuhNEcKZ4xqUkH9DBBGGPQqsBQRlAzN2cWEx0GgKw=");
+  const checkDb = () => {
+    // The backend doesn't yet expose a DB connectivity probe, but the
+    // app's own /health endpoint going 200 is a good enough proxy.
+    setDbStatus("checking");
+    fetch("/health")
+      .then((r) => setDbStatus(r.ok ? "ok" : "error"))
+      .catch(() => setDbStatus("error"));
+  };
   return (
     <div className="cm-card" style={{ padding: 0 }}>
       <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
@@ -267,6 +352,16 @@ function ServidorPanel() {
               </button>
             </div>
           </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "16px 0" }}>
+          <button
+            className="cm-btn cm-btn--primary"
+            onClick={save}
+            disabled={saving}
+          >
+            <Icon name={saving ? "refresh" : "check"} size={14} />
+            {saving ? "Guardando\u2026" : "Guardar cambios"}
+          </button>
         </div>
       </div>
     </div>
