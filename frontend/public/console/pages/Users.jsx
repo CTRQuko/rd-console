@@ -6,17 +6,71 @@
 
 const { useState: _usS, useMemo: _usM, useEffect: _usE, useRef: _usR } = React;
 
-const MOCK_USERS = [
-  { id: "u_1", username: "admin",      email: "admin@casaredes.cc",   role: "admin", status: "active",   last: "Ahora",        created: "12 ene 2024" },
-  { id: "u_2", username: "daniel",     email: "daniel@casaredes.cc",  role: "admin", status: "active",   last: "Hace 12 min",  created: "03 mar 2024" },
-  { id: "u_3", username: "soporte",    email: "soporte@casaredes.cc", role: "user",  status: "active",   last: "Hace 1 h",     created: "18 abr 2024" },
-  { id: "u_4", username: "marta",      email: "marta@casaredes.cc",   role: "user",  status: "active",   last: "Hace 4 h",     created: "22 may 2024" },
-  { id: "u_5", username: "ci-runner",  email: "ci@casaredes.cc",      role: "user",  status: "active",   last: "Ayer",         created: "01 jun 2024" },
-  { id: "u_6", username: "carlos",     email: "carlos@casaredes.cc",  role: "user",  status: "invited",  last: "—",            created: "05 nov 2025" },
-  { id: "u_7", username: "jana",       email: "jana@casaredes.cc",    role: "user",  status: "disabled", last: "Hace 2 sem",   created: "12 sep 2024" },
-];
+// ─── Auth-aware fetch + adapters (Etapa 3.6) ───────────────────────────
+function _usAuthToken() {
+  try {
+    const raw = localStorage.getItem("cm-auth");
+    return raw ? (JSON.parse(raw)?.token || null) : null;
+  } catch { return null; }
+}
+async function _usApi(path, init = {}) {
+  const token = _usAuthToken();
+  const headers = {
+    ...(init.headers || {}),
+    ...(token ? { Authorization: "Bearer " + token } : {}),
+  };
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { ...init, headers });
+  if (res.status === 401) {
+    try { localStorage.removeItem("cm-auth"); } catch {}
+    window.location.hash = "/login";
+    throw new Error("unauthenticated");
+  }
+  if (res.status === 204) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${init.method || "GET"} ${path} -> ${res.status} ${body.slice(0, 200)}`);
+  }
+  return res.json();
+}
 
-const CURRENT_USER_ID = "u_1"; // admin (no puede cambiarse el rol a sí mismo)
+function _usFmtRelative(ts) {
+  if (!ts) return "—";
+  const t = new Date(ts).getTime();
+  if (!Number.isFinite(t)) return "—";
+  const dt = Math.max(0, (Date.now() - t) / 1000);
+  if (dt < 60) return "Ahora";
+  if (dt < 3600) return `Hace ${Math.floor(dt / 60)} min`;
+  if (dt < 86400) return `Hace ${Math.floor(dt / 3600)} h`;
+  const days = Math.floor(dt / 86400);
+  if (days < 14) return `Hace ${days} d`;
+  return `Hace ${Math.floor(days / 7)} sem`;
+}
+function _usFmtDate(ts) {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+// ApiUser → JSX shape: status derives from is_active and last_login_at.
+// "invited" means the account was created but never logged in.
+function _usAdapt(api) {
+  const status = !api.is_active
+    ? "disabled"
+    : (api.last_login_at ? "active" : "invited");
+  return {
+    id: String(api.id),
+    rawId: api.id,
+    username: api.username,
+    email: api.email || "—",
+    role: api.role,
+    status,
+    last: _usFmtRelative(api.last_login_at),
+    created: _usFmtDate(api.created_at),
+    is_active: api.is_active,
+  };
+}
 
 // ─── Pequeño dropdown menu ─────────────────────────────────
 function MenuKebab({ items, align = "right" }) {
@@ -425,7 +479,8 @@ function StatusConfirmModal({ open, user, onClose, onConfirm }) {
 // ─── Página ────────────────────────────────────────────────
 function UsersPage({ embedded = false } = {}) {
   const [q, setQ] = _usS("");
-  const [users, setUsers] = _usS(MOCK_USERS);
+  const [users, setUsers] = _usS([]);
+  const [me, setMe] = _usS(null);
   const [selected, setSelected] = _usS(new Set());
   const [createOpen, setCreateOpen] = _usS(false);
   const [editUser, setEditUser] = _usS(null);
@@ -433,10 +488,35 @@ function UsersPage({ embedded = false } = {}) {
   const [statusUser, setStatusUser] = _usS(null);
   const [roleUser, setRoleUser] = _usS(null);
 
+  // Identify the logged-in user so the UI prevents self-disable / self-role-change
+  // (the backend also enforces both — see users.py _assert_not_last_admin_gone).
+  const CURRENT_USER_ID = me ? String(me.id) : null;
+
+  // Initial load + 30 s poll keeps last_login_at fresh.
+  _usE(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [list, whoami] = await Promise.all([
+          _usApi("/admin/api/users"),
+          _usApi("/api/auth/me").catch(() => null),
+        ]);
+        if (cancelled) return;
+        setUsers((list || []).map(_usAdapt));
+        if (whoami) setMe(whoami);
+      } catch {
+        // swallow; next tick retries
+      }
+    };
+    load();
+    const id = setInterval(load, 30000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
   const items = _usM(() => {
     if (!q.trim()) return users;
     const ql = q.toLowerCase();
-    return users.filter((u) => u.username.toLowerCase().includes(ql) || u.email.toLowerCase().includes(ql));
+    return users.filter((u) => u.username.toLowerCase().includes(ql) || (u.email || "").toLowerCase().includes(ql));
   }, [q, users]);
 
   const allSelected = items.length > 0 && items.every((u) => selected.has(u.id));
@@ -455,44 +535,116 @@ function UsersPage({ embedded = false } = {}) {
     setSelected(s);
   };
 
-  const bulkAction = (action) => {
-    setUsers((us) => us.map((u) => {
-      if (!selected.has(u.id)) return u;
-      if (u.id === CURRENT_USER_ID && (action === "disable" || action === "delete")) return u; // protege self
-      if (action === "disable") return { ...u, status: "disabled" };
-      if (action === "enable")  return { ...u, status: "active" };
-      return u;
-    }).filter((u) => !(action === "delete" && selected.has(u.id) && u.id !== CURRENT_USER_ID)));
-    setSelected(new Set());
+  const _refresh = async () => {
+    try {
+      const list = await _usApi("/admin/api/users");
+      setUsers((list || []).map(_usAdapt));
+    } catch {}
   };
 
-  const handleCreate = (form) => {
-    const id = "u_" + Math.random().toString(36).slice(2, 8);
-    setUsers((us) => [{ id, username: form.username, email: form.email, role: form.role, status: "invited", last: "—", created: "Hoy" }, ...us]);
-    setCreateOpen(false);
+  const bulkAction = async (action) => {
+    const ids = [...selected]
+      .filter((id) => id !== CURRENT_USER_ID || action === "enable")
+      .map((id) => Number(id))
+      .filter((n) => Number.isFinite(n));
+    if (ids.length === 0) { setSelected(new Set()); return; }
+    try {
+      await _usApi("/admin/api/users/bulk", {
+        method: "POST",
+        body: JSON.stringify({ ids, action }),
+      });
+    } catch {}
+    setSelected(new Set());
+    _refresh();
   };
-  const handleEdit = (form) => {
-    setUsers((us) => us.map((u) => u.id === editUser.id ? { ...u, email: form.email, role: form.id === CURRENT_USER_ID ? u.role : form.role } : u));
-    setEditUser(null);
+
+  const handleCreate = async (form) => {
+    try {
+      await _usApi("/admin/api/users", {
+        method: "POST",
+        body: JSON.stringify({
+          username: form.username,
+          email: form.email || null,
+          password: form.password || "changeme123",
+          role: form.role || "user",
+        }),
+      });
+      setCreateOpen(false);
+      _refresh();
+    } catch (err) {
+      alert("No se pudo crear el usuario: " + err.message);
+    }
   };
-  const handleDelete = (u) => {
-    setUsers((us) => us.filter((x) => x.id !== u.id));
-    setDeleteUser(null);
+  const handleEdit = async (form) => {
+    if (!editUser) return;
+    const body = {};
+    if (form.email !== undefined) body.email = form.email || null;
+    if (form.role !== undefined && editUser.id !== CURRENT_USER_ID) body.role = form.role;
+    if (form.password) body.password = form.password;
+    try {
+      await _usApi(`/admin/api/users/${editUser.rawId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      setEditUser(null);
+      _refresh();
+    } catch (err) {
+      alert("No se pudo guardar: " + err.message);
+    }
+  };
+  const handleDelete = async (u) => {
+    try {
+      await _usApi(`/admin/api/users/${u.rawId}`, { method: "DELETE" });
+      _refresh();
+    } catch (err) {
+      alert("No se pudo eliminar: " + err.message);
+    } finally {
+      setDeleteUser(null);
+    }
   };
   const toggleStatus = (u) => {
     if (u.id === CURRENT_USER_ID && u.status !== "disabled") return;
     setStatusUser(u);
   };
-  const confirmStatus = (u) => {
-    setUsers((us) => us.map((x) => x.id === u.id ? { ...x, status: x.status === "disabled" ? "active" : "disabled" } : x));
-    setStatusUser(null);
+  const confirmStatus = async (u) => {
+    const next = u.status === "disabled";  // currently disabled => enable next
+    try {
+      await _usApi(`/admin/api/users/${u.rawId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: next }),
+      });
+      _refresh();
+    } catch (err) {
+      alert("No se pudo cambiar el estado: " + err.message);
+    } finally {
+      setStatusUser(null);
+    }
   };
-  const confirmRole = (u, newRole) => {
-    setUsers((us) => us.map((x) => x.id === u.id ? { ...x, role: newRole } : x));
-    setRoleUser(null);
+  const confirmRole = async (u, newRole) => {
+    try {
+      await _usApi(`/admin/api/users/${u.rawId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: newRole }),
+      });
+      _refresh();
+    } catch (err) {
+      alert("No se pudo cambiar el rol: " + err.message);
+    } finally {
+      setRoleUser(null);
+    }
   };
-  const resetPass = (u) => {
-    alert(`Mock: se enviaría un reset de contraseña a ${u.email || u.username}.`);
+  const resetPass = async (u) => {
+    const newp = window.prompt(`Nueva contraseña para ${u.username} (mín. 8):`);
+    if (!newp || newp.length < 8) return;
+    try {
+      await _usApi(`/admin/api/users/${u.rawId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ password: newp }),
+      });
+      alert(`Contraseña actualizada para ${u.username}.`);
+    } catch (err) {
+      alert("No se pudo resetear: " + err.message);
+    }
   };
 
   const roleTone = (r) => r === "admin" ? "primary" : "default";
