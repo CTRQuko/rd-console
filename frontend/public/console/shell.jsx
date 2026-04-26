@@ -297,8 +297,26 @@ function UserMenuPopover({ open, anchorRect, onClose, onNav, theme, setTheme }) 
         </div>
       </div>
       <div style={{ borderTop: "1px solid var(--border)", padding: 4 }}>
-        {item("users", "Cambiar de usuario", () => onNav("/login"))}
-        {item("x", "Cerrar sesión", () => onNav("/login"), true)}
+        {item("users", "Cambiar de usuario", () => {
+          // Best-effort logout — wipe the local token and bounce to /login.
+          // We don't await the backend POST so the UI feels instant.
+          try { localStorage.removeItem("cm-auth"); } catch {}
+          onNav("/login");
+        })}
+        {item("x", "Cerrar sesión", () => {
+          try {
+            const raw = localStorage.getItem("cm-auth");
+            const token = raw ? JSON.parse(raw)?.token : null;
+            if (token) {
+              fetch("/api/auth/logout", {
+                method: "POST",
+                headers: { Authorization: "Bearer " + token },
+              }).catch(() => {});
+            }
+            localStorage.removeItem("cm-auth");
+          } catch {}
+          onNav("/login");
+        }, true)}
       </div>
     </Popover>
   );
@@ -441,6 +459,20 @@ function CommandPalette({ open, onClose, onNav }) {
   );
 }
 
+// ─── Auth helpers ──────────────────────────────────────
+// Minimal client-side auth gate. The token is stored at login time
+// (Login.jsx) under localStorage("cm-auth") as { token, savedAt }.
+function readAuthToken() {
+  try {
+    const raw = localStorage.getItem("cm-auth");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.token || null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Layout (the shell host) ───────────────────────────
 function Layout({ children }) {
   const { route, navigate } = useHashRoute();
@@ -451,6 +483,18 @@ function Layout({ children }) {
   const [collapsed, setCollapsed] = _useS(() => localStorage.getItem("cm-side-collapsed") === "1");
   const [mobileOpen, setMobileOpen] = _useS(false);
   const [paletteOpen, setPaletteOpen] = _useS(false);
+
+  // Auth gate: bounce unauthenticated users to /login on every route change,
+  // and bounce authenticated users away from /login back to the dashboard.
+  _useE(() => {
+    const hasToken = !!readAuthToken();
+    const onLogin = route === "/login" || route.startsWith("/login");
+    if (!hasToken && !onLogin) {
+      navigate("/login");
+    } else if (hasToken && onLogin) {
+      navigate("/dashboard");
+    }
+  }, [route, navigate]);
 
   _useE(() => {
     localStorage.setItem("cm-side-collapsed", collapsed ? "1" : "0");
@@ -467,6 +511,12 @@ function Layout({ children }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // The login page is full-bleed: no sidebar / topbar. Render the child
+  // directly so the LoginPage controls the entire viewport.
+  if (route === "/login" || route.startsWith("/login")) {
+    return React.cloneElement(children, { route, navigate, theme, setTheme });
+  }
 
   const sideMode = mobileOpen ? "open" : (collapsed ? "collapsed" : "default");
 
