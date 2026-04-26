@@ -13,6 +13,9 @@ from sqlmodel import Session, SQLModel, create_engine
 # Ensure config validators don't blow up in tests with a short key.
 os.environ.setdefault("RD_ENVIRONMENT", "dev")
 os.environ.setdefault("RD_SECRET_KEY", "test-secret-key-that-is-sufficiently-long-xx")
+# Background loops (hbbs sync, jwt cleanup, metrics sampler) write to
+# the same tables tests populate; disable them so the suite is hermetic.
+os.environ.setdefault("RD_DISABLE_BACKGROUND_TASKS", "1")
 
 from app import db as db_module  # noqa: E402
 from app.deps import get_session  # noqa: E402

@@ -580,3 +580,136 @@ def test_bulk_requires_auth(client):
         json={"device_ids": [1], "action": "favorite"},
     )
     assert r.status_code == 401
+
+
+# ─── v3: per-device tag assign / unassign ────────────────────────────────────
+
+
+def _seed_tag(session: Session, *, name: str = "personal", color: str = "violet"):
+    """Insert a Tag and return the persisted row with id populated."""
+    from app.models.tag import Tag
+    t = Tag(name=name, color=color)
+    session.add(t)
+    session.commit()
+    session.refresh(t)
+    return t
+
+
+def test_assign_tag_creates_link_and_returns_device(client, auth_headers, session):
+    d = _seed_device(session, rustdesk_id="555 555 555")
+    t = _seed_tag(session, name="ci")
+
+    r = client.post(f"/admin/api/devices/{d.id}/tags/{t.id}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert any(tag["id"] == t.id for tag in body["tags"])
+    # Audit row written so the drawer's activity feed picks the event up.
+    audit = session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DEVICE_TAGGED)
+    ).all()
+    assert len(audit) == 1
+
+
+def test_assign_tag_idempotent_when_already_linked(client, auth_headers, session):
+    d = _seed_device(session, rustdesk_id="666 666 666")
+    t = _seed_tag(session, name="lab")
+
+    first = client.post(f"/admin/api/devices/{d.id}/tags/{t.id}", headers=auth_headers)
+    second = client.post(f"/admin/api/devices/{d.id}/tags/{t.id}", headers=auth_headers)
+    assert first.status_code == 200
+    assert second.status_code == 200
+    # Second call is a no-op — only one audit row should exist.
+    audit_count = len(session.exec(
+        select(AuditLog).where(AuditLog.action == AuditAction.DEVICE_TAGGED)
+    ).all())
+    assert audit_count == 1
+
+
+def test_unassign_tag_removes_link(client, auth_headers, session):
+    d = _seed_device(session, rustdesk_id="777 777 777")
+    t = _seed_tag(session, name="kiosk")
+    client.post(f"/admin/api/devices/{d.id}/tags/{t.id}", headers=auth_headers)
+
+    r = client.delete(f"/admin/api/devices/{d.id}/tags/{t.id}", headers=auth_headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert all(tag["id"] != t.id for tag in body["tags"])
+
+
+def test_assign_tag_404_on_unknown_device(client, auth_headers, session):
+    t = _seed_tag(session, name="orphan")
+    r = client.post(f"/admin/api/devices/9999/tags/{t.id}", headers=auth_headers)
+    assert r.status_code == 404
+
+
+def test_assign_tag_404_on_unknown_tag(client, auth_headers, session):
+    d = _seed_device(session, rustdesk_id="888 888 888")
+    r = client.post(f"/admin/api/devices/{d.id}/tags/9999", headers=auth_headers)
+    assert r.status_code == 404
+
+
+# ─── v3: per-device activity feed (drawer "ACTIVIDAD RECIENTE") ─────────────
+
+
+def test_activity_returns_audit_rows_with_spanish_labels(client, auth_headers, session):
+    d = _seed_device(session, rustdesk_id="999 999 999")
+    # Mix client-protocol events (matched by from_id/to_id) and panel-side
+    # events (from_id set explicitly when the row is written).
+    session.add(AuditLog(
+        action=AuditAction.CONNECT,
+        from_id="999 999 999",
+        ip="10.0.0.5",
+        created_at=datetime.utcnow() - timedelta(minutes=5),
+    ))
+    session.add(AuditLog(
+        action=AuditAction.DEVICE_DISCONNECT_REQUESTED,
+        from_id="999 999 999",
+        created_at=datetime.utcnow() - timedelta(minutes=2),
+    ))
+    session.commit()
+
+    r = client.get(f"/admin/api/devices/{d.id}/activity?limit=10", headers=auth_headers)
+    assert r.status_code == 200
+    rows = r.json()
+    # Most recent first.
+    assert rows[0]["action"] == "device_disconnect_requested"
+    assert rows[0]["label"] == "Desconexión solicitada"
+    assert rows[1]["action"] == "connect"
+    assert rows[1]["label"] == "Conexión iniciada"
+    assert rows[1]["description"] == "Desde 10.0.0.5"
+
+
+def test_activity_empty_for_device_without_events(client, auth_headers, session):
+    d = _seed_device(session, rustdesk_id="000 000 000")
+    r = client.get(f"/admin/api/devices/{d.id}/activity", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_activity_404_on_unknown_device(client, auth_headers):
+    r = client.get("/admin/api/devices/9999/activity", headers=auth_headers)
+    assert r.status_code == 404
+
+
+def test_activity_skips_soft_deleted_rows(client, auth_headers, session):
+    d = _seed_device(session, rustdesk_id="111 111 222")
+    deleted = AuditLog(
+        action=AuditAction.CONNECT,
+        from_id="111 111 222",
+        created_at=datetime.utcnow() - timedelta(minutes=1),
+        deleted_at=datetime.utcnow(),  # soft-deleted; should not surface
+    )
+    visible = AuditLog(
+        action=AuditAction.CONNECT,
+        from_id="111 111 222",
+        created_at=datetime.utcnow() - timedelta(seconds=30),
+    )
+    session.add(deleted)
+    session.add(visible)
+    session.commit()
+
+    r = client.get(f"/admin/api/devices/{d.id}/activity", headers=auth_headers)
+    assert r.status_code == 200
+    rows = r.json()
+    assert len(rows) == 1
+    assert rows[0]["ip"] is None  # `visible` had no ip set

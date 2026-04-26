@@ -573,11 +573,11 @@ function JoinTokensPage() {
     let cancelled = false;
     (async () => {
       // panel_url drives the "join" link rendered alongside each token.
-      // Falls back to window.location.origin if /admin/api/server-info
-      // hasn't been configured yet.
+      // Falls back to window.location.origin if the operator hasn't
+      // overridden the public URL via /admin/api/settings/server-info.
       let url = window.location.origin;
       try {
-        const info = await _jtApi("/admin/api/server-info");
+        const info = await _jtApi("/admin/api/settings/server-info");
         if (info?.panel_url) url = info.panel_url.replace(/\/$/, "");
       } catch {}
       if (cancelled) return;

@@ -126,6 +126,13 @@ def _seed_devices(
     for (rd_id, hostname, platform, version, owner, mins_ago, ip, tag_names, note, fav) in DEVICE_FIXTURES:
         existing = session.exec(select(Device).where(Device.rustdesk_id == rd_id)).first()
         if existing:
+            # Refresh last_seen_at on every startup so devices that the fixture
+            # marks as "recently online" (mins_ago < 15) always show as online
+            # in the panel — without this, a backend left running for 30+ min
+            # gradually drains its "online" count to zero because no real
+            # heartbeats arrive in dev.
+            existing.last_seen_at = NOW - timedelta(minutes=mins_ago)
+            session.add(existing)
             out.append(existing)
             continue
         d = Device(
@@ -251,6 +258,40 @@ def main() -> None:
         _seed_join_tokens(session, users_by_name)
 
         print("[OK] seed complete.")
+
+
+def refresh_fixture_presence() -> int:
+    """Bump last_seen_at on fixture devices so "online" buckets stay fresh.
+
+    Called from the lifespan on every backend startup in dev so that the
+    panel always shows a realistic online count, regardless of how long
+    ago the initial seed ran. Returns the number of devices touched.
+
+    Uses a fresh utcnow at call time — NOT the module-level NOW constant,
+    which is evaluated at import and can be stale by hours when this is
+    invoked from a long-running process.
+
+    Resolves `engine` dynamically from the db module so test fixtures that
+    swap `db.engine` for an in-memory SQLite get honoured (otherwise the
+    lifespan would point at the production engine and crash with "no such
+    table" against an empty in-memory DB).
+    """
+    from app import db as _db_module
+
+    now = utcnow_naive()
+    touched = 0
+    with Session(_db_module.engine) as session:
+        for fixture in DEVICE_FIXTURES:
+            rd_id = fixture[0]
+            mins_ago = fixture[5]
+            existing = session.exec(select(Device).where(Device.rustdesk_id == rd_id)).first()
+            if existing is None:
+                continue
+            existing.last_seen_at = now - timedelta(minutes=mins_ago)
+            session.add(existing)
+            touched += 1
+        session.commit()
+    return touched
 
 
 if __name__ == "__main__":

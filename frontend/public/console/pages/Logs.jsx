@@ -114,7 +114,17 @@ const _RANGE_OPTS = [
 ];
 
 const _LEVEL_TONE = { info: "default", warn: "amber", error: "red", default: "default" };
-const _CATEGORY_LABEL = { auth: "Autenticación", session: "Sesiones", device: "Dispositivos", user: "Usuarios", token: "Invitaciones", config: "Configuración", system: "Sistema" };
+// Keys must match the backend AUDIT_CATEGORIES enum exactly so the
+// dropdown sends a valid `category` query string. Stale keys ("device",
+// "user", "token", "system") were leftovers from an earlier draft and
+// rendered as empty <option> rows because their labels were undefined.
+const _CATEGORY_LABEL = {
+  auth: "Autenticación",
+  session: "Sesiones",
+  user_management: "Usuarios",
+  config: "Configuración",
+  address_book: "Agenda",
+};
 
 // ─── Descripción humana de un evento ──────────────────
 // Devuelve { headline, paragraphs[], context[] } — un texto extendido y legible,

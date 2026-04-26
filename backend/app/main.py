@@ -167,32 +167,47 @@ async def lifespan(_: FastAPI):
     init_db()
     _bootstrap_admin()
     _warn_startup(get_settings())
+    # In dev, refresh fixture device presence on every startup so the panel
+    # never shows "0 online" just because the seed timestamps drifted past
+    # the 15-min online window. Idempotent — skipped if no fixture exists.
+    if get_settings().environment == "dev":
+        try:
+            from scripts.seed_dev import refresh_fixture_presence
+            refresh_fixture_presence()
+        except Exception:  # noqa: BLE001 — never block startup on a dev-only path
+            logging.getLogger("rd_console").exception("seed refresh failed (non-fatal)")
     # Kick off the hbbs → devices sync in the background. If the hbbs DB
     # isn't mounted (dev env) the task just no-ops every tick.
     import contextlib
 
-    sync_task = asyncio.create_task(run_sync_loop(), name="hbbs-sync")
+    # Tests need a fully synchronous lifespan — the metrics sampler in
+    # particular writes to the same SystemMetricSample table the tests
+    # populate, and the rate-derivation endpoint sees those rows leak in.
+    # `RD_DISABLE_BACKGROUND_TASKS=1` (set in tests/conftest.py) skips
+    # all three loops; production lifespan keeps them on by default.
+    import os as _os
+    bg_disabled = _os.environ.get("RD_DISABLE_BACKGROUND_TASKS") == "1"
+
+    sync_task = None if bg_disabled else asyncio.create_task(run_sync_loop(), name="hbbs-sync")
     # JWT revocation list grows without bound unless someone prunes it. A
     # 6h tick keeps the table size bounded by "tokens revoked in the last
     # access_token_expire_minutes window", which is tiny.
-    cleanup_task = asyncio.create_task(run_cleanup_loop(), name="jwt-cleanup")
+    cleanup_task = None if bg_disabled else asyncio.create_task(run_cleanup_loop(), name="jwt-cleanup")
     # Network counters sampled every 60 s into system_metric_samples so
     # the Dashboard "Tráfico de red" chart has actual data to render.
-    metrics_task = asyncio.create_task(run_sampler_loop(), name="metrics-sampler")
+    metrics_task = None if bg_disabled else asyncio.create_task(run_sampler_loop(), name="metrics-sampler")
     try:
         yield
     finally:
-        sync_task.cancel()
-        cleanup_task.cancel()
-        metrics_task.cancel()
+        for t in (sync_task, cleanup_task, metrics_task):
+            if t is not None:
+                t.cancel()
         # Swallow both the CancelledError we just triggered and any
         # tick-level exception — a shutdown hook should never raise.
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await sync_task
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await cleanup_task
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await metrics_task
+        for t in (sync_task, cleanup_task, metrics_task):
+            if t is not None:
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await t
 
 
 # ─── OpenAPI tag metadata ───────────────────────────────────────────────────
