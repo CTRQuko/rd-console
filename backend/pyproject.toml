@@ -14,6 +14,10 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "argon2-cffi>=23.1.0",
     "python-multipart>=0.0.12",
+    # Cross-platform host metrics for /api/v1/system/metrics — CPU pct,
+    # load avg, mem usage, network counters. Avoids hand-rolling /proc
+    # parsing on Linux + getifaddrs on macOS + WMI on Windows.
+    "psutil>=6.1.0",
 ]
 
 [project.optional-dependencies]

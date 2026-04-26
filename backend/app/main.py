@@ -32,6 +32,7 @@ from .routers import (
     rustdesk,
     search,
     settings_,
+    system as system_router,
     tags,
     users,
 )
@@ -392,6 +393,10 @@ def create_app() -> FastAPI:
     app.include_router(search.router)
     app.include_router(address_book.router)
     app.include_router(join_tokens.router)
+    # /api/v1 namespace — feeds the design-system-v3 Dashboard (system
+    # metrics + recent connections). Coexists with the /api and
+    # /admin/api routers; no migration of older endpoints implied.
+    app.include_router(system_router.router)
     app.include_router(health_router.router)
 
     # Public

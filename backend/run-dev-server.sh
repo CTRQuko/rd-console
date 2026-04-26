@@ -42,4 +42,7 @@ echo "→ Admin: $RD_ADMIN_USERNAME / $RD_ADMIN_PASSWORD (only on first run)"
 echo "→ Bind:  http://127.0.0.1:8080"
 echo
 
-exec "$UVICORN" app.main:app --host 127.0.0.1 --port 8080 --reload 2>&1
+# --reload-dir app/ keeps watchfiles off .venv/, otherwise it triggers
+# an endless reload loop whenever pip install touches site-packages.
+exec "$UVICORN" app.main:app --host 127.0.0.1 --port 8080 \
+  --reload --reload-dir app 2>&1
