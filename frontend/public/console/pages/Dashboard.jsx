@@ -50,6 +50,91 @@
 
 const { useState: _dsS, useEffect: _dsE, useRef: _dsR, useMemo: _dsM } = React;
 
+// ─── Auth-aware fetch + polling hook (Etapa 3.4) ─────────────────────────
+// Reads the JWT stored by Login.jsx under localStorage("cm-auth") and
+// attaches it to every backend call. A 401 response wipes the token and
+// reloads the page so the AuthGate in shell.jsx bounces to /login.
+function _dsAuthToken() {
+  try {
+    const raw = localStorage.getItem("cm-auth");
+    return raw ? (JSON.parse(raw)?.token || null) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function _dsApiGet(path) {
+  const token = _dsAuthToken();
+  const headers = token ? { Authorization: "Bearer " + token } : {};
+  const res = await fetch(path, { headers });
+  if (res.status === 401) {
+    try { localStorage.removeItem("cm-auth"); } catch {}
+    window.location.hash = "/login";
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`GET ${path} → ${res.status}`);
+  }
+  return res.json();
+}
+
+// Per-resource polling hook. `intervalMs=0` disables polling (single fetch).
+function _dsUsePolledFetch(path, intervalMs) {
+  const [data, setData] = _dsS(null);
+  const [err, setErr] = _dsS(null);
+  _dsE(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const d = await _dsApiGet(path);
+        if (!cancelled && d) { setData(d); setErr(null); }
+      } catch (e) {
+        if (!cancelled) setErr(e);
+      }
+    };
+    tick();
+    if (intervalMs > 0) {
+      const id = setInterval(tick, intervalMs);
+      return () => { cancelled = true; clearInterval(id); };
+    }
+    return () => { cancelled = true; };
+  }, [path, intervalMs]);
+  return { data, err };
+}
+
+// Helper: bytes → "12.4 GB" / "770 MB" / "320 KB". Uses 1024-base on
+// purpose to match what `free -h` and Windows show.
+function _dsFmtBytes(b) {
+  if (b == null) return "—";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0, n = Math.max(0, Number(b));
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n >= 100 ? 0 : 1)} ${u[i]}`;
+}
+
+// Helper: bps → "312 Mb/s" / "12 kb/s" (network convention: 1000-base,
+// lowercase 'b' = bits, capital 'B' = bytes).
+function _dsFmtBps(bps) {
+  if (bps == null) return "—";
+  const u = ["b/s", "kb/s", "Mb/s", "Gb/s"];
+  let i = 0, n = Math.max(0, Number(bps));
+  while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+  return `${Math.round(n)} ${u[i]}`;
+}
+
+// Helper: ISO-ish timestamp → "hace N min" / "hace N h". Very rough,
+// good enough for the recent-connections table.
+function _dsFmtRelative(ts) {
+  if (!ts) return "—";
+  const t = typeof ts === "string" ? new Date(ts).getTime() : Number(ts);
+  if (!Number.isFinite(t)) return "—";
+  const dt = Math.max(0, (Date.now() - t) / 1000);
+  if (dt < 60) return "ahora";
+  if (dt < 3600) return `hace ${Math.floor(dt / 60)} min`;
+  if (dt < 86400) return `hace ${Math.floor(dt / 3600)} h`;
+  return `hace ${Math.floor(dt / 86400)} d`;
+}
+
 // Helper: tone from threshold
 const toneFor = (pct) => pct >= 85 ? "danger" : pct >= 65 ? "warn" : "ok";
 const colorFor = (tone) => ({ ok: "var(--green-500)", warn: "var(--amber-500)", danger: "var(--red-500)" })[tone];
@@ -528,8 +613,35 @@ function RecentConnections({ rows }) {
 }
 
 function DashboardPage() {
-  const cpu = 62;
-  const ram = 69;
+  // Live polling per the BACKEND CONTRACT comment at the top of this file.
+  // Cadences: 5 s metrics + throughput, 10 s recent, 60 s histogram + uptime.
+  const { data: metrics } = _dsUsePolledFetch("/api/v1/system/metrics", 5000);
+  const { data: connections24h } = _dsUsePolledFetch("/api/v1/system/connections-24h", 60000);
+  const { data: throughput } = _dsUsePolledFetch("/api/v1/system/throughput?window=60m", 5000);
+  const { data: uptime } = _dsUsePolledFetch("/api/v1/system/uptime?days=30", 60000);
+  const { data: recent } = _dsUsePolledFetch("/api/v1/connections/recent?limit=20", 10000);
+
+  // Derive each MetricCard's headline value from the live payload.
+  // Falls back to 0 / dashes while the first poll is in flight so the
+  // donuts render at "empty" rather than crashing on undefined access.
+  const cpu = Math.round(metrics?.cpu?.pct ?? 0);
+  const ram = Math.round(metrics?.memory?.pct ?? 0);
+  const sessionsActive = metrics?.sessions_active ?? 0;
+  const sessionsLimit = 5000; // TODO: pull from /config/server.session_limit when wired
+  const sessionsPct = Math.min(100, Math.round((sessionsActive / sessionsLimit) * 100));
+  const bandwidthBps = metrics?.bandwidth_bps ?? 0;
+  const linkCapacity = throughput?.link_capacity_bps ?? 1_000_000_000;
+  const networkPct = linkCapacity > 0
+    ? Math.min(100, Math.round((bandwidthBps / linkCapacity) * 100))
+    : 0;
+
+  // SLA: average of the 30-day uptime series; degraded days = days <99%.
+  const uptimeSeries = uptime?.series ?? [];
+  const slaAvg = uptimeSeries.length > 0
+    ? uptimeSeries.reduce((a, b) => a + b, 0) / uptimeSeries.length
+    : 100;
+  const slaIncidents = uptimeSeries.filter((v) => v < 99).length;
+
   const { useDashboardLayout, DashboardGrid, EditModeBar, CatalogPanel, CATALOG } = window.DashboardEdit;
   const { layout, edit, startEdit, cancelEdit, saveEdit, resetToDefault, setDraft } = useDashboardLayout();
 
@@ -558,100 +670,157 @@ function DashboardPage() {
       <EditModeBar edit={edit} layout={layout} onCancel={cancelEdit} onSave={saveEdit} onReset={resetToDefault} />
       <DashboardGrid layout={layout} edit={edit} onChange={setDraft}>
 
-        <div data-widget-id="cpu">
+<div data-widget-id="cpu">
         <MetricCard
           icon="cpu" label="CPU" value={cpu} tone={toneFor(cpu)}
-          chipLabel="8 cores @ 3.4 GHz">
-          <PopHead left="Carga por core" right="8 cores @ 3.4 GHz" />
-          <CoreBars cores={[
-          { pct: 42 }, { pct: 78 }, { pct: 55 }, { pct: 91 },
-          { pct: 34 }, { pct: 67 }, { pct: 48 }, { pct: 71 }]
-          } />
-          <PopFoot rows={[{ k: "Carga · 1m", v: "1.92" }, { k: "Procesos", v: "247" }]} />
+          chipLabel={metrics
+            ? `${metrics.cpu.cores} cores${metrics.cpu.ghz ? " @ " + metrics.cpu.ghz + " GHz" : ""}`
+            : "—"}>
+          <PopHead left="Carga global" right={metrics?.cpu?.model || "—"} />
+          {/* TODO: backend returns CPU pct as a single global number — for
+              real per-core breakdown wire psutil.cpu_percent(percpu=True)
+              into a /system/metrics/cpu-cores endpoint. Until then we
+              render N=cores bars all at the global pct so the layout
+              stays right. */}
+          <CoreBars cores={Array.from(
+            { length: metrics?.cpu?.cores ?? 0 },
+            () => ({ pct: cpu })
+          )} />
+          <PopFoot rows={[
+            { k: "Carga · 1m", v: metrics?.cpu?.load1?.toFixed(2) ?? "—" },
+            { k: "Carga · 5m", v: metrics?.cpu?.load5?.toFixed(2) ?? "—" },
+          ]} />
         </MetricCard>
         </div>
 
-        <div data-widget-id="memory">
+<div data-widget-id="memory">
         <MetricCard
           icon="memory" label="Memoria" value={ram} tone={toneFor(ram)}
-          chipLabel="11.0 / 16 GB">
-          <PopHead left="RAM por proceso" right="Top 10 · 11.0/16 GB" />
+          chipLabel={metrics
+            ? `${_dsFmtBytes(metrics.memory.used_bytes)} / ${_dsFmtBytes(metrics.memory.total_bytes)}`
+            : "—"}>
+          <PopHead
+            left="Uso de memoria"
+            right={metrics
+              ? `${_dsFmtBytes(metrics.memory.used_bytes)}/${_dsFmtBytes(metrics.memory.total_bytes)}`
+              : "—"}
+          />
+          {/* TODO: per-process breakdown needs psutil.process_iter() on the
+              server. Today the donut + chip carry the real data; this
+              dropdown stays as a placeholder until the endpoint exists. */}
           <HBars rows={[
-          { name: "hbbs", pct: 62, val: "2.0 GB", color: "var(--amber-500)" },
-          { name: "postgres", pct: 47, val: "1.5 GB", color: "var(--green-500)" },
-          { name: "redis", pct: 34, val: "1.1 GB", color: "var(--green-500)" },
-          { name: "nginx", pct: 27, val: "880 MB", color: "var(--green-500)" },
-          { name: "node", pct: 24, val: "770 MB", color: "var(--green-500)" },
-          { name: "journald", pct: 17, val: "540 MB", color: "var(--green-500)" },
-          { name: "prometheus", pct: 13, val: "430 MB", color: "var(--green-500)" },
-          { name: "sshd", pct: 10, val: "320 MB", color: "var(--green-500)" },
-          { name: "docker-proxy", pct: 7, val: "220 MB", color: "var(--green-500)" },
-          { name: "cron", pct: 3, val: "110 MB", color: "var(--green-500)" }]
-          } />
-          <PopFoot rows={[{ k: "Otros (240+)", v: "3.1 GB" }, { k: "Libre", v: "5.0 GB" }]} />
+            { name: "Usada", pct: ram, val: _dsFmtBytes(metrics?.memory?.used_bytes ?? 0), color: "var(--primary)" },
+            { name: "Libre", pct: 100 - ram, val: _dsFmtBytes(metrics?.memory?.free_bytes ?? 0), color: "var(--green-500)" },
+          ]} />
+          <PopFoot rows={[
+            { k: "Total", v: _dsFmtBytes(metrics?.memory?.total_bytes ?? 0) },
+            { k: "Libre", v: _dsFmtBytes(metrics?.memory?.free_bytes ?? 0) },
+          ]} />
         </MetricCard>
         </div>
 
-        <div data-widget-id="sessions">
+<div data-widget-id="sessions">
         <MetricCard
-          icon="link" label="Sesiones" value={25} tone="ok"
-          valueLabel={<>1.2<small style={{ fontSize: 13, color: "var(--fg-muted)", marginLeft: 2 }}>k</small></>}
-          chipLabel="1,247 / 5,000">
-          <PopHead left="Sesiones por cliente" right="25% cuota · ↑12% vs ayer" />
+          icon="link" label="Sesiones" value={sessionsPct} tone={toneFor(sessionsPct)}
+          valueLabel={
+            sessionsActive >= 1000
+              ? <>{(sessionsActive / 1000).toFixed(1)}<small style={{ fontSize: 13, color: "var(--fg-muted)", marginLeft: 2 }}>k</small></>
+              : <>{sessionsActive}</>
+          }
+          chipLabel={`${sessionsActive.toLocaleString()} / ${sessionsLimit.toLocaleString()}`}>
+          <PopHead left="Sesiones activas" right={`${sessionsPct}% cuota`} />
+          {/* TODO: per-platform breakdown requires aggregating Device.platform
+              over the active set. Single-row stub until that endpoint is
+              wired (sessions vs. limit). */}
           <HBars rows={[
-          { name: "Windows", pct: 54, val: "673" },
-          { name: "macOS", pct: 18, val: "224" },
-          { name: "Linux", pct: 10, val: "128" },
-          { name: "Android", pct: 9, val: "115", color: "var(--violet-500)" },
-          { name: "iOS", pct: 6, val: "79", color: "var(--violet-500)" },
-          { name: "Web", pct: 2, val: "28", color: "var(--violet-500)" }]
-          } />
-          <PopFoot rows={[{ k: "Pico 24h", v: "1,489" }, { k: "Cuota", v: "5,000" }]} />
+            { name: "Activas", pct: sessionsPct, val: sessionsActive.toLocaleString(), color: "var(--primary)" },
+            { name: "Disponibles", pct: 100 - sessionsPct, val: (sessionsLimit - sessionsActive).toLocaleString(), color: "var(--green-500)" },
+          ]} />
+          <PopFoot rows={[
+            { k: "Activas", v: sessionsActive.toLocaleString() },
+            { k: "Cuota", v: sessionsLimit.toLocaleString() },
+          ]} />
         </MetricCard>
         </div>
 
-        <div data-widget-id="network">
+<div data-widget-id="network">
         <MetricCard
-          icon="zap" label="Red" value={31} tone="ok"
-          valueLabel={<>312<small style={{ fontSize: 11, color: "var(--fg-muted)", marginLeft: 2 }}>Mb/s</small></>}
-          chipLabel="31% del enlace">
-          <PopHead left="Tráfico por interfaz" right="31% de 1 Gb/s · pico 487" />
+          icon="zap" label="Red" value={networkPct} tone={toneFor(networkPct)}
+          valueLabel={(() => {
+            const txt = _dsFmtBps(bandwidthBps);
+            const [num, unit] = txt.split(" ");
+            return <>{num}<small style={{ fontSize: 11, color: "var(--fg-muted)", marginLeft: 2 }}>{unit}</small></>;
+          })()}
+          chipLabel={`${networkPct}% del enlace`}>
+          <PopHead
+            left="Tráfico actual"
+            right={`${networkPct}% de ${_dsFmtBps(linkCapacity)}`}
+          />
+          {/* TODO: per-interface in/out breakdown requires sampling
+              psutil.net_io_counters(pernic=True) over time on the server.
+              For now we show the global aggregate. */}
           <HBars rows={[
-          { name: "eth0 ▼ in", pct: 62, val: "193 Mb/s" },
-          { name: "eth0 ▲ out", pct: 38, val: "119 Mb/s", color: "var(--violet-500)" },
-          { name: "wg0 ▼ in", pct: 8, val: "24 Mb/s" },
-          { name: "wg0 ▲ out", pct: 6, val: "18 Mb/s", color: "var(--violet-500)" }]
-          } />
-          <PopFoot rows={[{ k: "Total hoy", v: "2.4 TB" }, { k: "Conexiones", v: "1,247" }]} />
+            { name: "Total", pct: networkPct, val: _dsFmtBps(bandwidthBps), color: "var(--primary)" },
+            { name: "Capacidad", pct: 100 - networkPct, val: _dsFmtBps(Math.max(0, linkCapacity - bandwidthBps)), color: "var(--green-500)" },
+          ]} />
+          <PopFoot rows={[
+            { k: "Capacidad", v: _dsFmtBps(linkCapacity) },
+            { k: "Sesiones", v: sessionsActive.toLocaleString() },
+          ]} />
         </MetricCard>
         </div>
 
-        <div data-widget-id="sla">
+<div data-widget-id="sla">
         <MetricCard
-          icon="activity" label="SLA" value={100} tone="ok"
-          valueLabel="99.98%"
-          chipLabel="30 d · 4 incidentes">
-          <PopHead left="Incidentes" right="Últimos 30 días" />
+          icon="activity" label="SLA" value={Math.round(slaAvg)} tone="ok"
+          valueLabel={`${slaAvg.toFixed(2)}%`}
+          chipLabel={`${uptimeSeries.length} d · ${slaIncidents} incidente${slaIncidents === 1 ? "" : "s"}`}>
+          <PopHead
+            left="Uptime diario"
+            right={`Últimos ${uptimeSeries.length} días`}
+          />
+          {/* TODO: backend /api/v1/system/uptime is currently a stub that
+              returns 100% for every day until heartbeat probes get
+              persisted. Once that lands, list real incidents here. */}
           <HBars rows={[
-          { name: "25 oct 14:32", pct: 18, val: "8m 12s", color: "var(--red-500)" },
-          { name: "18 oct 03:11", pct: 6, val: "2m 41s", color: "var(--amber-500)" },
-          { name: "11 oct 21:04", pct: 14, val: "6m 30s", color: "var(--red-500)" },
-          { name: "04 oct 09:47", pct: 5, val: "2m 05s", color: "var(--amber-500)" }]
-          } />
-          <PopFoot rows={[{ k: "Downtime total", v: "19m 28s" }, { k: "Objetivo SLA", v: "99.9%" }]} />
+            { name: "Promedio", pct: Math.min(100, slaAvg), val: `${slaAvg.toFixed(2)}%`, color: "var(--green-500)" },
+            { name: "Objetivo", pct: 99.9, val: "99.9%", color: "var(--primary)" },
+          ]} />
+          <PopFoot rows={[
+            { k: "Días sin incidente", v: `${uptimeSeries.length - slaIncidents}` },
+            { k: "Días degradados", v: `${slaIncidents}` },
+          ]} />
         </MetricCard>
         </div>
 
-        <div data-widget-id="histogram">
-          <ConnectionsHistogram buckets={MOCK_CONNECTIONS} />
+<div data-widget-id="histogram">
+          <ConnectionsHistogram
+            buckets={connections24h?.buckets ?? Array(24).fill(0)}
+          />
         </div>
 
         <div data-widget-id="throughput">
-          <ThroughputChart inSeries={MOCK_IN} outSeries={MOCK_OUT} max={200} />
+          {/* The backend's /system/throughput endpoint is a stub today —
+              it returns the same value 60 times so the chart renders. The
+              max prop is `max_bps` from the server, with a +1 floor to
+              avoid division-by-zero in the first paint. */}
+          <ThroughputChart
+            inSeries={throughput?.in ?? Array(60).fill(0)}
+            outSeries={throughput?.out ?? Array(60).fill(0)}
+            max={Math.max(1, throughput?.max_bps ?? 1)}
+          />
         </div>
 
         <div data-widget-id="recent">
-          <RecentConnections rows={MOCK_RECENT} />
+          <RecentConnections
+            rows={(recent?.rows ?? []).map((r) => ({
+              from: r.from || "—",
+              to: r.to || "—",
+              action: r.action,
+              time: _dsFmtRelative(r.ts),
+              ip: r.ip || "—",
+            }))}
+          />
         </div>
 
       </DashboardGrid>
