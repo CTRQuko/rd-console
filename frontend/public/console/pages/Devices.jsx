@@ -6,6 +6,75 @@
 
 const { useState: _dvS, useEffect: _dvE, useMemo: _dvM, useRef: _dvR } = React;
 
+// ─── Auth-aware fetch helpers (Etapa 3.5) ─────────────────────────────────
+function _dvAuthToken() {
+  try {
+    const raw = localStorage.getItem("cm-auth");
+    return raw ? (JSON.parse(raw)?.token || null) : null;
+  } catch {
+    return null;
+  }
+}
+async function _dvApi(path, init = {}) {
+  const token = _dvAuthToken();
+  const headers = {
+    ...(init.headers || {}),
+    ...(token ? { Authorization: "Bearer " + token } : {}),
+  };
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { ...init, headers });
+  if (res.status === 401) {
+    try { localStorage.removeItem("cm-auth"); } catch {}
+    window.location.hash = "/login";
+    throw new Error("unauthenticated");
+  }
+  if (res.status === 204) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${init.method || "GET"} ${path} → ${res.status} ${body.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+// ─── Format helpers ───────────────────────────────────────────────────────
+function _dvFmtRelative(ts) {
+  if (!ts) return "—";
+  const t = typeof ts === "string" ? new Date(ts).getTime() : Number(ts);
+  if (!Number.isFinite(t)) return "—";
+  const dt = Math.max(0, (Date.now() - t) / 1000);
+  if (dt < 60) return "ahora";
+  if (dt < 3600) return `Hace ${Math.floor(dt / 60)}m`;
+  if (dt < 86400) return `Hace ${Math.floor(dt / 3600)}h`;
+  return `Hace ${Math.floor(dt / 86400)}d`;
+}
+
+// Map ApiDevice (backend shape) → the {id, alias, user, os, ver, ip,
+// lastSeen, online, tags, notes} shape this page was originally built
+// against. `usersById` is a precomputed map id→username so the table
+// can show "alex@…" instead of "user #5".
+function _dvAdaptDevice(api, usersById) {
+  return {
+    id: String(api.id),
+    rustdeskId: api.rustdesk_id,
+    alias: api.hostname || api.rustdesk_id || `device-${api.id}`,
+    user: api.owner_user_id != null ? (usersById.get(api.owner_user_id) || `user #${api.owner_user_id}`) : "—",
+    os: api.platform || "—",
+    ver: api.version || "—",
+    ip: api.last_ip || "—",
+    lastSeen: _dvFmtRelative(api.last_seen_at),
+    online: !!api.online,
+    tags: (api.tags || []).map((t) => t.name),
+    notes: api.note || "",
+    favorite: !!api.is_favorite,
+  };
+}
+
+// Map backend Tag (with .device_count) → the {name, color, count} shape
+// the original mock catalog used.
+function _dvAdaptTag(api) {
+  return { name: api.name, color: api.color, count: api.device_count ?? 0 };
+}
+
 const TAG_PALETTE = ["violet", "amber", "green", "blue", "rose", "teal", "orange", "slate"];
 
 const _DEVICES_INIT = [
@@ -502,15 +571,42 @@ function DevicesPage({ route }) {
   const [q, setQ] = _dvS("");
   const [filter, setFilter] = _dvS("all");
   const [selected, setSelected] = _dvS(null);
-  const [state, setState] = _dvS("ready");
-  const [devices, setDevices] = _dvS(_DEVICES_INIT);
-  const [tagCatalog, setTagCatalog] = _dvS(_TAGS_INIT);
+  const [state, setState] = _dvS("loading");
+  const [devices, setDevices] = _dvS([]);
+  const [tagCatalog, setTagCatalog] = _dvS([]);
   const [pageSize, setPageSize] = _dvS(25);
   const [deleteTarget, setDeleteTarget] = _dvS(null);
   const [filtersOpen, setFiltersOpen] = _dvS(false);
   const [osFilter, setOsFilter] = _dvS([]);     // ["macOS","Windows","Linux"]
   const [tagFilter, setTagFilter] = _dvS([]);   // tag names
   const filtersBtnRef = _dvR(null);
+
+  // ─── Initial data load (Etapa 3.5) ──────────────────────────────────
+  // Pulls devices, tags, and users in parallel so the table can show
+  // "alex@…" instead of the bare owner_user_id. Polled every 30 s so
+  // online/offline transitions and last-seen update on screen.
+  _dvE(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [devicesRes, tagsRes, usersRes] = await Promise.all([
+          _dvApi("/admin/api/devices"),
+          _dvApi("/admin/api/tags"),
+          _dvApi("/admin/api/users").catch(() => []),
+        ]);
+        if (cancelled) return;
+        const usersById = new Map((usersRes || []).map((u) => [u.id, u.username]));
+        setDevices((devicesRes || []).map((d) => _dvAdaptDevice(d, usersById)));
+        setTagCatalog((tagsRes || []).map(_dvAdaptTag));
+        setState("ready");
+      } catch (err) {
+        if (!cancelled) setState("error");
+      }
+    };
+    load();
+    const id = setInterval(load, 30000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   const osFamily = (osStr) => {
     const s = (osStr || "").toLowerCase();
@@ -530,9 +626,13 @@ function DevicesPage({ route }) {
   const clearAllFilters = () => { setOsFilter([]); setTagFilter([]); setFilter("all"); };
   const activeFilterCount = osFilter.length + tagFilter.length + (filter !== "all" ? 1 : 0);
 
+  // URL `?state=loading|empty|error` is a design-debug override that
+  // bypasses the live fetch (used for visual review of skeletons /
+  // empty / error states). When the param is absent we let the load
+  // useEffect own the state value.
   _dvE(() => {
     const m = route.match(/[?&]state=(\w+)/);
-    setState(m ? m[1] : "ready");
+    if (m) setState(m[1]);
   }, [route]);
 
   const items = _dvM(() => {
@@ -575,28 +675,68 @@ function DevicesPage({ route }) {
 
   const toast = useToast();
 
-  const handleSave = (id, draft) => {
-    setDevices((ds) => ds.map((d) => d.id === id ? { ...d, ...draft } : d));
-    setSelected((s) => s && s.id === id ? { ...s, ...draft } : s);
-    toast("Cambios guardados", { tone: "success" });
+  const handleSave = async (id, draft) => {
+    // Map the JSX draft shape onto the backend's PATCH payload.
+    // Tags are NOT round-tripped here yet — the backend manages them
+    // through POST/DELETE /admin/api/devices/:id/tags/:tag_id pairs,
+    // which the design's TagInput doesn't drive yet. TODO: wire up.
+    const body = {};
+    if (draft.alias !== undefined) body.hostname = draft.alias;
+    if (draft.notes !== undefined) body.note = draft.notes;
+    if (Object.keys(body).length === 0) {
+      toast("Sin cambios que guardar", { tone: "info" });
+      return;
+    }
+    try {
+      await _dvApi(`/admin/api/devices/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      // Optimistic local update so the drawer reflects the change at
+      // once. The next 30 s poll re-syncs from server-of-truth.
+      setDevices((ds) => ds.map((d) => d.id === id ? { ...d, ...draft } : d));
+      setSelected((s) => s && s.id === id ? { ...s, ...draft } : s);
+      toast("Cambios guardados", { tone: "success" });
+    } catch (err) {
+      toast("No se pudo guardar — reintenta", { tone: "danger" });
+    }
   };
-  const handleCreateTag = (name) => {
-    setTagCatalog((cat) => {
-      if (cat.some((t) => t.name === name)) return cat;
-      const color = TAG_PALETTE[cat.length % TAG_PALETTE.length];
-      return [...cat, { name, color, count: 0 }];
-    });
+  const handleCreateTag = async (name) => {
+    if (tagCatalog.some((t) => t.name === name)) return;
+    const color = TAG_PALETTE[tagCatalog.length % TAG_PALETTE.length];
+    try {
+      const created = await _dvApi("/admin/api/tags", {
+        method: "POST",
+        body: JSON.stringify({ name, color }),
+      });
+      setTagCatalog((cat) =>
+        cat.some((t) => t.name === name) ? cat : [...cat, _dvAdaptTag(created)]
+      );
+    } catch (err) {
+      toast(`No se pudo crear tag «${name}»`, { tone: "danger" });
+    }
   };
-  const handleDisconnect = (d) => {
-    toast(`Forzando reconexión de ${d.alias}…`);
+  const handleDisconnect = async (d) => {
+    try {
+      await _dvApi(`/admin/api/devices/${d.id}/disconnect`, { method: "POST" });
+      toast(`Forzando reconexión de ${d.alias}…`);
+    } catch (err) {
+      toast(`No se pudo desconectar ${d.alias}`, { tone: "danger" });
+    }
   };
   const requestDelete = (d) => setDeleteTarget(d);
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    setDevices((ds) => ds.filter((x) => x.id !== deleteTarget.id));
-    if (selected?.id === deleteTarget.id) setSelected(null);
-    toast(`Dispositivo «${deleteTarget.alias}» eliminado`, { tone: "success" });
-    setDeleteTarget(null);
+    try {
+      await _dvApi(`/admin/api/devices/${deleteTarget.id}`, { method: "DELETE" });
+      setDevices((ds) => ds.filter((x) => x.id !== deleteTarget.id));
+      if (selected?.id === deleteTarget.id) setSelected(null);
+      toast(`Dispositivo «${deleteTarget.alias}» eliminado`, { tone: "success" });
+    } catch (err) {
+      toast(`No se pudo eliminar ${deleteTarget.alias}`, { tone: "danger" });
+    } finally {
+      setDeleteTarget(null);
+    }
   };
 
   return (
