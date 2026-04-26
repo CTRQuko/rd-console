@@ -26,6 +26,7 @@ router = APIRouter(prefix="/admin/api/settings", tags=["admin:settings"])
 class ServerInfoOut(BaseModel):
     server_host: str
     panel_url: str
+    panel_name: str
     hbbs_public_key: str
     version: str
 
@@ -40,6 +41,7 @@ class ServerInfoPatch(BaseModel):
 
     server_host: str | None = Field(default=None, max_length=1024)
     panel_url: str | None = Field(default=None, max_length=1024)
+    panel_name: str | None = Field(default=None, max_length=128)
     hbbs_public_key: str | None = Field(default=None, max_length=4096)
 
 
@@ -70,6 +72,7 @@ def server_info(session: SessionDep, _: AdminUser) -> ServerInfoOut:
     return ServerInfoOut(
         server_host=info["server_host"],
         panel_url=info["panel_url"],
+        panel_name=info["panel_name"],
         hbbs_public_key=info["hbbs_public_key"],
         version=__version__,
     )
@@ -102,6 +105,7 @@ def update_server_info(
     return ServerInfoOut(
         server_host=info["server_host"],
         panel_url=info["panel_url"],
+        panel_name=info["panel_name"],
         hbbs_public_key=info["hbbs_public_key"],
         version=__version__,
     )
@@ -129,6 +133,7 @@ def export_settings(session: SessionDep, admin: AdminUser) -> str:
         "",
         f"RD_SERVER_HOST={info['server_host']}",
         f"RD_PANEL_URL={info['panel_url']}",
+        f"RD_PANEL_NAME={info['panel_name']}",
         f"RD_HBBS_PUBLIC_KEY={info['hbbs_public_key']}",
         "",
     ]
@@ -137,7 +142,7 @@ def export_settings(session: SessionDep, admin: AdminUser) -> str:
     session.add(AuditLog(
         action=AuditAction.SETTINGS_EXPORTED,
         actor_user_id=admin.id,
-        payload="keys=hbbs_public_key,panel_url,server_host",
+        payload="keys=hbbs_public_key,panel_name,panel_url,server_host",
     ))
     session.commit()
     return body

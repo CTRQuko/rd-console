@@ -391,14 +391,32 @@ class NotificationItem(BaseModel):
     subtitle: str | None = None
     when: datetime
     actor: str | None = None
+    # Server-computed: True if this row's audit_log id is <= the user's
+    # last "mark all read" pointer. Frontend renders the dimmed style.
+    read: bool = False
 
 
 class NotificationsResponse(BaseModel):
     items: list[NotificationItem]
-    # "Unread" is a soft signal — we don't persist read state per user yet,
-    # so this is just "events in the last hour". The bell dot uses this to
-    # decide whether to highlight.
+    # Items that the current user has not yet marked as read. Backed by
+    # the per-user `notifications_read_until_<user_id>` runtime_setting.
     unread_count: int
+
+
+def _read_until_key(user_id: int) -> str:
+    return f"notifications_read_until_{user_id}"
+
+
+def _get_read_until(session, user_id: int) -> int:
+    """Last audit_log id the user has marked as read. 0 if never."""
+    from ..models.runtime_setting import RuntimeSetting
+    row = session.get(RuntimeSetting, _read_until_key(user_id))
+    if row is None:
+        return 0
+    try:
+        return int(row.value)
+    except (TypeError, ValueError):
+        return 0
 
 
 @router.get(
@@ -416,6 +434,10 @@ def notifications_recent(
     Filters by the keys of `_NOTIFICATION_KINDS` so peer-to-peer connect /
     disconnect / file-transfer events don't drown out the panel-side
     actions an operator actually cares about.
+
+    Per-user "read" state is tracked by storing the highest audit_log id
+    the user has marked as read (`notifications_read_until_<uid>` in
+    runtime_settings). Items with id > that pointer are unread.
     """
     audit_actions = list(_NOTIFICATION_KINDS.keys())
     rows = session.exec(
@@ -434,7 +456,7 @@ def notifications_recent(
         for u in session.exec(select(_User).where(_User.id.in_(actor_ids))).all():
             actors_by_id[u.id] = u.username
 
-    one_hour_ago = utcnow_naive() - timedelta(hours=1)
+    read_until = _get_read_until(session, admin.id)
     items: list[NotificationItem] = []
     unread = 0
     for r in rows:
@@ -455,7 +477,8 @@ def notifications_recent(
         elif r.action == AuditAction.DEVICE_FORGOTTEN and r.from_id:
             subtitle = f"RustDesk ID {r.from_id}"
 
-        if r.created_at >= one_hour_ago:
+        is_read = r.id <= read_until
+        if not is_read:
             unread += 1
 
         items.append(NotificationItem(
@@ -465,6 +488,45 @@ def notifications_recent(
             subtitle=subtitle,
             when=r.created_at,
             actor=actors_by_id.get(r.actor_user_id) if r.actor_user_id else None,
+            read=is_read,
         ))
 
     return NotificationsResponse(items=items, unread_count=unread)
+
+
+class MarkReadBody(BaseModel):
+    """Mark every notification with id <= until_id as read for the caller."""
+    until_id: int = Field(ge=0)
+
+
+@router.post(
+    "/notifications/mark-read",
+    summary="Persist 'all read up to id N' for the calling user",
+)
+def notifications_mark_read(
+    body: MarkReadBody,
+    session: SessionDep,
+    admin: AdminUser,
+) -> dict:
+    """Bumps the per-user read pointer; idempotent (lower until_id is a no-op)."""
+    from ..models.runtime_setting import RuntimeSetting
+
+    key = _read_until_key(admin.id)
+    current = _get_read_until(session, admin.id)
+    new_until = max(current, body.until_id)
+    if new_until == current:
+        return {"read_until": current, "changed": False}
+
+    row = session.get(RuntimeSetting, key)
+    if row is None:
+        session.add(RuntimeSetting(
+            key=key, value=str(new_until), updated_by_user_id=admin.id,
+            updated_at=utcnow_naive(),
+        ))
+    else:
+        row.value = str(new_until)
+        row.updated_at = utcnow_naive()
+        row.updated_by_user_id = admin.id
+        session.add(row)
+    session.commit()
+    return {"read_until": new_until, "changed": True}

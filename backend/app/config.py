@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     # ─── RustDesk server (shown to clients on the /join page) ───
     server_host: str = Field(default="", description="Hostname of the RustDesk hbbs/hbbr server")
     panel_url: str = Field(default="", description="Public URL of this panel")
+    panel_name: str = Field(default="", description="Operator-facing label for this relay; shown in the topbar and notification subjects")
     hbbs_public_key: str = Field(default="", description="Contents of id_ed25519.pub")
 
     # ─── Security ───

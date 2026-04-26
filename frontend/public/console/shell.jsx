@@ -8,22 +8,25 @@
 const { useState: _useS, useEffect: _useE, useMemo: _useM, useCallback: _useC, useRef: _useR } = React;
 
 // ─── Nav definition ─────────────────────────────────────
-// Top-level nav: lo operacional. Users/Tokens/Logs admin viven dentro de Ajustes.
+// Top-level nav. Badges are populated in <Sidebar/> from real backend
+// counts — keeping the static catalogue badge-free avoids a stale "248"
+// ghost lingering when the panel is loading or hits an auth error.
 const NAV = [
   {
     group: "Operación",
     items: [
-      { id: "dashboard",   label: "Panel",         icon: "dashboard", path: "/dashboard" },
-      { id: "devices",     label: "Dispositivos",  icon: "devices",   path: "/devices",     badge: "248" },
+      { id: "dashboard",   label: "Panel",         icon: "dashboard",   path: "/dashboard" },
+      { id: "devices",     label: "Dispositivos",  icon: "devices",     path: "/devices" },
+      { id: "users",       label: "Usuarios",      icon: "users",       path: "/users" },
       { id: "addressbook", label: "Agenda",        icon: "addressbook", path: "/addressbook" },
-      { id: "tokens",      label: "Invitaciones",  icon: "tokens",    path: "/tokens" },
-      { id: "logs",        label: "Auditoría",     icon: "logs",      path: "/logs" },
+      { id: "tokens",      label: "Invitaciones",  icon: "tokens",      path: "/tokens" },
+      { id: "logs",        label: "Auditoría",     icon: "logs",        path: "/logs" },
     ],
   },
   {
     group: "Sistema",
     items: [
-      { id: "settings",    label: "Ajustes",       icon: "settings",  path: "/settings/general" },
+      { id: "settings",    label: "Ajustes",       icon: "settings",    path: "/settings/general" },
     ],
   },
 ];
@@ -40,8 +43,8 @@ function findActive(route) {
 function makeCrumbs(route) {
   const segs = route.replace(/^\//, "").split("/").filter(Boolean);
   const titles = {
-    dashboard: "Panel", devices: "Dispositivos", addressbook: "Agenda",
-    tokens: "Invitaciones", logs: "Auditoría",
+    dashboard: "Panel", devices: "Dispositivos", users: "Usuarios",
+    addressbook: "Agenda", tokens: "Invitaciones", logs: "Auditoría",
     settings: "Ajustes",
     general: "General", servidor: "Servidor", seguridad: "Seguridad",
     usuarios: "Usuarios", updates: "Actualizaciones", login: "Iniciar sesión",
@@ -81,6 +84,29 @@ function useThemeState(defaults) {
 
 // ─── Sidebar ────────────────────────────────────────────
 function Sidebar({ active, collapsed, onToggle, onNav }) {
+  // Real device count next to the "Dispositivos" label, polled every
+  // 60 s. Falls back to no badge on auth/network errors so a stale "248"
+  // ghost can't survive — better empty than wrong.
+  const [badges, setBadges] = _useS({});
+  _useE(() => {
+    const token = readAuthToken();
+    if (!token) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fetch("/admin/api/devices", {
+          headers: { Authorization: "Bearer " + token },
+        });
+        if (!r.ok || cancelled) return;
+        const list = await r.json();
+        if (!cancelled) setBadges((b) => ({ ...b, devices: String(list.length) }));
+      } catch {}
+    };
+    load();
+    const t = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
   return (
     <aside className="cm-side" aria-label="Navegación principal">
       <div className="cm-side__brand">
@@ -91,7 +117,9 @@ function Sidebar({ active, collapsed, onToggle, onNav }) {
         {NAV.map((group) => (
           <React.Fragment key={group.group}>
             <div className="cm-side__group">{group.group}</div>
-            {group.items.map((it) => (
+            {group.items.map((it) => {
+              const badge = badges[it.id] ?? it.badge;
+              return (
               <a
                 key={it.id}
                 href={"#" + it.path}
@@ -105,9 +133,10 @@ function Sidebar({ active, collapsed, onToggle, onNav }) {
               >
                 <span className="cm-side__icon"><Icon name={it.icon} /></span>
                 <span className="cm-side__label">{it.label}</span>
-                {it.badge && !collapsed && <span className="cm-side__badge">{it.badge}</span>}
+                {badge && !collapsed && <span className="cm-side__badge">{badge}</span>}
               </a>
-            ))}
+              );
+            })}
           </React.Fragment>
         ))}
       </nav>
@@ -179,19 +208,15 @@ function _formatNotiWhen(iso) {
   return then.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
 }
 
-function NotificationsPopover({ open, anchorRect, onClose, onNav, items, unreadCount }) {
+function NotificationsPopover({ open, anchorRect, onClose, onNav, items, unreadCount, onMarkAllRead }) {
   const [tab, setTab] = _useS("all");
-  // Client-side "read" tracker — without a backend slot we can only
-  // dim items in the current session. Persisting per-user "read until"
-  // is a follow-up.
-  const [readIds, setReadIds] = _useS(new Set());
-  const visible = tab === "unread"
-    ? items.filter((n) => !readIds.has(n.id))
-    : items;
-  const stillUnread = items.filter((n) => !readIds.has(n.id)).length;
-  const markAll = () => setReadIds(new Set(items.map((n) => n.id)));
+  // Read state is server-side: each item has an `n.read` flag computed
+  // from the user's notifications_read_until_<uid> pointer.
+  const visible = tab === "unread" ? items.filter((n) => !n.read) : items;
   const open_ = (n) => {
-    setReadIds((s) => { const next = new Set(s); next.add(n.id); return next; });
+    // Single-item open just navigates. The full-feed mark-read happens
+    // via the "Marcar todas leídas" button which bumps the pointer to
+    // the highest visible id in one POST.
     const link = _NOTI_PRESENTATION[n.kind]?.link || "/logs";
     onNav(link);
     onClose();
@@ -202,14 +227,14 @@ function NotificationsPopover({ open, anchorRect, onClose, onNav, items, unreadC
     <Popover open={open} onClose={onClose} anchorRect={anchorRect} width={400}>
       <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}>
         <h3 style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 600, margin: 0, flex: 1 }}>Notificaciones</h3>
-        {stillUnread > 0 && (
-          <button onClick={markAll} style={{ fontSize: 12, color: "var(--primary)", background: "transparent", border: "none", cursor: "pointer" }}>
+        {unreadCount > 0 && (
+          <button onClick={onMarkAllRead} style={{ fontSize: 12, color: "var(--primary)", background: "transparent", border: "none", cursor: "pointer" }}>
             Marcar todas leídas
           </button>
         )}
       </div>
       <div style={{ display: "flex", gap: 4, padding: "8px 12px 0", borderBottom: "1px solid var(--border)" }}>
-        {[{ id: "all", label: `Todas (${items.length})` }, { id: "unread", label: `No leídas (${stillUnread})` }].map((t) => (
+        {[{ id: "all", label: `Todas (${items.length})` }, { id: "unread", label: `No leídas (${unreadCount})` }].map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -230,7 +255,7 @@ function NotificationsPopover({ open, anchorRect, onClose, onNav, items, unreadC
         )}
         {visible.map((n) => {
           const presentation = _NOTI_PRESENTATION[n.kind] || { icon: "alert", level: "info" };
-          const read = readIds.has(n.id);
+          const read = !!n.read;
           return (
             <button
               key={n.id}
@@ -430,6 +455,26 @@ function Topbar({ crumbs, theme, setTheme, onOpenPalette, onMobileMenu, onNav })
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
+  // POST the highest visible id to the backend; on success we optimistically
+  // flip every fetched item to read=true so the dot disappears immediately
+  // (next poll will re-confirm from server).
+  const markAllRead = async () => {
+    const token = readAuthToken();
+    if (!token || notiData.items.length === 0) return;
+    const untilId = Math.max(...notiData.items.map((n) => n.id));
+    try {
+      await fetch("/api/v1/notifications/mark-read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ until_id: untilId }),
+      });
+      setNotiData((d) => ({
+        items: d.items.map((n) => ({ ...n, read: true })),
+        unread_count: 0,
+      }));
+    } catch {}
+  };
+
   const openNoti = () => { setNotiRect(notiRef.current?.getBoundingClientRect()); setNotiOpen(true); setUserOpen(false); };
   const openUser = () => { setUserRect(userRef.current?.getBoundingClientRect()); setUserOpen(true); setNotiOpen(false); };
 
@@ -487,6 +532,7 @@ function Topbar({ crumbs, theme, setTheme, onOpenPalette, onMobileMenu, onNav })
         onNav={onNav}
         items={notiData.items}
         unreadCount={notiData.unread_count}
+        onMarkAllRead={markAllRead}
       />
       <UserMenuPopover open={userOpen} anchorRect={userRect} onClose={() => setUserOpen(false)} onNav={onNav} theme={theme} setTheme={setTheme} me={me} />
     </header>

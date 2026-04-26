@@ -11,7 +11,11 @@ dependencies = [
     "sqlmodel>=0.0.22",
     "pydantic[email]>=2.8.0",
     "pydantic-settings>=2.5.0",
-    "python-jose[cryptography]>=3.3.0",
+    # PyJWT replaces python-jose: the latter pulls `ecdsa` transitively
+    # (open HIGH advisory: Minerva timing attack on P-256, no upstream
+    # patch). We only sign JWTs with HS256 (HMAC) so ECDSA support was
+    # dead weight anyway. PyJWT covers the same surface without that dep.
+    "pyjwt>=2.8.0",
     "argon2-cffi>=23.1.0",
     "python-multipart>=0.0.12",
     # Cross-platform host metrics for /api/v1/system/metrics — CPU pct,

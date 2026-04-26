@@ -23,6 +23,7 @@ from ..models.runtime_setting import RuntimeSetting
 EDITABLE_KEYS: tuple[str, ...] = (
     "server_host",
     "panel_url",
+    "panel_name",
     "hbbs_public_key",
 )
 
@@ -30,6 +31,7 @@ EDITABLE_KEYS: tuple[str, ...] = (
 class ServerInfo(TypedDict):
     server_host: str
     panel_url: str
+    panel_name: str
     hbbs_public_key: str
 
 
@@ -39,6 +41,7 @@ def get_server_info(session: Session) -> ServerInfo:
     defaults: ServerInfo = {
         "server_host": s.server_host,
         "panel_url": s.panel_url,
+        "panel_name": s.panel_name,
         "hbbs_public_key": s.hbbs_public_key,
     }
     rows = session.exec(

@@ -11,7 +11,13 @@ from typing import Any
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
-from jose import JWTError, jwt
+# PyJWT instead of python-jose: the latter pulls `ecdsa` transitively
+# (required for ES256 etc.), which carries an open HIGH advisory
+# (Minerva timing attack, no upstream patch). We only ever sign with
+# HS256 (HMAC) so ECDSA is dead weight — switching to PyJWT removes
+# `ecdsa` from the dep tree entirely.
+import jwt
+from jwt.exceptions import PyJWTError as JWTError
 
 from .config import get_settings
 

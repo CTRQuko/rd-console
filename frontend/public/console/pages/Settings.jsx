@@ -91,10 +91,8 @@ function SettingsNav({ active, onNav }) {
 
 // ─── General ─────────────────────────────────────────
 function GeneralPanel({ theme, setTheme }) {
-  // panel_url comes from /admin/api/settings/server-info (operator-editable
-  // runtime override). "Nombre del relay" has no backend slot yet — kept as
-  // local state so the input behaves naturally; a later commit can wire it
-  // to a new RD_PANEL_NAME setting alongside the other three.
+  // panel_url + panel_name come from /admin/api/settings/server-info
+  // (operator-editable runtime overrides, both stored in runtime_settings).
   const [name, setName] = _stS("");
   const [url, setUrl] = _stS("");
   const [saving, setSaving] = _stS(false);
@@ -108,6 +106,7 @@ function GeneralPanel({ theme, setTheme }) {
         const info = await _stApi("/admin/api/settings/server-info");
         if (cancelled) return;
         setUrl(info?.panel_url || "");
+        setName(info?.panel_name || "");
         setDirty(false);
       } catch {
         // Silent — keeps the inputs empty; user can still type and save.
@@ -122,7 +121,10 @@ function GeneralPanel({ theme, setTheme }) {
     try {
       await _stApi("/admin/api/settings/server-info", {
         method: "PATCH",
-        body: JSON.stringify({ panel_url: url || null }),
+        body: JSON.stringify({
+          panel_url: url || null,
+          panel_name: name || null,
+        }),
       });
       setDirty(false);
       toast("Cambios guardados", { tone: "success" });
@@ -148,7 +150,7 @@ function GeneralPanel({ theme, setTheme }) {
         <div className="cm-form-row">
           <div className="cm-form-row__label">
             <h3>Nombre del relay</h3>
-            <p>Aparece en el topbar y en notificaciones. (Solo local por ahora.)</p>
+            <p>Aparece en el topbar y en notificaciones.</p>
           </div>
           <div className="cm-form-row__control">
             <input className="cm-input" value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} placeholder="rd-console" />
