@@ -32,7 +32,10 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
+    # The Claude Design login form labels this field "Email", but admins can
+    # still type a plain username. We accept either: if the value contains
+    # "@" we treat it as an email lookup, otherwise as a username lookup.
+    username: str = Field(min_length=1, max_length=128)
     password: str = Field(min_length=1, max_length=256)
 
 
@@ -68,7 +71,11 @@ def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
     `Authorization: Bearer …` header on every subsequent call to
     `/admin/api/**`.
     """
-    user = session.exec(select(User).where(User.username == body.username)).first()
+    # Dual lookup: email if the field contains "@", username otherwise.
+    if "@" in body.username:
+        user = session.exec(select(User).where(User.email == body.username)).first()
+    else:
+        user = session.exec(select(User).where(User.username == body.username)).first()
     # Constant-ish branch: always hit verify_password when user exists to reduce
     # user-enumeration timing skew.
     password_ok = bool(user) and verify_password(body.password, user.password_hash)  # type: ignore[union-attr]
