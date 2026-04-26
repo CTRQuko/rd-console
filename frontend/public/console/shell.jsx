@@ -239,8 +239,23 @@ function NotificationsPopover({ open, anchorRect, onClose, onNav }) {
   );
 }
 
+// ─── Identity helpers ─────────────────────────────────
+// Map the backend's 2-value role enum onto the human label the topbar +
+// user menu show. Backend returns "admin" | "user".
+const ROLE_LABEL_ES = { admin: "Administrador", user: "Usuario" };
+
+// First letters of the displayable name (or email local part) — "Alex
+// Méndez" → "AM", "admin" → "AD". Always uppercase, max 2 chars.
+function meInitials(me) {
+  const src = me?.email?.split("@")[0] || me?.username || "";
+  const parts = String(src).replace(/[^A-Za-zÀ-ÿ0-9]+/g, " ").trim().split(/\s+/);
+  const a = parts[0]?.[0] || "?";
+  const b = parts[1]?.[0] || parts[0]?.[1] || "";
+  return (a + b).toUpperCase().slice(0, 2) || "?";
+}
+
 // ─── User menu ───────────────────────────────────────
-function UserMenuPopover({ open, anchorRect, onClose, onNav, theme, setTheme }) {
+function UserMenuPopover({ open, anchorRect, onClose, onNav, theme, setTheme, me }) {
   const item = (icon, label, onClick, danger) => (
     <button
       onClick={() => { onClick?.(); onClose(); }}
@@ -264,11 +279,11 @@ function UserMenuPopover({ open, anchorRect, onClose, onNav, theme, setTheme }) 
           background: "linear-gradient(135deg, var(--violet-500, #7c3aed), var(--blue-600, #2563eb))",
           display: "grid", placeItems: "center", color: "#fff", fontWeight: 600, fontSize: 14,
           fontFamily: "var(--font-display)",
-        }}>AM</div>
+        }}>{meInitials(me)}</div>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>admin</div>
-          <div style={{ fontSize: 12, color: "var(--fg-muted)", overflow: "hidden", textOverflow: "ellipsis" }}>admin@casaredes.cc</div>
-          <div style={{ fontSize: 11, color: "var(--primary)", fontWeight: 500, marginTop: 2 }}>Administrador</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{me?.username || "—"}</div>
+          <div style={{ fontSize: 12, color: "var(--fg-muted)", overflow: "hidden", textOverflow: "ellipsis" }}>{me?.email || ""}</div>
+          <div style={{ fontSize: 11, color: "var(--primary)", fontWeight: 500, marginTop: 2 }}>{ROLE_LABEL_ES[me?.role] || me?.role || ""}</div>
         </div>
       </div>
       <div style={{ padding: 4 }}>
@@ -330,6 +345,31 @@ function Topbar({ crumbs, theme, setTheme, onOpenPalette, onMobileMenu, onNav })
   const userRef = _useR(null);
   const [notiRect, setNotiRect] = _useS(null);
   const [userRect, setUserRect] = _useS(null);
+  const [me, setMe] = _useS(null);
+
+  // Hydrate the current user from the backend on mount. The Login.jsx
+  // wired in Etapa 3 paso 1 stores the JWT under localStorage("cm-auth");
+  // we read it here to fill the topbar identity slot. A 401 implies the
+  // token expired or was revoked — wipe it and bounce the user to /login.
+  _useE(() => {
+    const token = readAuthToken();
+    if (!token) return;
+    let cancelled = false;
+    fetch("/api/auth/me", { headers: { Authorization: "Bearer " + token } })
+      .then(async (r) => {
+        if (cancelled) return;
+        if (r.status === 401) {
+          try { localStorage.removeItem("cm-auth"); } catch {}
+          onNav("/login");
+          return;
+        }
+        if (!r.ok) return;
+        const data = await r.json();
+        if (!cancelled) setMe(data);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [onNav]);
 
   const openNoti = () => { setNotiRect(notiRef.current?.getBoundingClientRect()); setNotiOpen(true); setUserOpen(false); };
   const openUser = () => { setUserRect(userRef.current?.getBoundingClientRect()); setUserOpen(true); setNotiOpen(false); };
@@ -375,14 +415,14 @@ function Topbar({ crumbs, theme, setTheme, onOpenPalette, onMobileMenu, onNav })
         onClick={openUser}
         style={{ background: "transparent", border: "none", cursor: "pointer" }}
       >
-        <div className="cm-top__avatar">AM</div>
+        <div className="cm-top__avatar">{meInitials(me)}</div>
         <div className="cm-top__user-info">
-          <span className="cm-top__user-name">admin</span>
-          <span className="cm-top__user-role">Administrador</span>
+          <span className="cm-top__user-name">{me?.username || "—"}</span>
+          <span className="cm-top__user-role">{ROLE_LABEL_ES[me?.role] || me?.role || ""}</span>
         </div>
       </button>
       <NotificationsPopover open={notiOpen} anchorRect={notiRect} onClose={() => setNotiOpen(false)} onNav={onNav} />
-      <UserMenuPopover open={userOpen} anchorRect={userRect} onClose={() => setUserOpen(false)} onNav={onNav} theme={theme} setTheme={setTheme} />
+      <UserMenuPopover open={userOpen} anchorRect={userRect} onClose={() => setUserOpen(false)} onNav={onNav} theme={theme} setTheme={setTheme} me={me} />
     </header>
   );
 }
