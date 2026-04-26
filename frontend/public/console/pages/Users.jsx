@@ -186,9 +186,9 @@ function Field({ label, hint, error, children }) {
 }
 
 // ─── Modal crear / editar ──────────────────────────────────
-function UserFormModal({ open, mode, user, onClose, onSubmit }) {
+function UserFormModal({ open, mode, user, onClose, onSubmit, currentUserId }) {
   const isEdit = mode === "edit";
-  const isSelf = user?.id === CURRENT_USER_ID;
+  const isSelf = user?.id === currentUserId;
   const [form, setForm] = _usS({ username: "", email: "", role: "user", password: "", confirm: "" });
   const [errors, setErrors] = _usS({});
   const [showPass, setShowPass] = _usS(false);
@@ -362,7 +362,7 @@ function DeleteUserModal({ open, user, onClose, onConfirm }) {
 }
 
 // ─── Assign role ────────────────────────────────────────────
-function RoleAssignModal({ open, user, onClose, onConfirm }) {
+function RoleAssignModal({ open, user, onClose, onConfirm, currentUserId }) {
   const availableRoles = (typeof window !== "undefined" && window.RD_AVAILABLE_ROLES) || [
     { id: "admin", name: "admin", description: "Acceso total." },
     { id: "user", name: "user", description: "Acceso de solo lectura." },
@@ -370,7 +370,7 @@ function RoleAssignModal({ open, user, onClose, onConfirm }) {
   const [pick, setPick] = _usS(user?.role || availableRoles[0]?.id);
   _usE(() => { if (open) setPick(user?.role || availableRoles[0]?.id); }, [open, user?.id]);
   if (!user) return null;
-  const isSelf = user.id === CURRENT_USER_ID;
+  const isSelf = user.id === currentUserId;
   const changed = pick !== user.role;
   return (
     <Modal
@@ -797,6 +797,7 @@ function UsersPage({ embedded = false } = {}) {
         mode="create"
         onClose={() => setCreateOpen(false)}
         onSubmit={handleCreate}
+        currentUserId={CURRENT_USER_ID}
       />
       <UserFormModal
         open={!!editUser}
@@ -804,6 +805,7 @@ function UsersPage({ embedded = false } = {}) {
         user={editUser}
         onClose={() => setEditUser(null)}
         onSubmit={handleEdit}
+        currentUserId={CURRENT_USER_ID}
       />
       <DeleteUserModal
         open={!!deleteUser}
@@ -822,6 +824,7 @@ function UsersPage({ embedded = false } = {}) {
         user={roleUser}
         onClose={() => setRoleUser(null)}
         onConfirm={confirmRole}
+        currentUserId={CURRENT_USER_ID}
       />
     </>
   );
