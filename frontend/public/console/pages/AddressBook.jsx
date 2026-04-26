@@ -5,6 +5,117 @@
 
 const { useState: _abS, useEffect: _abE, useRef: _abR, useMemo: _abM } = React;
 
+// ─── Auth-aware fetch (Etapa 3.9) ────────────────────────
+function _abAuthToken() {
+  try {
+    const raw = localStorage.getItem("cm-auth");
+    return raw ? (JSON.parse(raw)?.token || null) : null;
+  } catch { return null; }
+}
+async function _abApi(path, init = {}) {
+  const token = _abAuthToken();
+  const headers = {
+    ...(init.headers || {}),
+    ...(token ? { Authorization: "Bearer " + token } : {}),
+  };
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { ...init, headers });
+  if (res.status === 401) {
+    try { localStorage.removeItem("cm-auth"); } catch {}
+    window.location.hash = "/login";
+    throw new Error("unauthenticated");
+  }
+  if (res.status === 204) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${init.method || "GET"} ${path} -> ${res.status} ${body.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+// ─── Blob ↔ {groups: [{name, color, members[]}]} adapter ────────────────
+//
+// The backend stores the address book as a stringified JSON blob in the
+// kingmo888-compat shape RustDesk's Flutter client uses:
+//
+//   { tags: [...], peers: [{id, alias, username, hostname, tags:[...]}],
+//     tag_colors: {tag: "#HEX"} }
+//
+// The Claude Design page expects {groups: [{id, name, color, members[]}]}
+// with manual permissions per member. The mapping derives one group
+// per tag; peers without tags become a "Sin etiqueta" group. There's
+// no source-of-truth for "permission" in the blob → all members
+// default to "view-control" until a backend Group/Contact model exists.
+//
+// Edits done in this page (create group, add contact, change perm,
+// delete) currently DO NOT round-trip — see the TODO comments on
+// each handler.
+const _AB_DEFAULT_PERM = "view-control";
+const _AB_TAG_TO_COLOR = {
+  personal: "violet",
+  design: "amber",
+  servers: "blue",
+  ci: "blue",
+  lab: "green",
+  kiosk: "rose",
+  remote: "violet",
+  legacy: "default",
+};
+
+function _abPickColor(name, tagColors) {
+  if (tagColors && tagColors[name]) {
+    // Map RustDesk hex/legacy colour codes to the design's palette
+    // by hue (cheap heuristic — not exact but close enough).
+    const v = String(tagColors[name]).toLowerCase();
+    if (v.includes("8b5cf6") || v.includes("violet")) return "violet";
+    if (v.includes("3b82f6") || v.includes("blue"))   return "blue";
+    if (v.includes("22c55e") || v.includes("green"))  return "green";
+    if (v.includes("f59e0b") || v.includes("amber"))  return "amber";
+    if (v.includes("e11d48") || v.includes("rose"))   return "rose";
+  }
+  return _AB_TAG_TO_COLOR[name] || "default";
+}
+
+function _abAdaptBlob(raw) {
+  if (!raw || typeof raw !== "string") return [];
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { return []; }
+  const peers = Array.isArray(parsed?.peers) ? parsed.peers : [];
+  const declaredTags = Array.isArray(parsed?.tags) ? parsed.tags : [];
+  const tagColors = parsed?.tag_colors || {};
+
+  // Bucket peers by tag. A peer with multiple tags lands in each bucket.
+  const buckets = new Map();
+  for (const tag of declaredTags) {
+    buckets.set(tag, []);
+  }
+  for (const p of peers) {
+    const tags = Array.isArray(p.tags) && p.tags.length > 0 ? p.tags : ["__untagged"];
+    for (const tag of tags) {
+      if (!buckets.has(tag)) buckets.set(tag, []);
+      buckets.get(tag).push(p);
+    }
+  }
+
+  const groups = [];
+  for (const [tag, members] of buckets.entries()) {
+    if (tag === "__untagged" && members.length === 0) continue;
+    groups.push({
+      id: tag,
+      name: tag === "__untagged" ? "Sin etiqueta" : tag,
+      color: tag === "__untagged" ? "default" : _abPickColor(tag, tagColors),
+      members: members.map((p, idx) => ({
+        id: `${tag}_${idx}_${p.id}`,
+        name: p.alias || p.hostname || p.id,
+        email: p.username || p.id,
+        devices: 1,
+        perm: _AB_DEFAULT_PERM,
+      })),
+    });
+  }
+  return groups;
+}
+
 const _GROUP_COLORS = [
   { id: "violet", label: "Violeta", css: "var(--violet-500)" },
   { id: "blue",   label: "Azul",    css: "var(--blue-500)"   },
@@ -272,8 +383,8 @@ function ContactModal({ open, contact, groupName, onClose, onSave }) {
 
 // ─── Página ───────────────────────────────────────────
 function AddressBookPage() {
-  const [groups, setGroups] = _abS(MOCK_GROUPS_INIT);
-  const [activeGroupId, setActiveGroupId] = _abS(MOCK_GROUPS_INIT[0].id);
+  const [groups, setGroups] = _abS([]);
+  const [activeGroupId, setActiveGroupId] = _abS(null);
   const [q, setQ] = _abS("");
 
   const [groupModal, setGroupModal] = _abS({ open: false, group: null });
@@ -282,6 +393,31 @@ function AddressBookPage() {
   const [deleteGroup, setDeleteGroup] = _abS(null);
   const [importOpen, setImportOpen] = _abS(false);
   const toast = useToast();
+
+  // Initial load: pull the kingmo888-compat blob and derive groups
+  // from its `tags` + `peers`. Refresh every 30 s so a peer that the
+  // RustDesk client adds locally surfaces in the panel.
+  _abE(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await _abApi("/api/ab/get", {
+          method: "POST",
+          body: JSON.stringify({ id: "panel" }),
+        });
+        if (cancelled) return;
+        const next = _abAdaptBlob(res?.data);
+        setGroups(next);
+        if (next.length && !next.some((g) => g.id === activeGroupId)) {
+          setActiveGroupId(next[0].id);
+        }
+      } catch {}
+    };
+    load();
+    const id = setInterval(load, 30000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const group = _abM(() => groups.find((g) => g.id === activeGroupId) || groups[0], [groups, activeGroupId]);
   const filtered = _abM(() => {
@@ -293,41 +429,40 @@ function AddressBookPage() {
     );
   }, [group, q]);
 
-  const upsertGroup = (g) => {
-    setGroups((gs) => {
-      const exists = gs.some((x) => x.id === g.id);
-      return exists ? gs.map((x) => x.id === g.id ? g : x) : [...gs, g];
-    });
-    setActiveGroupId(g.id);
-    toast(groupModal.group ? "Grupo actualizado" : "Grupo creado", { tone: "success" });
+  // The address book is stored as a kingmo888 blob (see
+  // backend/app/routers/address_book.py). Round-tripping a Group /
+  // Contact / permission edit cleanly into that blob is non-trivial:
+  //   - The blob has `peers[]` keyed by RustDesk id, not by group.
+  //   - There's no "permission" field in the blob shape.
+  // So for now the page is read-only against the live blob; create /
+  // edit / delete actions stay client-side and show a toast that
+  // tells the user the action didn't reach the backend. Wiring up a
+  // real upsert needs either:
+  //   (a) a Group/Contact-model migration on the backend (BACKEND.md
+  //       §6 — bigger lift), or
+  //   (b) a careful blob editor that preserves forward-compat fields.
+  // Both belong to a follow-up commit.
+  const _abReadOnlyToast = () =>
+    toast(
+      "La agenda es solo lectura — la sincroniza el cliente RustDesk. " +
+      "Próximamente: edición desde el panel.",
+      { tone: "info" }
+    );
+
+  const upsertGroup = (_g) => {
+    _abReadOnlyToast();
     setGroupModal({ open: false, group: null });
   };
-
-  const upsertContact = (c) => {
-    setGroups((gs) => gs.map((g) => {
-      if (g.id !== activeGroupId) return g;
-      const exists = g.members.some((m) => m.id === c.id);
-      return {
-        ...g,
-        members: exists ? g.members.map((m) => m.id === c.id ? c : m) : [...g.members, c],
-      };
-    }));
-    toast(contactModal.contact ? "Contacto actualizado" : "Contacto añadido", { tone: "success" });
+  const upsertContact = (_c) => {
+    _abReadOnlyToast();
     setContactModal({ open: false, contact: null });
   };
-
   const removeContact = () => {
-    if (!deleteContact) return;
-    setGroups((gs) => gs.map((g) => g.id !== activeGroupId ? g : { ...g, members: g.members.filter((m) => m.id !== deleteContact.id) }));
-    toast(`Contacto «${deleteContact.name}» eliminado`, { tone: "success" });
+    _abReadOnlyToast();
     setDeleteContact(null);
   };
-
   const removeGroup = () => {
-    if (!deleteGroup) return;
-    setGroups((gs) => gs.filter((g) => g.id !== deleteGroup.id));
-    if (activeGroupId === deleteGroup.id) setActiveGroupId(groups.find((g) => g.id !== deleteGroup.id)?.id);
-    toast(`Grupo «${deleteGroup.name}» eliminado`, { tone: "success" });
+    _abReadOnlyToast();
     setDeleteGroup(null);
   };
 
