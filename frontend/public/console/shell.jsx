@@ -1,0 +1,522 @@
+// ============================================================
+// Console Mockup — shell.jsx
+// Sidebar (grouped nav, collapsible) + Topbar (breadcrumbs,
+// command palette trigger, theme toggle, user menu) + Layout.
+// Theme + density + accent persist to localStorage.
+// ============================================================
+
+const { useState: _useS, useEffect: _useE, useMemo: _useM, useCallback: _useC, useRef: _useR } = React;
+
+// ─── Nav definition ─────────────────────────────────────
+// Top-level nav: lo operacional. Users/Tokens/Logs admin viven dentro de Ajustes.
+const NAV = [
+  {
+    group: "Operación",
+    items: [
+      { id: "dashboard",   label: "Panel",         icon: "dashboard", path: "/dashboard" },
+      { id: "devices",     label: "Dispositivos",  icon: "devices",   path: "/devices",     badge: "248" },
+      { id: "addressbook", label: "Agenda",        icon: "addressbook", path: "/addressbook" },
+      { id: "tokens",      label: "Invitaciones",  icon: "tokens",    path: "/tokens" },
+      { id: "logs",        label: "Auditoría",     icon: "logs",      path: "/logs" },
+    ],
+  },
+  {
+    group: "Sistema",
+    items: [
+      { id: "settings",    label: "Ajustes",       icon: "settings",  path: "/settings/general" },
+    ],
+  },
+];
+
+// Reverse lookup helpers — given a hash, find the active item + breadcrumb.
+function findActive(route) {
+  const flat = NAV.flatMap((g) => g.items.map((it) => ({ ...it, group: g.group })));
+  // Match longest prefix.
+  const sorted = [...flat].sort((a, b) => b.path.length - a.path.length);
+  return sorted.find((it) => route === it.path || route.startsWith(it.path + "/")) || flat[0];
+}
+
+// Breadcrumbs from path: split into segments, title-case, except for known IDs.
+function makeCrumbs(route) {
+  const segs = route.replace(/^\//, "").split("/").filter(Boolean);
+  const titles = {
+    dashboard: "Panel", devices: "Dispositivos", addressbook: "Agenda",
+    tokens: "Invitaciones", logs: "Auditoría",
+    settings: "Ajustes",
+    general: "General", servidor: "Servidor", seguridad: "Seguridad",
+    usuarios: "Usuarios", updates: "Actualizaciones", login: "Iniciar sesión",
+  };
+  return segs.map((s) => titles[s] || s.charAt(0).toUpperCase() + s.slice(1));
+}
+
+// ─── Theme store ───────────────────────────────────────
+const ACCENTS = {
+  blue:   { name: "Blue",   p500: "#3b82f6", p600: "#2563eb", p700: "#1d4ed8" },
+  violet: { name: "Violet", p500: "#8b5cf6", p600: "#7c3aed", p700: "#6d28d9" },
+  green:  { name: "Green",  p500: "#22c55e", p600: "#16a34a", p700: "#15803d" },
+  amber:  { name: "Amber",  p500: "#f59e0b", p600: "#d97706", p700: "#b45309" },
+  rose:   { name: "Rose",   p500: "#f43f5e", p600: "#e11d48", p700: "#be123c" },
+  slate:  { name: "Slate",  p500: "#64748b", p600: "#475569", p700: "#334155" },
+};
+
+function useThemeState(defaults) {
+  const [t, setT] = _useS(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("cm-theme") || "{}");
+      return { ...defaults, ...saved };
+    } catch { return defaults; }
+  });
+  _useE(() => {
+    localStorage.setItem("cm-theme", JSON.stringify(t));
+    const root = document.documentElement;
+    root.classList.toggle("dark", t.mode === "dark");
+    root.dataset.density = t.density;
+    const a = ACCENTS[t.accent] || ACCENTS.blue;
+    root.style.setProperty("--blue-500", a.p500);
+    root.style.setProperty("--blue-600", a.p600);
+    root.style.setProperty("--blue-700", a.p700);
+  }, [t]);
+  return [t, setT];
+}
+
+// ─── Sidebar ────────────────────────────────────────────
+function Sidebar({ active, collapsed, onToggle, onNav }) {
+  return (
+    <aside className="cm-side" aria-label="Navegación principal">
+      <div className="cm-side__brand">
+        <div className="cm-side__logo">RD</div>
+        <span className="cm-side__name">rd-console</span>
+      </div>
+      <nav className="cm-side__nav">
+        {NAV.map((group) => (
+          <React.Fragment key={group.group}>
+            <div className="cm-side__group">{group.group}</div>
+            {group.items.map((it) => (
+              <a
+                key={it.id}
+                href={"#" + it.path}
+                className="cm-side__item"
+                aria-current={active.id === it.id ? "page" : undefined}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNav(it.path);
+                }}
+                title={collapsed ? it.label : undefined}
+              >
+                <span className="cm-side__icon"><Icon name={it.icon} /></span>
+                <span className="cm-side__label">{it.label}</span>
+                {it.badge && !collapsed && <span className="cm-side__badge">{it.badge}</span>}
+              </a>
+            ))}
+          </React.Fragment>
+        ))}
+      </nav>
+      <div className="cm-side__foot">
+        <button className="cm-side__foot-btn" onClick={onToggle} aria-label="Colapsar sidebar">
+          <Icon name="panelLeft" size={16} />
+          {!collapsed && <span>Colapsar</span>}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+// ─── Popover genérico (anclado al disparador) ─────────
+function Popover({ open, onClose, anchorRect, children, width = 360, align = "right" }) {
+  _useE(() => {
+    if (!open) return;
+    const onKey = (e) => e.key === "Escape" && onClose?.();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open || !anchorRect) return null;
+  const top = anchorRect.bottom + 8;
+  const right = align === "right" ? Math.max(8, window.innerWidth - anchorRect.right) : undefined;
+  const left = align === "left" ? anchorRect.left : undefined;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 80 }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "absolute", top, right, left, width,
+          background: "var(--card)", border: "1px solid var(--border)",
+          borderRadius: 12, boxShadow: "0 16px 48px rgba(0,0,0,.22)",
+          overflow: "hidden",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── Notificaciones (mock) ────────────────────────────
+const MOCK_NOTIS = [
+  { id: "n1", read: false, level: "warn",    icon: "alert",    title: "Pico de ancho de banda", body: "Relay rebasó 800 Mb/s durante 4 min.", actor: "Sistema",         when: "hace 6 min", link: "/dashboard" },
+  { id: "n2", read: false, level: "info",    icon: "users",    title: "Nuevo operador invitado", body: "carlos@casaredes.cc fue invitado.",   actor: "admin",           when: "hace 32 min", link: "/settings/usuarios" },
+  { id: "n3", read: false, level: "success", icon: "check",    title: "Backup completado",      body: "Snapshot diario en S3 (412 MB).",      actor: "Sistema",         when: "hoy, 04:00", link: "/settings/servidor" },
+  { id: "n4", read: true,  level: "error",   icon: "x",        title: "Login fallido",          body: "5 intentos en 2 min desde 83.45.12.7", actor: "auth",            when: "ayer, 23:14", link: "/logs" },
+  { id: "n5", read: true,  level: "info",    icon: "tokens",   title: "Invitación usada",       body: "torre-recepcion se unió al relay.",    actor: "join token #4",   when: "ayer, 18:02", link: "/devices" },
+];
+
+function NotificationsPopover({ open, anchorRect, onClose, onNav }) {
+  const [tab, setTab] = _useS("all");
+  const [notis, setNotis] = _useS(MOCK_NOTIS);
+  const visible = tab === "unread" ? notis.filter((n) => !n.read) : notis;
+  const unread = notis.filter((n) => !n.read).length;
+  const markAll = () => setNotis((ns) => ns.map((n) => ({ ...n, read: true })));
+  const open_ = (n) => { setNotis((ns) => ns.map((x) => x.id === n.id ? { ...x, read: true } : x)); onNav(n.link); onClose(); };
+  const levelColor = (lv) => ({ warn: "#d97706", info: "var(--primary)", success: "#16a34a", error: "#e11d48" })[lv] || "var(--fg-muted)";
+
+  return (
+    <Popover open={open} onClose={onClose} anchorRect={anchorRect} width={400}>
+      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}>
+        <h3 style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 600, margin: 0, flex: 1 }}>Notificaciones</h3>
+        {unread > 0 && (
+          <button onClick={markAll} style={{ fontSize: 12, color: "var(--primary)", background: "transparent", border: "none", cursor: "pointer" }}>
+            Marcar todas leídas
+          </button>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 4, padding: "8px 12px 0", borderBottom: "1px solid var(--border)" }}>
+        {[{ id: "all", label: `Todas (${notis.length})` }, { id: "unread", label: `No leídas (${unread})` }].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            style={{
+              padding: "8px 12px", border: "none", background: "transparent",
+              borderBottom: tab === t.id ? "2px solid var(--primary)" : "2px solid transparent",
+              color: tab === t.id ? "var(--primary)" : "var(--fg-muted)",
+              fontSize: 12, fontWeight: tab === t.id ? 600 : 500, cursor: "pointer", marginBottom: -1,
+            }}
+          >{t.label}</button>
+        ))}
+      </div>
+      <div style={{ maxHeight: 380, overflowY: "auto" }}>
+        {visible.length === 0 && (
+          <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--fg-muted)", fontSize: 13 }}>
+            <Icon name="check" size={28} /><div style={{ marginTop: 8 }}>Estás al día.</div>
+          </div>
+        )}
+        {visible.map((n) => (
+          <button
+            key={n.id}
+            onClick={() => open_(n)}
+            style={{
+              width: "100%", display: "flex", gap: 12, padding: "12px 16px",
+              border: "none", borderBottom: "1px solid var(--border)",
+              background: n.read ? "transparent" : "color-mix(in oklab, var(--primary) 5%, transparent)",
+              textAlign: "left", cursor: "pointer", alignItems: "flex-start",
+            }}
+          >
+            <div style={{
+              width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+              display: "grid", placeItems: "center",
+              background: `color-mix(in oklab, ${levelColor(n.level)} 14%, transparent)`,
+              color: levelColor(n.level),
+            }}>
+              <Icon name={n.icon} size={16} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontWeight: n.read ? 400 : 600, fontSize: 13 }}>{n.title}</span>
+                {!n.read && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--primary)", flexShrink: 0 }} />}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 2, lineHeight: 1.4 }}>{n.body}</div>
+              <div style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 4, display: "flex", gap: 8 }}>
+                <span>{n.actor}</span><span>·</span><span>{n.when}</span>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", textAlign: "center" }}>
+        <button onClick={() => { onNav("/logs"); onClose(); }} style={{ fontSize: 12, color: "var(--fg-muted)", background: "transparent", border: "none", cursor: "pointer" }}>
+          Ver todo el historial de auditoría →
+        </button>
+      </div>
+    </Popover>
+  );
+}
+
+// ─── User menu ───────────────────────────────────────
+function UserMenuPopover({ open, anchorRect, onClose, onNav, theme, setTheme }) {
+  const item = (icon, label, onClick, danger) => (
+    <button
+      onClick={() => { onClick?.(); onClose(); }}
+      style={{
+        display: "flex", alignItems: "center", gap: 10, width: "100%",
+        padding: "8px 12px", border: "none", background: "transparent",
+        color: danger ? "#e11d48" : "var(--fg)", fontSize: 13, textAlign: "left", cursor: "pointer",
+        borderRadius: 6,
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-subtle)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      <Icon name={icon} size={14} /> {label}
+    </button>
+  );
+  return (
+    <Popover open={open} onClose={onClose} anchorRect={anchorRect} width={280}>
+      <div style={{ padding: 16, display: "flex", gap: 12, alignItems: "center", borderBottom: "1px solid var(--border)" }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: "50%",
+          background: "linear-gradient(135deg, var(--violet-500, #7c3aed), var(--blue-600, #2563eb))",
+          display: "grid", placeItems: "center", color: "#fff", fontWeight: 600, fontSize: 14,
+          fontFamily: "var(--font-display)",
+        }}>AM</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>admin</div>
+          <div style={{ fontSize: 12, color: "var(--fg-muted)", overflow: "hidden", textOverflow: "ellipsis" }}>admin@casaredes.cc</div>
+          <div style={{ fontSize: 11, color: "var(--primary)", fontWeight: 500, marginTop: 2 }}>Administrador</div>
+        </div>
+      </div>
+      <div style={{ padding: 4 }}>
+        {item("user", "Mi cuenta", () => onNav("/settings/usuarios"))}
+        {item("settings", "Ajustes", () => onNav("/settings/general"))}
+      </div>
+      <div style={{ borderTop: "1px solid var(--border)", padding: "8px 12px" }}>
+        <div style={{ fontSize: 11, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>Apariencia</div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {["light", "dark"].map((m) => (
+            <button
+              key={m}
+              onClick={() => setTheme((t) => ({ ...t, mode: m }))}
+              style={{
+                flex: 1, padding: "6px 8px", borderRadius: 6,
+                border: "1px solid var(--border)",
+                background: theme.mode === m ? "color-mix(in oklab, var(--primary) 12%, var(--card))" : "var(--card)",
+                color: theme.mode === m ? "var(--primary)" : "var(--fg)",
+                fontSize: 12, fontWeight: theme.mode === m ? 600 : 500, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}
+            >
+              <Icon name={m === "dark" ? "moon" : "sun"} size={12} /> {m === "dark" ? "Oscuro" : "Claro"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ borderTop: "1px solid var(--border)", padding: 4 }}>
+        {item("users", "Cambiar de usuario", () => onNav("/login"))}
+        {item("x", "Cerrar sesión", () => onNav("/login"), true)}
+      </div>
+    </Popover>
+  );
+}
+
+// ─── Topbar ────────────────────────────────────────────
+function Topbar({ crumbs, theme, setTheme, onOpenPalette, onMobileMenu, onNav }) {
+  const [notiOpen, setNotiOpen] = _useS(false);
+  const [userOpen, setUserOpen] = _useS(false);
+  const notiRef = _useR(null);
+  const userRef = _useR(null);
+  const [notiRect, setNotiRect] = _useS(null);
+  const [userRect, setUserRect] = _useS(null);
+
+  const openNoti = () => { setNotiRect(notiRef.current?.getBoundingClientRect()); setNotiOpen(true); setUserOpen(false); };
+  const openUser = () => { setUserRect(userRef.current?.getBoundingClientRect()); setUserOpen(true); setNotiOpen(false); };
+
+  return (
+    <header className="cm-top">
+      <button
+        className="cm-top__btn"
+        onClick={onMobileMenu}
+        aria-label="Menú"
+        style={{ display: window.innerWidth <= 900 ? "grid" : "none" }}
+      >
+        <Icon name="menu" />
+      </button>
+      <nav className="cm-top__crumbs" aria-label="Migas de pan">
+        {crumbs.map((c, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <span className="sep">/</span>}
+            {i === crumbs.length - 1 ? <strong>{c}</strong> : <span>{c}</span>}
+          </React.Fragment>
+        ))}
+      </nav>
+      <button className="cm-top__search" onClick={onOpenPalette}>
+        <Icon name="search" size={14} />
+        <span style={{ flex: 1, textAlign: "left" }}>Buscar dispositivos, usuarios, ajustes…</span>
+        <span className="cm-top__search-kbd">⌘K</span>
+      </button>
+      <div className="cm-top__actions">
+        <button
+          ref={notiRef}
+          className="cm-top__btn"
+          aria-label="Notificaciones"
+          title="Notificaciones"
+          onClick={openNoti}
+        >
+          <Icon name="bell" />
+          <span className="dot" />
+        </button>
+      </div>
+      <button
+        ref={userRef}
+        className="cm-top__user"
+        onClick={openUser}
+        style={{ background: "transparent", border: "none", cursor: "pointer" }}
+      >
+        <div className="cm-top__avatar">AM</div>
+        <div className="cm-top__user-info">
+          <span className="cm-top__user-name">admin</span>
+          <span className="cm-top__user-role">Administrador</span>
+        </div>
+      </button>
+      <NotificationsPopover open={notiOpen} anchorRect={notiRect} onClose={() => setNotiOpen(false)} onNav={onNav} />
+      <UserMenuPopover open={userOpen} anchorRect={userRect} onClose={() => setUserOpen(false)} onNav={onNav} theme={theme} setTheme={setTheme} />
+    </header>
+  );
+}
+
+// ─── Command palette ───────────────────────────────────
+function CommandPalette({ open, onClose, onNav }) {
+  const [q, setQ] = _useS("");
+  const [idx, setIdx] = _useS(0);
+  const inputRef = _useR(null);
+
+  const items = _useM(() => {
+    const flat = NAV.flatMap((g) => g.items.map((it) => ({ ...it, group: g.group })));
+    const extras = [
+      { id: "settings-servidor",  label: "Ajustes · Servidor",        icon: "network",  path: "/settings/servidor",  group: "Ajustes" },
+      { id: "settings-usuarios",  label: "Ajustes · Usuarios",        icon: "users",    path: "/settings/usuarios",  group: "Ajustes" },
+      { id: "settings-seguridad", label: "Ajustes · Seguridad",       icon: "shield",   path: "/settings/seguridad", group: "Ajustes" },
+      { id: "settings-updates",   label: "Ajustes · Actualizaciones", icon: "refresh",  path: "/settings/updates",   group: "Ajustes" },
+    ];
+    const all = [...flat, ...extras];
+    if (!q.trim()) return all;
+    const ql = q.toLowerCase();
+    return all.filter((it) => it.label.toLowerCase().includes(ql) || it.group.toLowerCase().includes(ql));
+  }, [q]);
+
+  _useE(() => {
+    if (open) {
+      setQ("");
+      setIdx(0);
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [open]);
+
+  _useE(() => {
+    if (!open) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowDown") { e.preventDefault(); setIdx((i) => Math.min(i + 1, items.length - 1)); }
+      if (e.key === "ArrowUp")   { e.preventDefault(); setIdx((i) => Math.max(i - 1, 0)); }
+      if (e.key === "Enter" && items[idx]) { onNav(items[idx].path); onClose(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, items, idx, onNav, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="cm-palette" onClick={onClose}>
+      <div className="cm-palette__panel" onClick={(e) => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          className="cm-palette__input"
+          placeholder="Saltar a una página, buscar acción…"
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setIdx(0); }}
+        />
+        <div className="cm-palette__list">
+          {items.length === 0 && <div className="cm-empty" style={{ padding: 32 }}>Sin resultados.</div>}
+          {items.map((it, i) => (
+            <div
+              key={it.id}
+              className={"cm-palette__item" + (i === idx ? " cm-palette__item--active" : "")}
+              onMouseEnter={() => setIdx(i)}
+              onClick={() => { onNav(it.path); onClose(); }}
+            >
+              <Icon name={it.icon} size={16} />
+              <span style={{ flex: 1 }}>{it.label}</span>
+              <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{it.group}</span>
+              {i === idx && <span className="cm-palette__item-kbd">⏎</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Layout (the shell host) ───────────────────────────
+function Layout({ children }) {
+  const { route, navigate } = useHashRoute();
+  const active = findActive(route);
+  const crumbs = makeCrumbs(route);
+
+  const [theme, setTheme] = useThemeState({ mode: "light", density: "default", accent: "blue" });
+  const [collapsed, setCollapsed] = _useS(() => localStorage.getItem("cm-side-collapsed") === "1");
+  const [mobileOpen, setMobileOpen] = _useS(false);
+  const [paletteOpen, setPaletteOpen] = _useS(false);
+
+  _useE(() => {
+    localStorage.setItem("cm-side-collapsed", collapsed ? "1" : "0");
+  }, [collapsed]);
+
+  // Cmd+K / Ctrl+K
+  _useE(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const sideMode = mobileOpen ? "open" : (collapsed ? "collapsed" : "default");
+
+  return (
+    <div className="cm-app" data-side={sideMode}>
+      <Sidebar
+        active={active}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((c) => !c)}
+        onNav={(p) => { navigate(p); setMobileOpen(false); }}
+      />
+      <Topbar
+        crumbs={crumbs}
+        theme={theme}
+        setTheme={setTheme}
+        onOpenPalette={() => setPaletteOpen(true)}
+        onMobileMenu={() => setMobileOpen((o) => !o)}
+        onNav={navigate}
+      />
+      <main className="cm-main">
+        {React.cloneElement(children, { route, navigate, theme, setTheme })}
+      </main>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNav={navigate}
+      />
+    </div>
+  );
+}
+
+// ─── Router (route → page) ──────────────────────────
+function Router({ route, navigate, theme, setTheme }) {
+  if (route === "/" || route === "/dashboard") return <DashboardPage navigate={navigate} />;
+  if (route.startsWith("/devices"))      return <DevicesPage route={route} navigate={navigate} />;
+  if (route.startsWith("/addressbook"))  return <AddressBookPage route={route} navigate={navigate} />;
+  if (route.startsWith("/tokens"))       return <JoinTokensPage route={route} navigate={navigate} />;
+  if (route.startsWith("/logs"))         return <LogsPage route={route} navigate={navigate} />;
+  if (route.startsWith("/users"))        return <UsersPage route={route} navigate={navigate} />;
+  if (route.startsWith("/settings"))     return <SettingsPage route={route} navigate={navigate} theme={theme} setTheme={setTheme} />;
+  if (route.startsWith("/login"))        return <LoginPage navigate={navigate} />;
+  return (
+    <div className="cm-page">
+      <PageHeader title="Página no encontrada" subtitle={`Ruta: ${route}`} />
+      <button className="cm-btn cm-btn--primary" onClick={() => navigate("/dashboard")}>
+        Volver al dashboard
+      </button>
+    </div>
+  );
+}
+
+window.Layout = Layout;
+window.Router = Router;

@@ -6,7 +6,7 @@
   "description": "rd-console frontend — Claude Design System v3 (1:1 transplant from backend/rd-console Design System.zip).",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint ."
   },

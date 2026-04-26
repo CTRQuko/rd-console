@@ -1,0 +1,506 @@
+/* ============================================================
+   Console Mockup — pages.css
+   Page-specific styles. Most styles come from design/components.css;
+   this file holds shared page patterns (toolbar, empty state, etc.)
+   ============================================================ */
+
+/* ─── Page toolbar (filters + actions row above table/list) ─── */
+.cm-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 0;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.cm-toolbar__search {
+  flex: 1;
+  min-width: 240px;
+  max-width: 360px;
+  position: relative;
+}
+.cm-toolbar__search input {
+  width: 100%;
+  padding: 8px 12px 8px 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.cm-toolbar__search input:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 25%, transparent);
+}
+.cm-toolbar__search svg {
+  position: absolute; left: 10px; top: 50%;
+  transform: translateY(-50%);
+  width: 16px; height: 16px;
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+.cm-toolbar__divider {
+  width: 1px; height: 24px;
+  background: var(--border);
+}
+
+/* ─── Generic empty state ────────────────────────────── */
+.cm-empty {
+  text-align: center;
+  padding: 64px 24px;
+  color: var(--fg-muted);
+}
+.cm-empty__icon {
+  width: 56px; height: 56px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  background: var(--bg-subtle);
+  display: grid; place-items: center;
+  color: var(--fg-subtle);
+}
+.cm-empty__title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0 0 4px;
+}
+.cm-empty__desc { margin: 0 0 16px; font-size: 14px; }
+
+/* ─── Loading skeleton ───────────────────────────────── */
+.cm-skel {
+  background: linear-gradient(90deg, var(--bg-subtle) 0%, var(--zinc-200) 50%, var(--bg-subtle) 100%);
+  background-size: 200% 100%;
+  animation: cm-skel 1.2s ease-in-out infinite;
+  border-radius: 6px;
+}
+.dark .cm-skel {
+  background: linear-gradient(90deg, var(--zinc-800) 0%, var(--zinc-700) 50%, var(--zinc-800) 100%);
+  background-size: 200% 100%;
+}
+@keyframes cm-skel {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─── Error banner ───────────────────────────────────── */
+.cm-error {
+  display: flex; gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in oklab, var(--red-500) 40%, transparent);
+  background: color-mix(in oklab, var(--red-500) 8%, var(--card));
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+.cm-error__icon { color: var(--red-500); flex-shrink: 0; }
+.cm-error__title { font-weight: 600; margin: 0 0 2px; }
+.cm-error__desc { margin: 0; font-size: 13px; color: var(--fg-muted); }
+
+/* ─── Buttons (mockup-local — supplements components.css) ─── */
+.cm-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: var(--card);
+  color: var(--fg);
+  border-color: var(--border);
+  transition: background 120ms ease, border-color 120ms ease;
+  white-space: nowrap;
+}
+.cm-btn:hover { background: var(--bg-subtle); }
+.cm-btn--primary {
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-color: var(--primary);
+}
+.cm-btn--primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.cm-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-muted);
+}
+.cm-btn--ghost:hover { background: var(--bg-subtle); color: var(--fg); }
+.cm-btn--danger {
+  color: var(--red-600);
+  border-color: var(--border);
+}
+.cm-btn--danger:hover { background: color-mix(in oklab, var(--red-500) 10%, var(--card)); }
+.cm-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.cm-btn svg { width: 16px; height: 16px; }
+.cm-btn--icon { padding: 8px; }
+
+/* ─── Card surfaces ─────────────────────────────────── */
+.cm-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Cuando una card vive dentro del DashboardGrid (widget),
+   debe llenar la altura asignada por el grid.
+   La estructura es: .cm-widget-fill > [data-widget-id] > .cm-card */
+.cm-widget-fill { display: flex; flex-direction: column; }
+.cm-widget-fill > [data-widget-id] {
+  width: 100%; height: 100%; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.cm-widget-fill .cm-card {
+  width: 100%; height: 100%; min-height: 0;
+  display: flex !important; flex-direction: column !important;
+  padding: 14px 16px;
+}
+.cm-widget-fill .cm-card__head { flex: 0 0 auto; margin-bottom: 8px; }
+.cm-widget-fill [data-chart-fill="true"] { flex: 1 1 0 !important; min-height: 0 !important; height: auto !important; }
+.cm-widget-fill [data-chart-fill="true"] svg { width: 100% !important; height: 100% !important; display: block; }
+.cm-widget-fill .cm-table-wrap { flex: 1 1 0; min-height: 0; overflow: auto; }
+
+/* Cuando una metric card tiene su dropdown abierto, eleva el wrapper externo
+   por encima de las demás cards para que el popout no quede tapado */
+[data-widget-card]:has(.cm-card[data-popout-open="true"]) { z-index: 50 !important; }
+.cm-card__head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.cm-card__title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* ─── Drawer / Modal overlay ────────────────────────── */
+.cm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 50;
+  display: grid;
+  animation: cm-overlay-in 160ms ease;
+}
+@keyframes cm-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+
+.cm-drawer {
+  position: fixed; right: 0; top: 0; bottom: 0;
+  width: min(560px, 92vw);
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  z-index: 51;
+  display: flex; flex-direction: column;
+  animation: cm-drawer-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes cm-drawer-in {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+.cm-drawer__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.cm-drawer__head h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.cm-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+.cm-drawer__foot {
+  display: flex; gap: 8px; justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── Modal (centered) ──────────────────────────────── */
+.cm-modal {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(480px, 92vw);
+  max-height: 86vh;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px -12px rgba(0,0,0,0.45);
+  z-index: 51;
+  display: flex; flex-direction: column;
+  animation: cm-modal-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+@keyframes cm-modal-in {
+  from { transform: translate(-50%, calc(-50% + 8px)); opacity: 0; }
+  to   { transform: translate(-50%, -50%); opacity: 1; }
+}
+.cm-modal__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.cm-modal__head h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.cm-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+.cm-modal__foot {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+.cm-modal__foot-row {
+  /* Cancel der / Acción izq — invertido (acción peligrosa lejos del cursor) */
+  display: flex; align-items: center; gap: 8px;
+}
+.cm-modal__foot-row > :last-child { margin-left: auto; }
+
+/* ─── Page-size selector ────────────────────────────── */
+.cm-pgsize {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.cm-pgsize select {
+  padding: 4px 24px 4px 8px;
+  font-size: 13px;
+  height: 28px;
+  width: auto;
+  min-width: 64px;
+}
+.cm-input--sm {
+  padding: 4px 8px;
+  height: 28px;
+  font-size: 13px;
+}
+
+/* ─── Table (light wrapper around design/components.css) ─── */
+.cm-table-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.cm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.cm-table th {
+  text-align: left;
+  padding: 10px 16px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.cm-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.cm-table tr:last-child td { border-bottom: 0; }
+.cm-table tr:hover td { background: var(--row-hover); }
+.cm-table__cell-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Tabs ─────────────────────────────────────────── */
+.cm-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+.cm-tabs__tab {
+  padding: 10px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  position: relative;
+  transition: color 120ms ease;
+}
+.cm-tabs__tab:hover { color: var(--fg); }
+.cm-tabs__tab[aria-selected="true"] {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* ─── Form sections ───────────────────────────────── */
+.cm-form-row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--border);
+}
+.cm-form-row:last-child { border-bottom: 0; }
+.cm-form-row__label h3 {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+.cm-form-row__label p {
+  font-size: 13px;
+  color: var(--fg-muted);
+  margin: 0;
+}
+.cm-form-row__control {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.cm-input, .cm-select, .cm-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.cm-input:focus, .cm-select:focus, .cm-textarea:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 25%, transparent);
+}
+.cm-textarea { min-height: 80px; resize: vertical; }
+.cm-help { font-size: 12px; color: var(--fg-muted); }
+
+/* Toggle switch */
+.cm-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px; height: 20px;
+  flex-shrink: 0;
+}
+.cm-switch input { opacity: 0; width: 0; height: 0; }
+.cm-switch__track {
+  position: absolute; inset: 0;
+  background: var(--zinc-300);
+  border-radius: 999px;
+  transition: background 160ms ease;
+  cursor: pointer;
+}
+.cm-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 160ms ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.cm-switch input:checked + .cm-switch__track { background: var(--primary); }
+.cm-switch input:checked + .cm-switch__track::after { transform: translateX(16px); }
+
+/* Tag / chip */
+.cm-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 500;
+}
+.cm-tag--primary { background: color-mix(in oklab, var(--primary) 10%, var(--card)); border-color: color-mix(in oklab, var(--primary) 30%, var(--border)); color: var(--primary); }
+.cm-tag--green   { background: color-mix(in oklab, var(--green-500) 10%, var(--card)); border-color: color-mix(in oklab, var(--green-500) 30%, var(--border)); color: var(--green-600); }
+.cm-tag--amber   { background: color-mix(in oklab, var(--amber-500) 12%, var(--card)); border-color: color-mix(in oklab, var(--amber-500) 35%, var(--border)); color: var(--amber-500); }
+.cm-tag--red     { background: color-mix(in oklab, var(--red-500) 10%, var(--card)); border-color: color-mix(in oklab, var(--red-500) 30%, var(--border)); color: var(--red-600); }
+
+/* Online dot in tables */
+.cm-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.cm-dot--online { background: var(--green-500); box-shadow: 0 0 0 3px color-mix(in oklab, var(--green-500) 25%, transparent); }
+.cm-dot--offline { background: var(--zinc-400); }
+
+/* ─── Command palette ─────────────────────────────── */
+.cm-palette {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 60;
+  display: grid;
+  place-items: start center;
+  padding-top: 12vh;
+  animation: cm-overlay-in 120ms ease;
+}
+.cm-palette__panel {
+  width: min(560px, 92vw);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 48px -12px rgba(0,0,0,0.3);
+  overflow: hidden;
+  animation: cm-drawer-in 160ms ease;
+}
+.cm-palette__input {
+  width: 100%;
+  padding: 16px 20px;
+  border: 0;
+  outline: 0;
+  font-family: inherit;
+  font-size: 15px;
+  background: transparent;
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+}
+.cm-palette__list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 6px;
+}
+.cm-palette__item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.cm-palette__item--active, .cm-palette__item:hover {
+  background: var(--bg-subtle);
+}
+.cm-palette__item-kbd {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.cm-palette__group {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  padding: 8px 12px 4px;
+  font-weight: 600;
+}
