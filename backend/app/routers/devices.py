@@ -636,3 +636,130 @@ def bulk_update(
     session.commit()
 
     return BulkResult(affected=affected, skipped=skipped, action=body.action)
+
+
+# ─── v3: per-device activity feed (drawer "ACTIVIDAD RECIENTE") ─────────────
+
+# Action → human-readable Spanish label, used by the frontend to render the
+# left-hand "what" column without having to keep a parallel enum in sync.
+_DEVICE_ACTIVITY_LABELS: dict[AuditAction, str] = {
+    AuditAction.CONNECT: "Conexión iniciada",
+    AuditAction.DISCONNECT: "Sesión finalizada",
+    AuditAction.CLOSE: "Sesión cerrada",
+    AuditAction.FILE_TRANSFER: "Transferencia de archivos",
+    AuditAction.DEVICE_UPDATED: "Dispositivo editado",
+    AuditAction.DEVICE_FORGOTTEN: "Dispositivo eliminado",
+    AuditAction.DEVICE_DISCONNECT_REQUESTED: "Desconexión solicitada",
+    AuditAction.DEVICE_TAGGED: "Tag añadida",
+    AuditAction.DEVICE_UNTAGGED: "Tag retirada",
+}
+
+
+class DeviceActivityEntry(BaseModel):
+    id: int
+    when: datetime
+    action: AuditAction
+    label: str
+    description: str | None = None
+    actor: str | None = None  # operator username, when an admin took the action
+    ip: str | None = None
+
+
+@router.get(
+    "/{device_id}/activity",
+    response_model=list[DeviceActivityEntry],
+    summary="Recent activity for a device (drawer feed)",
+)
+def device_activity(
+    device_id: int,
+    session: SessionDep,
+    admin: AdminUser,
+    limit: int = Query(default=10, ge=1, le=100),
+) -> list[DeviceActivityEntry]:
+    """Return the last N audit rows that touch this device.
+
+    Match strategy:
+      * RustDesk-side events (CONNECT/DISCONNECT/FILE_TRANSFER/CLOSE) match
+        when from_id or to_id equals the device's RustDesk ID.
+      * Panel-side device events (DEVICE_UPDATED/FORGOTTEN/DISCONNECT_REQUESTED)
+        also use from_id (set explicitly when the row is written).
+      * Tag events (DEVICE_TAGGED/UNTAGGED) match by JSON-encoded device_id
+        in payload — we use a LIKE to keep this portable across SQLite.
+
+    Soft-deleted rows (deleted_at IS NOT NULL) are excluded so the drawer
+    doesn't surface purged history.
+    """
+    d = session.get(Device, device_id)
+    if d is None:
+        raise HTTPException(404, "device not found")
+
+    rd_id = d.rustdesk_id
+    payload_needle = f'"device_id": {device_id}'
+
+    rows = session.exec(
+        select(AuditLog)
+        .where(AuditLog.deleted_at.is_(None))
+        .where(
+            or_(
+                AuditLog.from_id == rd_id,
+                AuditLog.to_id == rd_id,
+                AuditLog.payload.like(f"%{payload_needle}%"),
+            )
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+    ).all()
+
+    # Resolve actor user_ids → usernames in one extra query so the drawer
+    # can show "admin solicitó desconexión" instead of a numeric id.
+    actor_ids = {r.actor_user_id for r in rows if r.actor_user_id is not None}
+    actors_by_id: dict[int, str] = {}
+    if actor_ids:
+        for u in session.exec(select(User).where(User.id.in_(actor_ids))).all():
+            actors_by_id[u.id] = u.username
+
+    out: list[DeviceActivityEntry] = []
+    for r in rows:
+        label = _DEVICE_ACTIVITY_LABELS.get(r.action, r.action.value)
+        # Best-effort description built from the row payload — falls back to
+        # the action label when nothing extra to say. The frontend renders
+        # this verbatim, so any leak from payload would be visible to admins.
+        description: str | None = None
+        if r.action == AuditAction.CONNECT and r.ip:
+            description = f"Desde {r.ip}"
+        elif r.action == AuditAction.DEVICE_TAGGED and r.payload:
+            try:
+                p = json.loads(r.payload)
+                tag_name = p.get("tag_name")
+                if tag_name:
+                    description = f"Tag «{tag_name}»"
+            except (ValueError, TypeError):
+                pass
+        elif r.action == AuditAction.DEVICE_UNTAGGED and r.payload:
+            try:
+                p = json.loads(r.payload)
+                tag_name = p.get("tag_name")
+                if tag_name:
+                    description = f"Tag «{tag_name}»"
+            except (ValueError, TypeError):
+                pass
+        elif r.action == AuditAction.DEVICE_DISCONNECT_REQUESTED and r.payload:
+            try:
+                p = json.loads(r.payload)
+                if p.get("force"):
+                    description = "Forzada (peer evicted en hbbs)"
+            except (ValueError, TypeError):
+                pass
+
+        out.append(
+            DeviceActivityEntry(
+                id=r.id,
+                when=r.created_at,
+                action=r.action,
+                label=label,
+                description=description,
+                actor=actors_by_id.get(r.actor_user_id) if r.actor_user_id else None,
+                ip=r.ip,
+            )
+        )
+    return out

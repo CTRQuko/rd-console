@@ -364,12 +364,32 @@ function DeviceDrawer({ device, catalog, onClose, onSave, onCreateTag, onRequest
   const [draft, setDraft] = _dvS(null);
   const [activityOpen, setActivityOpen] = _dvS(true);
   const [pendingClose, setPendingClose] = _dvS(false);
+  const [activity, setActivity] = _dvS({ items: [], state: "idle" });
 
   _dvE(() => {
     if (device) {
       setDraft({ alias: device.alias, os: device.os, notes: device.notes || "", tags: [...device.tags] });
       setActivityOpen(true);
     }
+  }, [device]);
+
+  // Pull the audit-log slice for this device whenever it changes. The
+  // backend filters by from_id/to_id/payload, so we get connect/disconnect,
+  // file_transfer, panel-side device edits, and tag mutations in one feed.
+  _dvE(() => {
+    if (!device) return;
+    let cancelled = false;
+    setActivity({ items: [], state: "loading" });
+    _dvApi(`/admin/api/devices/${device.id}/activity?limit=10`)
+      .then((rows) => {
+        if (cancelled) return;
+        setActivity({ items: rows || [], state: "ready" });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setActivity({ items: [], state: "error" });
+      });
+    return () => { cancelled = true; };
   }, [device]);
 
   if (!device || !draft) return null;
@@ -480,19 +500,40 @@ function DeviceDrawer({ device, catalog, onClose, onSave, onCreateTag, onRequest
           Actividad reciente
         </button>
         {activityOpen && (
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
-            {[
-              { t: "Hace 2m",    m: "Conexión iniciada desde 84.123.18.42 (España)" },
-              { t: "Hace 1h",    m: "Sesión finalizada (32m 14s)" },
-              { t: "Ayer 14:02", m: "Versión actualizada a " + device.ver },
-              { t: "Ayer 11:45", m: "Conexión rechazada — token expirado" },
-            ].map((e, i) => (
-              <li key={i} style={{ display: "flex", gap: 10, fontSize: 13 }}>
-                <span style={{ color: "var(--fg-muted)", fontFamily: "var(--font-mono)", fontSize: 12, minWidth: 110 }}>{e.t}</span>
-                <span>{e.m}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            {activity.state === "loading" && (
+              <div style={{ color: "var(--fg-muted)", fontSize: 13, padding: "8px 0" }}>
+                Cargando historial…
+              </div>
+            )}
+            {activity.state === "error" && (
+              <div style={{ color: "#e11d48", fontSize: 13, padding: "8px 0" }}>
+                No se pudo cargar el historial.
+              </div>
+            )}
+            {activity.state === "ready" && activity.items.length === 0 && (
+              <div style={{ color: "var(--fg-muted)", fontSize: 13, padding: "8px 0" }}>
+                Aún no hay actividad registrada.
+              </div>
+            )}
+            {activity.state === "ready" && activity.items.length > 0 && (
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+                {activity.items.map((e) => {
+                  // Combine label + description + actor into the human line so
+                  // the operator can read a single sentence per event.
+                  const detail = [e.label, e.description].filter(Boolean).join(" — ");
+                  const trail = e.actor && !["connect", "disconnect", "close", "file_transfer"].includes(e.action)
+                    ? ` · por ${e.actor}` : "";
+                  return (
+                    <li key={e.id} style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                      <span style={{ color: "var(--fg-muted)", fontFamily: "var(--font-mono)", fontSize: 12, minWidth: 110 }}>{_dvFmtRelative(e.when)}</span>
+                      <span>{detail}{trail}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )}
       </Drawer>
 
