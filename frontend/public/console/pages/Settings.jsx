@@ -91,22 +91,67 @@ function SettingsNav({ active, onNav }) {
 
 // ─── General ─────────────────────────────────────────
 function GeneralPanel({ theme, setTheme }) {
-  const [name, setName] = _stS("Acme Relay");
-  const [url, setUrl] = _stS("https://relay.acme.io");
+  // panel_url comes from /admin/api/settings/server-info (operator-editable
+  // runtime override). "Nombre del relay" has no backend slot yet — kept as
+  // local state so the input behaves naturally; a later commit can wire it
+  // to a new RD_PANEL_NAME setting alongside the other three.
+  const [name, setName] = _stS("");
+  const [url, setUrl] = _stS("");
+  const [saving, setSaving] = _stS(false);
+  const [dirty, setDirty] = _stS(false);
+  const toast = useToast();
+
+  _stE(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const info = await _stApi("/admin/api/settings/server-info");
+        if (cancelled) return;
+        setUrl(info?.panel_url || "");
+        setDirty(false);
+      } catch {
+        // Silent — keeps the inputs empty; user can still type and save.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await _stApi("/admin/api/settings/server-info", {
+        method: "PATCH",
+        body: JSON.stringify({ panel_url: url || null }),
+      });
+      setDirty(false);
+      toast("Cambios guardados", { tone: "success" });
+    } catch {
+      toast("No se pudo guardar — reintenta", { tone: "danger" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="cm-card" style={{ padding: 0 }}>
-      <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 600, margin: 0 }}>General</h2>
-        <p style={{ color: "var(--fg-muted)", fontSize: 13, margin: "4px 0 0" }}>Identidad y preferencias del operador.</p>
+      <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 600, margin: 0 }}>General</h2>
+          <p style={{ color: "var(--fg-muted)", fontSize: 13, margin: "4px 0 0" }}>Identidad y preferencias del operador.</p>
+        </div>
+        <button className="cm-btn cm-btn--primary" onClick={save} disabled={!dirty || saving}>
+          {saving ? "Guardando…" : "Guardar cambios"}
+        </button>
       </div>
       <div style={{ padding: "0 20px" }}>
         <div className="cm-form-row">
           <div className="cm-form-row__label">
             <h3>Nombre del relay</h3>
-            <p>Aparece en el topbar y en notificaciones.</p>
+            <p>Aparece en el topbar y en notificaciones. (Solo local por ahora.)</p>
           </div>
           <div className="cm-form-row__control">
-            <input className="cm-input" value={name} onChange={(e) => setName(e.target.value)} />
+            <input className="cm-input" value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} placeholder="rd-console" />
           </div>
         </div>
         <div className="cm-form-row">
@@ -115,7 +160,7 @@ function GeneralPanel({ theme, setTheme }) {
             <p>El endpoint que los clientes usan para conectarse.</p>
           </div>
           <div className="cm-form-row__control">
-            <input className="cm-input" value={url} onChange={(e) => setUrl(e.target.value)} />
+            <input className="cm-input" value={url} onChange={(e) => { setUrl(e.target.value); setDirty(true); }} placeholder="https://relay.example.com" />
             <span className="cm-help">Debe incluir el esquema (https://).</span>
           </div>
         </div>

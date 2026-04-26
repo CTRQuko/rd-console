@@ -150,36 +150,66 @@ function Popover({ open, onClose, anchorRect, children, width = 360, align = "ri
   );
 }
 
-// ─── Notificaciones (mock) ────────────────────────────
-const MOCK_NOTIS = [
-  { id: "n1", read: false, level: "warn",    icon: "alert",    title: "Pico de ancho de banda", body: "Relay rebasó 800 Mb/s durante 4 min.", actor: "Sistema",         when: "hace 6 min", link: "/dashboard" },
-  { id: "n2", read: false, level: "info",    icon: "users",    title: "Nuevo operador invitado", body: "carlos@casaredes.cc fue invitado.",   actor: "admin",           when: "hace 32 min", link: "/settings/usuarios" },
-  { id: "n3", read: false, level: "success", icon: "check",    title: "Backup completado",      body: "Snapshot diario en S3 (412 MB).",      actor: "Sistema",         when: "hoy, 04:00", link: "/settings/servidor" },
-  { id: "n4", read: true,  level: "error",   icon: "x",        title: "Login fallido",          body: "5 intentos en 2 min desde 83.45.12.7", actor: "auth",            when: "ayer, 23:14", link: "/logs" },
-  { id: "n5", read: true,  level: "info",    icon: "tokens",   title: "Invitación usada",       body: "torre-recepcion se unió al relay.",    actor: "join token #4",   when: "ayer, 18:02", link: "/devices" },
-];
+// ─── Notificaciones (cableadas) ───────────────────────
+// Maps the backend's notification "kind" string to an icon + tone +
+// (optional) link so the topbar bell can render real audit events
+// without each consumer reinventing the catalogue.
+const _NOTI_PRESENTATION = {
+  user_added:        { icon: "users",  level: "info",    link: "/users" },
+  user_removed:      { icon: "x",      level: "warn",    link: "/users" },
+  user_disabled:     { icon: "x",      level: "warn",    link: "/users" },
+  login_failed:      { icon: "alert",  level: "error",   link: "/logs" },
+  invite_created:    { icon: "tokens", level: "info",    link: "/tokens" },
+  invite_revoked:    { icon: "tokens", level: "warn",    link: "/tokens" },
+  device_removed:    { icon: "x",      level: "warn",    link: "/devices" },
+  settings_changed:  { icon: "alert",  level: "info",    link: "/settings/general" },
+  backup:            { icon: "check",  level: "success", link: "/settings/servidor" },
+  backup_restored:   { icon: "check",  level: "success", link: "/settings/servidor" },
+};
 
-function NotificationsPopover({ open, anchorRect, onClose, onNav }) {
+function _formatNotiWhen(iso) {
+  // Compact relative formatter — matches the activity feed's tone.
+  if (!iso) return "";
+  const then = new Date(iso);
+  const diff = Math.floor((Date.now() - then.getTime()) / 1000);
+  if (diff < 60) return "ahora";
+  if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
+  if (diff < 86400 * 7) return `hace ${Math.floor(diff / 86400)} d`;
+  return then.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+}
+
+function NotificationsPopover({ open, anchorRect, onClose, onNav, items, unreadCount }) {
   const [tab, setTab] = _useS("all");
-  const [notis, setNotis] = _useS(MOCK_NOTIS);
-  const visible = tab === "unread" ? notis.filter((n) => !n.read) : notis;
-  const unread = notis.filter((n) => !n.read).length;
-  const markAll = () => setNotis((ns) => ns.map((n) => ({ ...n, read: true })));
-  const open_ = (n) => { setNotis((ns) => ns.map((x) => x.id === n.id ? { ...x, read: true } : x)); onNav(n.link); onClose(); };
+  // Client-side "read" tracker — without a backend slot we can only
+  // dim items in the current session. Persisting per-user "read until"
+  // is a follow-up.
+  const [readIds, setReadIds] = _useS(new Set());
+  const visible = tab === "unread"
+    ? items.filter((n) => !readIds.has(n.id))
+    : items;
+  const stillUnread = items.filter((n) => !readIds.has(n.id)).length;
+  const markAll = () => setReadIds(new Set(items.map((n) => n.id)));
+  const open_ = (n) => {
+    setReadIds((s) => { const next = new Set(s); next.add(n.id); return next; });
+    const link = _NOTI_PRESENTATION[n.kind]?.link || "/logs";
+    onNav(link);
+    onClose();
+  };
   const levelColor = (lv) => ({ warn: "#d97706", info: "var(--primary)", success: "#16a34a", error: "#e11d48" })[lv] || "var(--fg-muted)";
 
   return (
     <Popover open={open} onClose={onClose} anchorRect={anchorRect} width={400}>
       <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}>
         <h3 style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 600, margin: 0, flex: 1 }}>Notificaciones</h3>
-        {unread > 0 && (
+        {stillUnread > 0 && (
           <button onClick={markAll} style={{ fontSize: 12, color: "var(--primary)", background: "transparent", border: "none", cursor: "pointer" }}>
             Marcar todas leídas
           </button>
         )}
       </div>
       <div style={{ display: "flex", gap: 4, padding: "8px 12px 0", borderBottom: "1px solid var(--border)" }}>
-        {[{ id: "all", label: `Todas (${notis.length})` }, { id: "unread", label: `No leídas (${unread})` }].map((t) => (
+        {[{ id: "all", label: `Todas (${items.length})` }, { id: "unread", label: `No leídas (${stillUnread})` }].map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -198,37 +228,43 @@ function NotificationsPopover({ open, anchorRect, onClose, onNav }) {
             <Icon name="check" size={28} /><div style={{ marginTop: 8 }}>Estás al día.</div>
           </div>
         )}
-        {visible.map((n) => (
-          <button
-            key={n.id}
-            onClick={() => open_(n)}
-            style={{
-              width: "100%", display: "flex", gap: 12, padding: "12px 16px",
-              border: "none", borderBottom: "1px solid var(--border)",
-              background: n.read ? "transparent" : "color-mix(in oklab, var(--primary) 5%, transparent)",
-              textAlign: "left", cursor: "pointer", alignItems: "flex-start",
-            }}
-          >
-            <div style={{
-              width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-              display: "grid", placeItems: "center",
-              background: `color-mix(in oklab, ${levelColor(n.level)} 14%, transparent)`,
-              color: levelColor(n.level),
-            }}>
-              <Icon name={n.icon} size={16} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span style={{ fontWeight: n.read ? 400 : 600, fontSize: 13 }}>{n.title}</span>
-                {!n.read && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--primary)", flexShrink: 0 }} />}
+        {visible.map((n) => {
+          const presentation = _NOTI_PRESENTATION[n.kind] || { icon: "alert", level: "info" };
+          const read = readIds.has(n.id);
+          return (
+            <button
+              key={n.id}
+              onClick={() => open_(n)}
+              style={{
+                width: "100%", display: "flex", gap: 12, padding: "12px 16px",
+                border: "none", borderBottom: "1px solid var(--border)",
+                background: read ? "transparent" : "color-mix(in oklab, var(--primary) 5%, transparent)",
+                textAlign: "left", cursor: "pointer", alignItems: "flex-start",
+              }}
+            >
+              <div style={{
+                width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                display: "grid", placeItems: "center",
+                background: `color-mix(in oklab, ${levelColor(presentation.level)} 14%, transparent)`,
+                color: levelColor(presentation.level),
+              }}>
+                <Icon name={presentation.icon} size={16} />
               </div>
-              <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 2, lineHeight: 1.4 }}>{n.body}</div>
-              <div style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 4, display: "flex", gap: 8 }}>
-                <span>{n.actor}</span><span>·</span><span>{n.when}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontWeight: read ? 400 : 600, fontSize: 13 }}>{n.title}</span>
+                  {!read && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--primary)", flexShrink: 0 }} />}
+                </div>
+                {n.subtitle && (
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 2, lineHeight: 1.4 }}>{n.subtitle}</div>
+                )}
+                <div style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 4, display: "flex", gap: 8 }}>
+                  {n.actor && <><span>{n.actor}</span><span>·</span></>}<span>{_formatNotiWhen(n.when)}</span>
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
       <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", textAlign: "center" }}>
         <button onClick={() => { onNav("/logs"); onClose(); }} style={{ fontSize: 12, color: "var(--fg-muted)", background: "transparent", border: "none", cursor: "pointer" }}>
@@ -346,6 +382,7 @@ function Topbar({ crumbs, theme, setTheme, onOpenPalette, onMobileMenu, onNav })
   const [notiRect, setNotiRect] = _useS(null);
   const [userRect, setUserRect] = _useS(null);
   const [me, setMe] = _useS(null);
+  const [notiData, setNotiData] = _useS({ items: [], unread_count: 0 });
 
   // Hydrate the current user from the backend on mount. The Login.jsx
   // wired in Etapa 3 paso 1 stores the JWT under localStorage("cm-auth");
@@ -370,6 +407,28 @@ function Topbar({ crumbs, theme, setTheme, onOpenPalette, onMobileMenu, onNav })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [onNav]);
+
+  // Poll the notification feed every 60 s so the bell dot stays accurate
+  // without the operator having to refresh. Skips silently on auth errors;
+  // the /me hook above is the source of truth for "do we have a session".
+  _useE(() => {
+    const token = readAuthToken();
+    if (!token) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fetch("/api/v1/notifications/recent?limit=20", {
+          headers: { Authorization: "Bearer " + token },
+        });
+        if (!r.ok || cancelled) return;
+        const data = await r.json();
+        if (!cancelled) setNotiData(data);
+      } catch {}
+    };
+    load();
+    const t = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
 
   const openNoti = () => { setNotiRect(notiRef.current?.getBoundingClientRect()); setNotiOpen(true); setUserOpen(false); };
   const openUser = () => { setUserRect(userRef.current?.getBoundingClientRect()); setUserOpen(true); setNotiOpen(false); };
@@ -406,7 +465,7 @@ function Topbar({ crumbs, theme, setTheme, onOpenPalette, onMobileMenu, onNav })
           onClick={openNoti}
         >
           <Icon name="bell" />
-          <span className="dot" />
+          {notiData.unread_count > 0 && <span className="dot" />}
         </button>
       </div>
       <button
@@ -421,7 +480,14 @@ function Topbar({ crumbs, theme, setTheme, onOpenPalette, onMobileMenu, onNav })
           <span className="cm-top__user-role">{ROLE_LABEL_ES[me?.role] || me?.role || ""}</span>
         </div>
       </button>
-      <NotificationsPopover open={notiOpen} anchorRect={notiRect} onClose={() => setNotiOpen(false)} onNav={onNav} />
+      <NotificationsPopover
+        open={notiOpen}
+        anchorRect={notiRect}
+        onClose={() => setNotiOpen(false)}
+        onNav={onNav}
+        items={notiData.items}
+        unreadCount={notiData.unread_count}
+      />
       <UserMenuPopover open={userOpen} anchorRect={userRect} onClose={() => setUserOpen(false)} onNav={onNav} theme={theme} setTheme={setTheme} me={me} />
     </header>
   );

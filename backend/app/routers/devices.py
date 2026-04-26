@@ -81,6 +81,19 @@ class DeviceUpdate(BaseModel):
     is_favorite: bool | None = Field(default=None)
 
 
+class DeviceCreate(BaseModel):
+    """Manual create — for when an operator wants to pre-register a peer
+    before the RustDesk client first checks in. Most peers self-register
+    via /api/heartbeat, but having a panel-side create lets ops reserve
+    an alias / owner / tags up front.
+    """
+    rustdesk_id: str = Field(min_length=1, max_length=32)
+    hostname: str | None = Field(default=None, max_length=128)
+    platform: str | None = Field(default=None, max_length=32)
+    owner_user_id: int | None = Field(default=None)
+    note: str | None = Field(default=None, max_length=500)
+
+
 class BulkAction(BaseModel):
     device_ids: list[int] = Field(min_length=1, max_length=500)
     action: Literal[
@@ -143,6 +156,69 @@ def _devices_with_tags_and_cutoff(
 
 
 # ─── routes ─────────────────────────────────────────────────────────────────
+
+@router.post(
+    "",
+    response_model=DeviceOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Manually register a device (pre-checkin)",
+)
+def create_device(
+    body: DeviceCreate,
+    session: SessionDep,
+    admin: AdminUser,
+) -> DeviceOut:
+    """Pre-register a device by RustDesk ID.
+
+    Most peers self-register via the client's first /api/heartbeat call.
+    This endpoint exists so operators can reserve an alias / owner / note
+    before that happens — useful for kiosk deploys or when bulk-onboarding
+    a fleet from a CSV.
+
+    Conflict (409) if the rustdesk_id already exists. Owner validation
+    matches PATCH semantics — unknown user_ids return 422.
+    """
+    rd_id = body.rustdesk_id.strip()
+    existing = session.exec(select(Device).where(Device.rustdesk_id == rd_id)).first()
+    if existing is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Device with this rustdesk_id already exists")
+
+    if body.owner_user_id is not None:
+        if session.get(User, body.owner_user_id) is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "owner_user_id does not match an existing user",
+            )
+
+    d = Device(
+        rustdesk_id=rd_id,
+        hostname=body.hostname,
+        platform=body.platform,
+        owner_user_id=body.owner_user_id,
+        note=body.note,
+        # No last_seen_at — the device is "offline" until its first
+        # heartbeat lands, which is the honest state.
+        last_seen_at=None,
+    )
+    session.add(d)
+    session.add(
+        AuditLog(
+            action=AuditAction.DEVICE_UPDATED,
+            actor_user_id=admin.id,
+            from_id=rd_id,
+            payload=json.dumps({
+                "device_id": None,  # filled after commit
+                "rustdesk_id": rd_id,
+                "created_via": "panel",
+                "hostname": body.hostname,
+                "platform": body.platform,
+            }),
+        )
+    )
+    session.commit()
+    session.refresh(d)
+    return DeviceOut.from_model(d, tags=[])
+
 
 @router.get("", response_model=list[DeviceOut])
 def list_devices(

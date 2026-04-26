@@ -607,6 +607,91 @@ function _DvKebab({ items, onClick }) {
   );
 }
 
+// ─── Crear dispositivo (pre-checkin) ─────────────────
+function CreateDeviceModal({ open, onClose, onSubmit }) {
+  const [form, setForm] = _dvS({ rustdesk_id: "", hostname: "", platform: "" });
+  const [errors, setErrors] = _dvS({});
+
+  _dvE(() => {
+    if (open) {
+      setForm({ rustdesk_id: "", hostname: "", platform: "" });
+      setErrors({});
+    }
+  }, [open]);
+
+  const validate = () => {
+    const e = {};
+    const rid = form.rustdesk_id.trim();
+    if (!rid) e.rustdesk_id = "Requerido";
+    else if (!/^[\d\s]+$/.test(rid) && !/^[\w-]+$/.test(rid)) {
+      e.rustdesk_id = "Solo dígitos, espacios o guiones";
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title="Añadir dispositivo"
+      width={520}
+      footer={
+        <>
+          <button
+            className="cm-btn cm-btn--primary"
+            onClick={() => validate() && onSubmit(form)}
+          >
+            <Icon name="check" size={14} /> Registrar
+          </button>
+          <button className="cm-btn" onClick={onClose} style={{ marginLeft: "auto" }}>Cancelar</button>
+        </>
+      }
+    >
+      <p style={{ color: "var(--fg-muted)", fontSize: 13, marginTop: 0, marginBottom: 20 }}>
+        Pre-registra un dispositivo por su RustDesk ID. Aparecerá como
+        offline hasta que el cliente envíe su primer heartbeat.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 4 }}>RustDesk ID</label>
+          <input
+            className="cm-input"
+            autoFocus
+            value={form.rustdesk_id}
+            onChange={(e) => setForm((f) => ({ ...f, rustdesk_id: e.target.value }))}
+            placeholder="123 456 789"
+          />
+          {errors.rustdesk_id && (
+            <div style={{ color: "#e11d48", fontSize: 12, marginTop: 4 }}>{errors.rustdesk_id}</div>
+          )}
+          <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 4 }}>
+            El identificador que muestra el cliente RustDesk.
+          </div>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Alias (opcional)</label>
+          <input
+            className="cm-input"
+            value={form.hostname}
+            onChange={(e) => setForm((f) => ({ ...f, hostname: e.target.value }))}
+            placeholder="laptop-alex"
+          />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Sistema (opcional)</label>
+          <input
+            className="cm-input"
+            value={form.platform}
+            onChange={(e) => setForm((f) => ({ ...f, platform: e.target.value }))}
+            placeholder="Windows 11"
+          />
+        </div>
+      </div>
+    </Drawer>
+  );
+}
+
 // ─── Página ──────────────────────────────────────────
 function DevicesPage({ route }) {
   const [q, setQ] = _dvS("");
@@ -617,6 +702,7 @@ function DevicesPage({ route }) {
   const [tagCatalog, setTagCatalog] = _dvS([]);
   const [pageSize, setPageSize] = _dvS(25);
   const [deleteTarget, setDeleteTarget] = _dvS(null);
+  const [createOpen, setCreateOpen] = _dvS(false);
   const [filtersOpen, setFiltersOpen] = _dvS(false);
   const [osFilter, setOsFilter] = _dvS([]);     // ["macOS","Windows","Linux"]
   const [tagFilter, setTagFilter] = _dvS([]);   // tag names
@@ -816,14 +902,100 @@ function DevicesPage({ route }) {
     }
   };
 
+  const handleExportCsv = () => {
+    // Client-side CSV — no backend round-trip needed since the table data
+    // is already in memory. Filtered set respects current search / state /
+    // OS / tag filters so the export matches exactly what the operator
+    // sees on screen (minus pagination — we export the full filtered set).
+    let arr = devices;
+    if (filter === "online")  arr = arr.filter((d) => d.online);
+    if (filter === "offline") arr = arr.filter((d) => !d.online);
+    if (osFilter.length)  arr = arr.filter((d) => osFilter.includes(osFamily(d.os)));
+    if (tagFilter.length) arr = arr.filter((d) => (d.tags || []).some((t) => tagFilter.includes(t)));
+    if (q.trim()) {
+      const ql = q.toLowerCase();
+      arr = arr.filter((d) =>
+        d.alias.toLowerCase().includes(ql) ||
+        d.user.toLowerCase().includes(ql) ||
+        d.id.toLowerCase().includes(ql) ||
+        (d.tags || []).some((t) => t.toLowerCase().includes(ql))
+      );
+    }
+    const filtered = arr;
+    const cols = [
+      { id: "alias", label: "alias" },
+      { id: "user", label: "user" },
+      { id: "os", label: "os" },
+      { id: "ip", label: "ip" },
+      { id: "ver", label: "version" },
+      { id: "online", label: "online" },
+      { id: "lastSeen", label: "last_seen" },
+      { id: "tags", label: "tags" },
+      { id: "notes", label: "notes" },
+    ];
+    const escape = (v) => {
+      if (v === null || v === undefined) return "";
+      const s = Array.isArray(v) ? v.join(";") : String(v);
+      // RFC 4180: wrap in quotes if it contains comma / quote / newline,
+      // and double-up internal quotes.
+      if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    };
+    const lines = [cols.map((c) => c.label).join(",")];
+    for (const d of filtered) {
+      lines.push(cols.map((c) => escape(d[c.id])).join(","));
+    }
+    // \r\n keeps Excel happy; UTF-8 BOM ensures it picks the right
+    // encoding so accented characters in alias/note don't break.
+    const blob = new Blob(["﻿" + lines.join("\r\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const ts = new Date().toISOString().slice(0, 10);
+    a.download = `rd-console-devices-${ts}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast(`${filtered.length} dispositivos exportados`, { tone: "success" });
+  };
+
+  const handleCreateDevice = async (form) => {
+    // POST /admin/api/devices with rustdesk_id mandatory + optional fields.
+    // The backend pre-registers the row; the device shows as offline until
+    // its first heartbeat lands.
+    const body = { rustdesk_id: form.rustdesk_id.trim() };
+    if (form.hostname?.trim()) body.hostname = form.hostname.trim();
+    if (form.platform?.trim()) body.platform = form.platform.trim();
+    try {
+      const created = await _dvApi("/admin/api/devices", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const adapted = _dvAdaptDevice(created, {});
+      setDevices((ds) => [adapted, ...ds]);
+      setCreateOpen(false);
+      toast(`Dispositivo «${adapted.alias || adapted.id}» registrado`, { tone: "success" });
+    } catch (err) {
+      const msg = err?.message || "";
+      if (msg.includes("409") || msg.toLowerCase().includes("already exists")) {
+        toast("Ese RustDesk ID ya está registrado", { tone: "danger" });
+      } else {
+        toast("No se pudo registrar el dispositivo", { tone: "danger" });
+      }
+    }
+  };
+
   return (
     <div className="cm-page">
       <PageHeader
         title="Dispositivos"
         subtitle={`${devices.length} dispositivos · ${devices.filter((d) => d.online).length} online`}
         actions={<>
-          <button className="cm-btn"><Icon name="download" size={14} /> Exportar CSV</button>
-          <button className="cm-btn cm-btn--primary"><Icon name="plus" size={14} /> Añadir dispositivo</button>
+          <button className="cm-btn" onClick={handleExportCsv}><Icon name="download" size={14} /> Exportar CSV</button>
+          <button className="cm-btn cm-btn--primary" onClick={() => setCreateOpen(true)}><Icon name="plus" size={14} /> Añadir dispositivo</button>
         </>}
       />
 
@@ -998,7 +1170,7 @@ function DevicesPage({ route }) {
             description={q || filter !== "all"
               ? "Prueba con otros filtros o términos de búsqueda."
               : "Cuando un dispositivo se conecte al relay aparecerá aquí."}
-            action={<button className="cm-btn cm-btn--primary"><Icon name="plus" size={14} /> Añadir dispositivo</button>}
+            action={<button className="cm-btn cm-btn--primary" onClick={() => setCreateOpen(true)}><Icon name="plus" size={14} /> Añadir dispositivo</button>}
           />
         </div>
       ) : (
@@ -1075,6 +1247,12 @@ function DevicesPage({ route }) {
         cancelLabel="Cancelar"
         tone="danger"
         typeToConfirm={deleteTarget?.alias}
+      />
+
+      <CreateDeviceModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={handleCreateDevice}
       />
 
       {/* State quick-switch */}

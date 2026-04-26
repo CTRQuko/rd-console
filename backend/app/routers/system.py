@@ -362,3 +362,109 @@ def connections_recent(
             }
         )
     return RecentConnectionsResponse(rows=[RecentConnection.model_validate(x) for x in out])
+
+
+# ─── Notification feed (topbar bell) ────────────────────────────────────────
+
+# Map "interesting" audit actions to a stable notification "kind" + Spanish
+# title shape. Anything not in this map is filtered out — the bell is for
+# operator-relevant events (someone created an invite, a login failed,
+# a backup ran), not for every CONNECT/DISCONNECT from the relay.
+_NOTIFICATION_KINDS: dict[AuditAction, tuple[str, str]] = {
+    AuditAction.USER_CREATED:        ("user_added",       "Usuario creado"),
+    AuditAction.USER_DELETED:        ("user_removed",     "Usuario eliminado"),
+    AuditAction.USER_DISABLED:       ("user_disabled",    "Usuario deshabilitado"),
+    AuditAction.LOGIN_FAILED:        ("login_failed",     "Intento de login fallido"),
+    AuditAction.JOIN_TOKEN_CREATED:  ("invite_created",   "Invitación creada"),
+    AuditAction.JOIN_TOKEN_REVOKED:  ("invite_revoked",   "Invitación revocada"),
+    AuditAction.DEVICE_FORGOTTEN:    ("device_removed",   "Dispositivo eliminado"),
+    AuditAction.SETTINGS_CHANGED:    ("settings_changed", "Configuración modificada"),
+    AuditAction.BACKUP_EXPORTED:     ("backup",           "Backup exportado"),
+    AuditAction.BACKUP_RESTORED:     ("backup_restored",  "Backup restaurado"),
+}
+
+
+class NotificationItem(BaseModel):
+    id: int
+    kind: str
+    title: str
+    subtitle: str | None = None
+    when: datetime
+    actor: str | None = None
+
+
+class NotificationsResponse(BaseModel):
+    items: list[NotificationItem]
+    # "Unread" is a soft signal — we don't persist read state per user yet,
+    # so this is just "events in the last hour". The bell dot uses this to
+    # decide whether to highlight.
+    unread_count: int
+
+
+@router.get(
+    "/notifications/recent",
+    response_model=NotificationsResponse,
+    summary="Recent operator-relevant events for the topbar bell",
+)
+def notifications_recent(
+    session: SessionDep,
+    admin: AdminUser,
+    limit: int = Query(default=20, ge=1, le=100),
+) -> NotificationsResponse:
+    """Latest audit_log rows mapped to notification kinds.
+
+    Filters by the keys of `_NOTIFICATION_KINDS` so peer-to-peer connect /
+    disconnect / file-transfer events don't drown out the panel-side
+    actions an operator actually cares about.
+    """
+    audit_actions = list(_NOTIFICATION_KINDS.keys())
+    rows = session.exec(
+        select(AuditLog)
+        .where(AuditLog.deleted_at.is_(None))
+        .where(AuditLog.action.in_(audit_actions))
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+    ).all()
+
+    # Resolve actor user_ids → usernames in one extra query.
+    from ..models.user import User as _User
+    actor_ids = {r.actor_user_id for r in rows if r.actor_user_id is not None}
+    actors_by_id: dict[int, str] = {}
+    if actor_ids:
+        for u in session.exec(select(_User).where(_User.id.in_(actor_ids))).all():
+            actors_by_id[u.id] = u.username
+
+    one_hour_ago = utcnow_naive() - timedelta(hours=1)
+    items: list[NotificationItem] = []
+    unread = 0
+    for r in rows:
+        kind, title = _NOTIFICATION_KINDS[r.action]
+        # Best-effort subtitle from the row payload — username, target id,
+        # whatever is most informative for that kind.
+        subtitle: str | None = None
+        if r.action == AuditAction.LOGIN_FAILED and r.ip:
+            subtitle = f"Desde {r.ip}"
+        elif r.action in (AuditAction.JOIN_TOKEN_CREATED, AuditAction.JOIN_TOKEN_REVOKED) and r.payload:
+            try:
+                import json as _json
+                p = _json.loads(r.payload)
+                if p.get("name"):
+                    subtitle = f"«{p['name']}»"
+            except (ValueError, TypeError):
+                pass
+        elif r.action == AuditAction.DEVICE_FORGOTTEN and r.from_id:
+            subtitle = f"RustDesk ID {r.from_id}"
+
+        if r.created_at >= one_hour_ago:
+            unread += 1
+
+        items.append(NotificationItem(
+            id=r.id,
+            kind=kind,
+            title=title,
+            subtitle=subtitle,
+            when=r.created_at,
+            actor=actors_by_id.get(r.actor_user_id) if r.actor_user_id else None,
+        ))
+
+    return NotificationsResponse(items=items, unread_count=unread)
