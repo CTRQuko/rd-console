@@ -5,56 +5,105 @@
 
 const { useState: _lgS, useEffect: _lgE, useMemo: _lgM, useRef: _lgR } = React;
 
-// ─── Mock dataset ─────────────────────────────────────
-const _LOG_CATEGORIES = ["auth", "session", "device", "user", "token", "config", "system"];
-const _LOG_ACTIONS = {
-  auth:    ["login", "login_failed", "mfa_challenge", "logout"],
-  session: ["session_start", "session_end", "file_transfer", "chat"],
-  device:  ["device_online", "device_offline", "device_added", "device_removed", "device_disconnect"],
-  user:    ["user_created", "user_updated", "user_deleted", "user_locked"],
-  token:   ["join_token_created", "join_token_used", "join_token_revoked"],
-  config:  ["config_changed", "config_reload"],
-  system:  ["throughput_spike", "service_restart"],
-};
-const _LEVEL_OF = {
-  login_failed: "error", mfa_challenge: "warn", throughput_spike: "warn",
-  user_locked: "warn", join_token_revoked: "warn", device_offline: "default",
-};
-
-function _mockLogs() {
-  const actors = ["admin", "alex@casaredes.cc", "diana@casaredes.cc", "ci@casaredes.cc", "lab@casaredes.cc", "system"];
-  const targets = ["alex-laptop", "design-mac-01", "build-srv-eu", "lab-pc-04", "kiosk-front", "—"];
-  const ips = ["84.123.18.42", "157.168.74.78", "152.168.84.81", "—", "190.27.18.4"];
-  const arr = [];
-  const now = Date.now();
-  for (let i = 0; i < 124; i++) {
-    const cat = _LOG_CATEGORIES[Math.floor(Math.random() * _LOG_CATEGORIES.length)];
-    const act = _LOG_ACTIONS[cat][Math.floor(Math.random() * _LOG_ACTIONS[cat].length)];
-    const ts = now - i * (60_000 + Math.random() * 600_000);
-    arr.push({
-      id: "log_" + i.toString().padStart(4, "0"),
-      ts,
-      tsLabel: new Date(ts).toLocaleString("es", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
-      category: cat,
-      action: act,
-      level: _LEVEL_OF[act] || "info",
-      actor: actors[Math.floor(Math.random() * actors.length)],
-      target: targets[Math.floor(Math.random() * targets.length)],
-      ip: ips[Math.floor(Math.random() * ips.length)],
-      payload: {
-        actor_id: Math.floor(Math.random() * 20) + 1,
-        target_id: "ddef-" + (9820 + Math.floor(Math.random() * 9)),
-        ...(act === "login_failed" ? { reason: "invalid_password", attempts: 3 } : {}),
-        ...(act === "session_start" ? { protocol: "TCP-relay", relay: "eu-west-1" } : {}),
-        ...(act === "file_transfer" ? { bytes: 412_000_000, files: 3, direction: "outbound" } : {}),
-        ...(act === "user_created" ? { username: "ppqwepriq", role: "operator" } : {}),
-      },
-    });
+// ─── Auth-aware fetch (Etapa 3.7) ─────────────────────
+function _lgAuthToken() {
+  try {
+    const raw = localStorage.getItem("cm-auth");
+    return raw ? (JSON.parse(raw)?.token || null) : null;
+  } catch { return null; }
+}
+async function _lgApi(path, init = {}) {
+  const token = _lgAuthToken();
+  const headers = {
+    ...(init.headers || {}),
+    ...(token ? { Authorization: "Bearer " + token } : {}),
+  };
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { ...init, headers });
+  if (res.status === 401) {
+    try { localStorage.removeItem("cm-auth"); } catch {}
+    window.location.hash = "/login";
+    throw new Error("unauthenticated");
   }
-  return arr;
+  if (res.status === 204) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${init.method || "GET"} ${path} -> ${res.status} ${body.slice(0, 200)}`);
+  }
+  return res.json();
 }
 
-const MOCK_LOGS = _mockLogs();
+// ─── Catálogo de categorías + acciones (mirror backend AUDIT_CATEGORIES) ──
+// Mantenemos el shape original {category: [actions...]} que el JSX consume,
+// pero los valores son los del enum AuditAction de backend/app/models/audit_log.py.
+const _LOG_CATEGORIES = ["auth", "session", "user_management", "config", "address_book"];
+const _LOG_ACTIONS = {
+  session: [
+    "connect", "disconnect", "file_transfer", "close",
+  ],
+  auth: [
+    "login", "login_failed",
+    "api_token_created", "api_token_revoked",
+    "join_token_created", "join_token_revoked", "join_token_deleted",
+  ],
+  user_management: [
+    "user_created", "user_updated", "user_disabled", "user_enabled", "user_deleted",
+  ],
+  config: [
+    "settings_changed", "settings_exported", "logs_deleted",
+    "backup_exported", "backup_restored",
+    "device_updated", "device_forgotten", "device_disconnect_requested",
+    "device_bulk_updated",
+    "tag_created", "tag_deleted", "device_tagged", "device_untagged",
+  ],
+  address_book: [
+    "address_book_updated", "address_book_cleared",
+  ],
+};
+const _LEVEL_OF = {
+  login_failed: "error",
+  user_disabled: "warn",
+  user_deleted: "warn",
+  join_token_revoked: "warn",
+  api_token_revoked: "warn",
+  logs_deleted: "warn",
+  device_forgotten: "warn",
+  backup_restored: "warn",
+  address_book_cleared: "warn",
+};
+
+// Map an ApiAuditLog row → the JSX log shape. The backend's category is
+// derived server-side from the action via AUDIT_CATEGORIES; we recompute
+// here so the filter dropdown stays decoupled from the response shape.
+function _categoryForAction(action) {
+  for (const [cat, actions] of Object.entries(_LOG_ACTIONS)) {
+    if (actions.includes(action)) return cat;
+  }
+  return "config";
+}
+function _lgAdaptLog(api) {
+  const ts = new Date(api.created_at).getTime();
+  const action = api.action;
+  return {
+    id: String(api.id),
+    rawId: api.id,
+    ts: Number.isFinite(ts) ? ts : Date.now(),
+    tsLabel: new Date(ts).toLocaleString("es", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    }),
+    category: _categoryForAction(action),
+    action,
+    level: _LEVEL_OF[action] || "info",
+    actor: api.actor_username || (api.actor_user_id ? `user #${api.actor_user_id}` : "system"),
+    target: api.to_id || api.from_id || "—",
+    ip: api.ip || "—",
+    payload: api.payload ? _safeParseJson(api.payload) : {},
+  };
+}
+function _safeParseJson(s) {
+  try { return JSON.parse(s); } catch { return { raw: s }; }
+}
 
 const _RANGE_OPTS = [
   { id: "1h",  label: "Última hora", ms: 3600_000 },
@@ -407,7 +456,7 @@ function LogDetailDrawer({ log, onClose }) {
 
 // ─── Página ───────────────────────────────────────────
 function LogsPage() {
-  const [logs, setLogs] = _lgS(MOCK_LOGS);
+  const [logs, setLogs] = _lgS([]);
   const [range, setRange] = _lgS("7d");
   const [category, setCategory] = _lgS("all");
   const [action, setAction] = _lgS("all");
@@ -417,6 +466,25 @@ function LogsPage() {
   const [confirmDelete, setConfirmDelete] = _lgS(false);
   const [confirmClear, setConfirmClear] = _lgS(false);
   const toast = useToast();
+
+  // Server-side filtering: build the query from the active filters,
+  // re-fetch on change. Backend caps `limit` at 200; client-side filtering
+  // (q, range when "all") still applies on top of the server response so
+  // the in-page search stays snappy.
+  const _refresh = async () => {
+    const params = new URLSearchParams({ limit: "200" });
+    if (category !== "all") params.set("category", category);
+    if (action !== "all") params.set("action", action);
+    const rangeMs = _RANGE_OPTS.find((r) => r.id === range)?.ms ?? Infinity;
+    if (rangeMs !== Infinity) {
+      params.set("since", new Date(Date.now() - rangeMs).toISOString());
+    }
+    try {
+      const data = await _lgApi(`/admin/api/logs?${params.toString()}`);
+      setLogs((data?.items || []).map(_lgAdaptLog));
+    } catch {}
+  };
+  _lgE(() => { _refresh(); }, [range, category, action]);
 
   const visible = _lgM(() => {
     let arr = logs;
@@ -457,18 +525,41 @@ function LogsPage() {
   };
   const clearSelection = () => setSelected(new Set());
 
-  const deleteSelected = () => {
+  const deleteSelected = async () => {
     const n = selected.size;
-    setLogs((ls) => ls.filter((l) => !selected.has(l.id)));
+    const ids = [...selected]
+      .map((id) => Number(id))
+      .filter((x) => Number.isFinite(x));
+    try {
+      await _lgApi("/admin/api/logs", {
+        method: "DELETE",
+        body: JSON.stringify({ ids }),
+      });
+      toast(`${n} ${n === 1 ? "evento eliminado" : "eventos eliminados"}`, { tone: "success" });
+    } catch (err) {
+      toast("No se pudo eliminar: " + err.message, { tone: "danger" });
+    }
     clearSelection();
     setConfirmDelete(false);
-    toast(`${n} ${n === 1 ? "evento eliminado" : "eventos eliminados"}`, { tone: "success" });
+    _refresh();
   };
-  const clearAll = () => {
-    setLogs([]);
+  const clearAll = async () => {
+    // "Vaciar todo" recolecta los IDs visibles y los borra. El backend
+    // rechaza el bulk-delete si todas las filas están dentro de la ventana
+    // de retención (30 días) — eso registra LOGS_DELETED y propaga skipped.
+    const ids = logs.map((l) => Number(l.rawId)).filter((x) => Number.isFinite(x));
+    try {
+      await _lgApi("/admin/api/logs", {
+        method: "DELETE",
+        body: JSON.stringify({ ids }),
+      });
+      toast("Auditoría vaciada — la acción ha quedado registrada", { tone: "success" });
+    } catch (err) {
+      toast("No se pudo vaciar: " + err.message, { tone: "danger" });
+    }
     clearSelection();
     setConfirmClear(false);
-    toast("Auditoría vaciada — esta acción se ha registrado", { tone: "success" });
+    _refresh();
   };
 
   const exportData = (fmt) => {
