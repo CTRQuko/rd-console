@@ -32,6 +32,7 @@ from sqlmodel import select
 from ..deps import AdminUser, SessionDep
 from ..models.audit_log import AuditAction, AuditLog
 from ..models.device import Device
+from ..security import utcnow_naive
 
 router = APIRouter(prefix="/api/v1", tags=["system"])
 
@@ -228,23 +229,71 @@ def system_connections_24h(
 )
 def system_throughput(
     admin: AdminUser,
+    session: SessionDep,
     window: str = Query(default="60m", pattern=r"^\d+[ms]$"),
 ) -> ThroughputResponse:
     """Per-minute in/out byte rates over a sliding window (default 60m).
 
-    NOTE: This is currently a thin stub — psutil gives us instantaneous
-    counters, but a real per-minute series requires a background sampler
-    with persistent storage. Until then we serve the live aggregate value
-    repeated 60 times so the chart renders without NaN.
+    Reads from `system_metric_samples` which the metrics-sampler task
+    populates every 60 s with cumulative net_io_counters. We diff
+    consecutive samples to derive a bytes-per-second rate and bucket
+    those rates by minute.
+
+    If the sampler has had less than `num_buckets` minutes to run, the
+    leading buckets fill with zeros so the chart still renders.
     """
-    # TODO: replace with proper background sampler. The current shape lets
-    # the ThroughputChart on the frontend render without crashing.
-    in_now = max(1, psutil.net_io_counters().bytes_recv % 100_000_000)
-    out_now = max(1, psutil.net_io_counters().bytes_sent % 100_000_000)
+    from ..models.system_metric import SystemMetricSample
+
+    # Parse the window: "60m" → 3600 s, "30s" → 30 s. The route's regex
+    # already validates the shape; here we only worry about unit math.
+    raw = window.strip()
+    unit = raw[-1]
+    value = int(raw[:-1])
+    window_seconds = value * (60 if unit == "m" else 1)
+    bucket_seconds = 60
+    num_buckets = max(1, window_seconds // bucket_seconds)
+
+    now = utcnow_naive()
+    cutoff = now - timedelta(seconds=window_seconds + bucket_seconds)
+    samples = session.exec(
+        select(SystemMetricSample)
+        .where(SystemMetricSample.sampled_at >= cutoff)
+        .order_by(SystemMetricSample.sampled_at.asc())
+    ).all()
+
+    # Pre-fill every bucket with zero so a backend that just started
+    # still serves a 60-element array — the chart renders an empty
+    # leading region instead of choking on a short series.
+    buckets_in = [0] * num_buckets
+    buckets_out = [0] * num_buckets
+
+    if len(samples) >= 2:
+        # Walk consecutive sample pairs, compute rate, assign to the
+        # bucket containing the *later* sample. Using the later sample
+        # places "fresh" rates closest to the right edge of the chart,
+        # matching what a viewer expects for "now".
+        for prev, curr in zip(samples, samples[1:]):
+            elapsed = (curr.sampled_at - prev.sampled_at).total_seconds()
+            if elapsed <= 0:
+                continue  # clock skew or duplicate samples; skip
+            rate_in = max(0, (curr.bytes_in - prev.bytes_in) // elapsed)
+            rate_out = max(0, (curr.bytes_out - prev.bytes_out) // elapsed)
+            # Index = how many full minutes ago this sample was taken,
+            # measured from the right edge.
+            seconds_ago = (now - curr.sampled_at).total_seconds()
+            bucket_idx = num_buckets - 1 - int(seconds_ago // bucket_seconds)
+            if 0 <= bucket_idx < num_buckets:
+                # If two pairs land in the same bucket (sampler ticked
+                # twice that minute), keep the later/larger rate so the
+                # chart isn't smoothed away by averaging.
+                buckets_in[bucket_idx] = max(buckets_in[bucket_idx], int(rate_in))
+                buckets_out[bucket_idx] = max(buckets_out[bucket_idx], int(rate_out))
+
+    max_bps = max([1, *buckets_in, *buckets_out])
     return ThroughputResponse(
-        inbound=[in_now] * 60,
-        out=[out_now] * 60,
-        max_bps=max(in_now, out_now) + 1,
+        inbound=buckets_in,
+        out=buckets_out,
+        max_bps=max_bps,
         link_capacity_bps=1_000_000_000,  # assume 1 Gb/s; configurable later
     )
 
