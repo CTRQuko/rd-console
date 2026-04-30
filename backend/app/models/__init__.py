@@ -6,6 +6,7 @@ from .audit_log import AuditLog
 from .device import Device
 from .join_token import JoinToken
 from .jwt_revocation import JwtRevocation
+from .role import Role
 from .runtime_setting import RuntimeSetting
 from .system_metric import SystemMetricSample
 from .tag import DeviceTag, Tag
@@ -19,6 +20,7 @@ __all__ = [
     "DeviceTag",
     "JoinToken",
     "JwtRevocation",
+    "Role",
     "RuntimeSetting",
     "SystemMetricSample",
     "Tag",

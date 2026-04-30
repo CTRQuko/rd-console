@@ -29,6 +29,7 @@ from .routers import (
     join,
     join_tokens,
     logs,
+    roles as roles_router,
     rustdesk,
     search,
     settings_,
@@ -167,6 +168,12 @@ async def lifespan(_: FastAPI):
     )
     init_db()
     _bootstrap_admin()
+    # Seed the builtin roles (admin, user) so the Settings → Roles
+    # panel renders meaningful data on a fresh DB. Idempotent: existing
+    # rows are left untouched, so an operator's edits to permissions
+    # survive restarts.
+    from .routers.roles import bootstrap_roles
+    bootstrap_roles()
     _warn_startup(get_settings())
     # In dev, refresh fixture device presence on every startup so the panel
     # never shows "0 online" just because the seed timestamps drifted past
@@ -422,6 +429,7 @@ def create_app() -> FastAPI:
     app.include_router(system_router.router)
     app.include_router(health_router.router)
     app.include_router(updates_router.router)
+    app.include_router(roles_router.router)
 
     # Public
     app.include_router(join.router)

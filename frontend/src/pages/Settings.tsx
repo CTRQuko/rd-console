@@ -1118,60 +1118,112 @@ const _ROLE_PERMS = [
   ]},
 ];
 
+// Backend adapter: converts /admin/api/roles row → UI shape (perms as Set).
+const _roleFromBackend = (r) => ({
+  id: r.id,
+  name: r.name,
+  description: r.description || "",
+  builtin: r.builtin,
+  members: r.member_count,
+  perms: new Set(r.permissions || []),
+});
+
+// Lightweight stub so legacy consumers reading window.RD_AVAILABLE_ROLES
+// (UserFormModal in Users.tsx falls back to this when the global is
+// missing) still see something useful before the panel mounts.
 const _ROLES_INIT = [
-  {
-    id: "admin", name: "Administrador", builtin: true,
-    description: "Acceso total al relay, usuarios y configuración.",
-    perms: new Set([
-      "devices.read","devices.edit","devices.delete","devices.kick",
-      "users.read","users.invite","users.edit","users.delete",
-      "tokens.read","tokens.create","tokens.revoke",
-      "logs.read","logs.export",
-      "settings.read","settings.write","roles.manage",
-    ]),
-    members: 2,
-  },
-  {
-    id: "operator", name: "Operador", builtin: true,
-    description: "Día a día — gestiona dispositivos e invitaciones, sin tocar configuración.",
-    perms: new Set([
-      "devices.read","devices.edit","devices.kick",
-      "tokens.read","tokens.create","tokens.revoke",
-      "logs.read",
-    ]),
-    members: 5,
-  },
-  {
-    id: "viewer", name: "Lector", builtin: true,
-    description: "Solo lectura — útil para auditoría externa o NOC.",
-    perms: new Set([
-      "devices.read","users.read","tokens.read","logs.read","settings.read",
-    ]),
-    members: 1,
-  },
+  { id: "admin", name: "Administrador", builtin: true, description: "Acceso total.", perms: new Set(), members: 0 },
+  { id: "user",  name: "Usuario",       builtin: true, description: "Solo lectura.",  perms: new Set(), members: 0 },
 ];
 
 function RolesPanel() {
-  const [roles, setRoles] = useState(_ROLES_INIT);
-  const [selectedId, setSelectedId] = useState(_ROLES_INIT[0].id);
+  // Cableado a /admin/api/roles + /admin/api/roles/catalog. Permission
+  // catalog (the grid of toggleable rows in the right pane) is fetched
+  // once on mount; the role list refreshes on every mutation so member
+  // counts stay in sync if the same admin edits a role on another tab.
+  const [roles, setRoles] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(null);
   const [deleteRole, setDeleteRole] = useState(null);
   const toast = useToast();
 
-  const role = roles.find((r) => r.id === selectedId) || roles[0];
+  const reload = async () => {
+    try {
+      const list = await _stApi("/admin/api/roles");
+      const adapted = (list || []).map(_roleFromBackend);
+      setRoles(adapted);
+      if (!selectedId && adapted.length) setSelectedId(adapted[0].id);
+    } catch {
+      // silent — empty state covers it
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await _stApi("/admin/api/roles");
+        if (cancelled) return;
+        const adapted = (list || []).map(_roleFromBackend);
+        setRoles(adapted);
+        if (adapted.length) setSelectedId(adapted[0].id);
+      } catch {
+        // silent
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Render the in-flight draft as if it were already in the list when
+  // we're creating a brand new role (POST hasn't fired yet).
+  const draftIsNew = editing && draft && !roles.some((r) => r.id === draft.id);
+  const visibleRoles = draftIsNew ? [...roles, draft] : roles;
+  const role = visibleRoles.find((r) => r.id === selectedId) || visibleRoles[0];
 
   const startEdit = () => {
     setDraft({ ...role, perms: new Set(role.perms) });
     setEditing(true);
   };
   const cancelEdit = () => { setEditing(false); setDraft(null); };
-  const saveEdit = () => {
-    setRoles((rs) => rs.map((r) => r.id === draft.id ? draft : r));
-    setEditing(false);
-    setDraft(null);
-    toast("Rol actualizado", { tone: "success" });
+
+  const saveEdit = async () => {
+    if (!draft) return;
+    const isNew = !roles.some((r) => r.id === draft.id);
+    const body = {
+      name: draft.name,
+      description: draft.description,
+      permissions: Array.from(draft.perms),
+    };
+    try {
+      let updated;
+      if (isNew) {
+        updated = await _stApi("/admin/api/roles", {
+          method: "POST",
+          body: JSON.stringify({ id: draft.id, ...body }),
+        });
+      } else {
+        updated = await _stApi(`/admin/api/roles/${draft.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+      }
+      const adapted = _roleFromBackend(updated);
+      setRoles((rs) => {
+        const exists = rs.some((r) => r.id === adapted.id);
+        return exists
+          ? rs.map((r) => r.id === adapted.id ? adapted : r)
+          : [...rs, adapted];
+      });
+      setSelectedId(adapted.id);
+      setEditing(false);
+      setDraft(null);
+      toast(isNew ? `Rol «${adapted.name}» creado` : "Rol actualizado", { tone: "success" });
+    } catch (err) {
+      toast(`No se pudo guardar el rol: ${err?.message || "error"}`, { tone: "danger" });
+    }
   };
+
   const togglePerm = (id) => {
     setDraft((d) => {
       const ps = new Set(d.perms);
@@ -1179,34 +1231,41 @@ function RolesPanel() {
       return { ...d, perms: ps };
     });
   };
+
   const duplicateRole = () => {
+    // Duplicate stays local (in `draft`) until the user hits Save —
+    // that's when the POST fires.
     const id = "rol_" + Math.random().toString(36).slice(2, 7);
     const copy = {
       ...role, id, name: `${role.name} (copia)`,
       builtin: false, members: 0, perms: new Set(role.perms),
     };
-    setRoles((rs) => [...rs, copy]);
     setSelectedId(id);
     setDraft(copy);
     setEditing(true);
-    toast("Rol duplicado para edición");
+    toast("Rol duplicado — edita y guarda para persistir");
   };
-  const removeRole = () => {
+
+  const removeRole = async () => {
     if (!deleteRole) return;
-    const removedId = deleteRole.id;
-    const removedName = deleteRole.name;
-    setRoles((rs) => {
-      const next = rs.filter((r) => r.id !== removedId);
-      // si borramos el seleccionado, saltar al primero que quede
-      if (selectedId === removedId) {
-        setSelectedId(next[0]?.id);
-      }
-      return next;
-    });
-    setEditing(false);
-    setDraft(null);
+    const target = deleteRole;
     setDeleteRole(null);
-    toast(`Rol «${removedName}» eliminado`, { tone: "success" });
+    try {
+      await _stApi(`/admin/api/roles/${target.id}`, { method: "DELETE" });
+      setRoles((rs) => {
+        const next = rs.filter((r) => r.id !== target.id);
+        if (selectedId === target.id) setSelectedId(next[0]?.id || null);
+        return next;
+      });
+      setEditing(false);
+      setDraft(null);
+      toast(`Rol «${target.name}» eliminado`, { tone: "success" });
+      // Re-fetch to capture new member counts (deleted role's members
+      // were reassigned to the "user" fallback by the backend).
+      await reload();
+    } catch (err) {
+      toast(`No se pudo eliminar: ${err?.message || "error"}`, { tone: "danger" });
+    }
   };
 
   const view = editing ? draft : role;
@@ -1223,9 +1282,9 @@ function RolesPanel() {
         <button
           className="cm-btn cm-btn--primary"
           onClick={() => {
+            // Stays local until the user clicks Save — that's when POST fires.
             const id = "rol_" + Math.random().toString(36).slice(2, 7);
             const r = { id, name: "Nuevo rol", description: "", builtin: false, members: 0, perms: new Set() };
-            setRoles((rs) => [...rs, r]);
             setSelectedId(id);
             setDraft(r);
             setEditing(true);
@@ -1238,7 +1297,7 @@ function RolesPanel() {
       <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minHeight: 400 }}>
         {/* Lista de roles */}
         <aside style={{ borderRight: "1px solid var(--border)", padding: 8, maxHeight: 600, overflowY: "auto" }}>
-          {roles.map((r) => (
+          {visibleRoles.map((r) => (
             <button
               key={r.id}
               onClick={() => { if (!editing) setSelectedId(r.id); }}
