@@ -29,33 +29,14 @@
 <body>
 <div id="root"><div class="boot">Cargando consola…</div></div>
 
-<!-- React 18 + Babel (pinned, mirrors Console Mockup.html from the ZIP) -->
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
-
-<!-- Tweaks framework (theme/density/accent persistence) -->
-<script type="text/babel" src="/console/tweaks-panel.jsx"></script>
-
-<!-- Shared primitives & icons -->
-<script type="text/babel" src="/console/icons.jsx"></script>
-<script type="text/babel" src="/console/primitives.jsx"></script>
-
-<!-- Shell: sidebar, topbar, router, theme -->
-<script type="text/babel" src="/console/shell.jsx"></script>
-
-<!-- Pages -->
-<script type="text/babel" src="/console/pages/Dashboard.edit.jsx"></script>
-<script type="text/babel" src="/console/pages/Dashboard.jsx"></script>
-<script type="text/babel" src="/console/pages/Devices.jsx"></script>
-<script type="text/babel" src="/console/pages/AddressBook.jsx"></script>
-<script type="text/babel" src="/console/pages/JoinTokens.jsx"></script>
-<script type="text/babel" src="/console/pages/Logs.jsx"></script>
-<script type="text/babel" src="/console/pages/Users.jsx"></script>
-<script type="text/babel" src="/console/pages/Settings.jsx"></script>
-<script type="text/babel" src="/console/pages/Login.jsx"></script>
-
-<!-- App entry -->
-<script type="text/babel" src="/console/app.jsx"></script>
+<!--
+  Etapa 4, PR 1 (ESM migration): Vite bundles src/main.tsx with real
+  React 18 + JSX transform + HMR. The previous CDN trio (React UMD,
+  ReactDOM UMD, @babel/standalone) is gone, and so are all the
+  <script type="text/babel"> tags that loaded the legacy .jsx files
+  from public/console/. Migration goes page by page across PR 1-5;
+  unmigrated routes show a placeholder until they land.
+-->
+<script type="module" src="/src/main.tsx"></script>
 </body>
 </html>
