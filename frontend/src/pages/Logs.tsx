@@ -630,11 +630,15 @@ interface LogsPageProps {
   navigate?: (path: string) => void;
 }
 
+const _LOG_PAGE_SIZE = 200;
+
 export function LogsPage(_props: LogsPageProps = {}) {
   // Initialise from the hash so a reload (or a shared link) lands on
   // the same filter set the user left.
   const _initialFilters = _readFiltersFromHash();
   const [logs, setLogs] = useState<Log[]>([]);
+  const [total, setTotal] = useState<number>(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [range, setRange] = useState<RangeId>(_initialFilters.range);
   const [category, setCategory] = useState<Category | "all">(_initialFilters.category);
   const [action, setAction] = useState<string>(_initialFilters.action);
@@ -651,26 +655,67 @@ export function LogsPage(_props: LogsPageProps = {}) {
     _writeFiltersToHash({ range, category, action, q });
   }, [range, category, action, q]);
 
-  // Server-side filtering: build the query from the active filters,
-  // re-fetch on change. Backend caps `limit` at 200; client-side filtering
-  // (q, range when "all") still applies on top of the server response so
-  // the in-page search stays snappy.
-  const _refresh = async () => {
-    const params = new URLSearchParams({ limit: "200" });
+  // Build the query string for /admin/api/logs from the active filters.
+  // Shared by the initial load and the "show more" paged fetcher so they
+  // can never disagree about which filter is in effect.
+  const _buildLogParams = (offset: number, limit: number): URLSearchParams => {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
     if (category !== "all") params.set("category", category);
     if (action !== "all") params.set("action", action);
     const rangeMs = _RANGE_OPTS.find((r) => r.id === range)?.ms ?? Infinity;
     if (rangeMs !== Infinity) {
       params.set("since", new Date(Date.now() - rangeMs).toISOString());
     }
+    return params;
+  };
+
+  // Server-side filtering: build the query from the active filters,
+  // re-fetch on change. Backend caps `limit` at 500; we ask for 200
+  // per page. Client-side filtering (q, range narrowing) still applies
+  // on top so the in-page search stays snappy.
+  const _refresh = async () => {
+    const params = _buildLogParams(0, _LOG_PAGE_SIZE);
     try {
       const data = await _lgApi<BackendLogsResponse>(`/admin/api/logs?${params.toString()}`);
       setLogs((data?.items || []).map(_lgAdaptLog));
+      setTotal(data?.total ?? 0);
     } catch {
       // silent — toast on error would be too noisy for a polling re-fetch
     }
   };
-  useEffect(() => { _refresh(); }, [range, category, action]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Re-fetch on filter change. Selection is reset because the IDs in
+  // it might no longer be in `logs` (and a stale selection counter is
+  // confusing).
+  useEffect(() => {
+    _refresh();
+    setSelected(new Set());
+  }, [range, category, action]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pull the next page from the server. Appends to `logs`, doesn't
+  // replace — the user keeps scroll position.
+  const loadMore = async () => {
+    if (loadingMore || logs.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const params = _buildLogParams(logs.length, _LOG_PAGE_SIZE);
+      const data = await _lgApi<BackendLogsResponse>(`/admin/api/logs?${params.toString()}`);
+      const newRows = (data?.items || []).map(_lgAdaptLog);
+      // Defensive dedupe: if the server returned a row we already have
+      // (e.g. background insert shifted offsets), skip it.
+      const seen = new Set(logs.map((l) => l.id));
+      const fresh = newRows.filter((r) => !seen.has(r.id));
+      setLogs((prev) => [...prev, ...fresh]);
+      if (typeof data?.total === "number") setTotal(data.total);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "error";
+      toast(`No se pudieron cargar más eventos: ${msg}`, { tone: "danger" });
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const visible = useMemo<Log[]>(() => {
     let arr = logs;
@@ -893,7 +938,10 @@ export function LogsPage(_props: LogsPageProps = {}) {
           padding: "10px 16px", borderBottom: "1px solid var(--border)",
           display: "flex", alignItems: "center", gap: 12, fontSize: 12, color: "var(--fg-muted)",
         }}>
-          <span>{visible.length} {visible.length === 1 ? "evento" : "eventos"}</span>
+          <span>
+            {visible.length} {visible.length === 1 ? "evento" : "eventos"}
+            {total > logs.length && ` · ${total} totales en backend`}
+          </span>
           {(category !== "all" || action !== "all" || range !== "7d" || q) && (
             <button
               onClick={() => { setCategory("all"); setAction("all"); setRange("7d"); setQ(""); }}
@@ -954,6 +1002,31 @@ export function LogsPage(_props: LogsPageProps = {}) {
             </table>
           )}
         </div>
+        {/* Paginación: solo aparece si hay más en backend de los que tenemos
+            cargados. El client-side `q` filter puede dejar `visible` por
+            debajo de `logs.length` y eso es OK — la cuenta de cabecera
+            arriba dice cuántos hay en backend totales. */}
+        {logs.length < total && (
+          <div style={{
+            padding: "12px 16px", borderTop: "1px solid var(--border)",
+            display: "flex", alignItems: "center", gap: 12, fontSize: 13,
+            background: "var(--bg-subtle)",
+          }}>
+            <span style={{ color: "var(--fg-muted)" }}>
+              Mostrando {logs.length} de {total} eventos
+            </span>
+            <span style={{ flex: 1 }} />
+            <button
+              className="cm-btn"
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore
+                ? "Cargando…"
+                : `Cargar ${Math.min(_LOG_PAGE_SIZE, total - logs.length)} más`}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Drawer detalle */}
