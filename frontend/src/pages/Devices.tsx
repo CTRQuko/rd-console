@@ -713,6 +713,14 @@ function CreateDeviceModal({ open, onClose, onSubmit }) {
 // compartir un enlace conservando lo que estaba viendo el operador.
 // `state=…` (override de debug que ya consumía el código) se preserva
 // como sub-parámetro independiente.
+//
+// Asunción de codificación: `os` y `tags` se serializan como CSV
+// (comma-separated). Ambos dominios están constreñidos a tokens sin
+// comas — la lista `osFamily` es un enum cerrado {macOS, Windows,
+// Linux, Android, iOS, Otros}, y los nombres de Tag se validan en
+// `backend/app/routers/tags.py` con el regex `[A-Za-z0-9_\- .]+`.
+// Si alguno de los dos dominios admite comas en el futuro, cambiar
+// a `?os=a&os=b` (entries repetidas) en lugar de la concatenación.
 function _dvReadFiltersFromHash() {
   const hash = window.location.hash || "";
   const qIdx = hash.indexOf("?");

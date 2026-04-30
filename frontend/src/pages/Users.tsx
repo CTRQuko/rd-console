@@ -10,7 +10,6 @@ import {
   useState, useEffect, useMemo, useRef,
   type Dispatch,
   type ReactNode,
-  type SetStateAction,
 } from "react";
 import { Icon } from "../components/Icon";
 import {
@@ -1041,8 +1040,3 @@ export function UsersPage({ embedded = false }: UsersPageProps = {}) {
   if (embedded) return <div>{body}</div>;
   return <div className="cm-page">{body}</div>;
 }
-
-// SetStateAction is imported but not used here; re-export keeps the
-// generic Dispatch<SetStateAction<...>> shape available for callers
-// that compose this page with their own state setters.
-export type { SetStateAction };
