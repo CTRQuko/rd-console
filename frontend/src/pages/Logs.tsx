@@ -587,18 +587,51 @@ export function LogsPage() {
     _refresh();
   };
 
-  const exportData = (fmt) => {
-    const data = visible;
-    if (fmt === "csv") {
-      const header = "id,timestamp,category,action,level,actor,target,ip\n";
-      const rows = data.map((l) => [l.id, new Date(l.ts).toISOString(), l.category, l.action, l.level, l.actor, l.target, l.ip].join(",")).join("\n");
-      _download("audit-logs.csv", header + rows, "text/csv");
-    } else if (fmt === "ndjson") {
-      _download("audit-logs.ndjson", data.map((l) => JSON.stringify(l)).join("\n"), "application/x-ndjson");
-    } else if (fmt === "json") {
-      _download("audit-logs.json", JSON.stringify(data, null, 2), "application/json");
+  // Server-streamed export — the backend has /admin/api/logs?format=
+  // {csv,ndjson} which iterates every matching row (ignoring the 200-row
+  // pagination cap) and pushes them as a streaming response. The JSON
+  // path stays client-side because there's no equivalent server route.
+  const exportData = async (fmt) => {
+    if (fmt === "json") {
+      _download("audit-logs.json", JSON.stringify(visible, null, 2), "application/json");
+      toast(`Exportadas ${visible.length} entradas`, { tone: "success" });
+      return;
     }
-    toast(`Exportadas ${data.length} entradas`, { tone: "success" });
+    if (fmt !== "csv" && fmt !== "ndjson") return;
+
+    const params = new URLSearchParams();
+    params.set("format", fmt);
+    if (category !== "all") params.set("category", category);
+    if (action !== "all") params.set("action", action);
+    const rangeMs = _RANGE_OPTS.find((r) => r.id === range)?.ms ?? Infinity;
+    if (rangeMs !== Infinity) {
+      params.set("since", new Date(Date.now() - rangeMs).toISOString());
+    }
+
+    const token = (() => {
+      try { return JSON.parse(localStorage.getItem("cm-auth") || "{}").token || ""; }
+      catch { return ""; }
+    })();
+
+    try {
+      const r = await fetch(`/admin/api/logs?${params.toString()}`, {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const blob = await r.blob();
+      const filename = fmt === "csv" ? "audit-logs.csv" : "audit-logs.ndjson";
+      const mime = fmt === "csv" ? "text/csv" : "application/x-ndjson";
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([blob], { type: mime }));
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+      toast("Exportación descargada", { tone: "success" });
+    } catch (err) {
+      toast(`No se pudo exportar: ${err?.message || "error"}`, { tone: "danger" });
+    }
   };
 
   const actionsForCategory = useMemo(() => {
