@@ -21,6 +21,7 @@ from .deps import AdminUser
 from .models.user import User, UserRole
 from .routers import (
     address_book,
+    address_book_v2,
     api_tokens,
     auth,
     backup,
@@ -422,6 +423,7 @@ def create_app() -> FastAPI:
     app.include_router(tags.router)
     app.include_router(search.router)
     app.include_router(address_book.router)
+    app.include_router(address_book_v2.router)
     app.include_router(join_tokens.router)
     # /api/v1 namespace — feeds the design-system-v3 Dashboard (system
     # metrics + recent connections). Coexists with the /api and

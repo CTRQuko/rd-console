@@ -408,27 +408,58 @@ export function AddressBookPage() {
   const [importOpen, setImportOpen] = useState(false);
   const toast = useToast();
 
-  // Initial load: pull the kingmo888-compat blob and derive groups
-  // from its `tags` + `peers`. Refresh every 30 s so a peer that the
-  // RustDesk client adds locally surfaces in the panel.
+  // Initial load: pull groups from /api/ab/v2/groups. The first call
+  // auto-imports the v1 blob if the user hasn't migrated yet (backend
+  // handles the idempotent path). Each group's contacts come from
+  // /api/ab/v2/groups/{id}/contacts.
+  const load = async () => {
+    try {
+      const groupRows = await _abApi("/api/ab/v2/groups");
+      if (!groupRows) return;
+      // Fetch contacts for every group in parallel.
+      const adapted = await Promise.all(
+        (groupRows || []).map(async (g) => {
+          let members = [];
+          try {
+            const contacts = await _abApi(`/api/ab/v2/groups/${g.id}/contacts`);
+            members = (contacts || []).map((c) => ({
+              id: String(c.id),
+              name: c.alias || c.rd_id,
+              email: c.username || c.rd_id,
+              devices: 1,
+              perm: _AB_DEFAULT_PERM,
+              // Backend-side fields kept for save round-trip.
+              _rd_id: c.rd_id,
+              _platform: c.platform,
+              _note: c.note,
+              _tags: c.tags || [],
+            }));
+          } catch {
+            // empty members on contact-fetch failure
+          }
+          return {
+            id: String(g.id),
+            name: g.name,
+            color: g.color || "blue",
+            members,
+            _backend_id: g.id,
+            _note: g.note,
+          };
+        }),
+      );
+      setGroups(adapted);
+      if (adapted.length && !adapted.some((g) => g.id === activeGroupId)) {
+        setActiveGroupId(adapted[0].id);
+      }
+    } catch {
+      // silent
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await _abApi("/api/ab/get", {
-          method: "POST",
-          body: JSON.stringify({ id: "panel" }),
-        });
-        if (cancelled) return;
-        const next = _abAdaptBlob(res?.data);
-        setGroups(next);
-        if (next.length && !next.some((g) => g.id === activeGroupId)) {
-          setActiveGroupId(next[0].id);
-        }
-      } catch {}
-    };
-    load();
-    const id = setInterval(load, 30000);
+    (async () => { if (!cancelled) await load(); })();
+    const id = setInterval(() => { if (!cancelled) load(); }, 30000);
     return () => { cancelled = true; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -443,41 +474,99 @@ export function AddressBookPage() {
     );
   }, [group, q]);
 
-  // The address book is stored as a kingmo888 blob (see
-  // backend/app/routers/address_book.py). Round-tripping a Group /
-  // Contact / permission edit cleanly into that blob is non-trivial:
-  //   - The blob has `peers[]` keyed by RustDesk id, not by group.
-  //   - There's no "permission" field in the blob shape.
-  // So for now the page is read-only against the live blob; create /
-  // edit / delete actions stay client-side and show a toast that
-  // tells the user the action didn't reach the backend. Wiring up a
-  // real upsert needs either:
-  //   (a) a Group/Contact-model migration on the backend (BACKEND.md
-  //       §6 — bigger lift), or
-  //   (b) a careful blob editor that preserves forward-compat fields.
-  // Both belong to a follow-up commit.
-  const _abReadOnlyToast = () =>
-    toast(
-      "La agenda es solo lectura — la sincroniza el cliente RustDesk. " +
-      "Próximamente: edición desde el panel.",
-      { tone: "info" }
-    );
+  // CRUD via /api/ab/v2 (Group + Contact tables). The legacy /api/ab
+  // blob endpoints stay around for the kingmo888 sync protocol; this
+  // page edits the v2 rows that the first GET auto-imports the blob
+  // into.
+  const upsertGroup = async (g) => {
+    const isNew = !g._backend_id;
+    try {
+      if (isNew) {
+        await _abApi("/api/ab/v2/groups", {
+          method: "POST",
+          body: JSON.stringify({ name: g.name, color: g.color, note: g._note || "" }),
+        });
+      } else {
+        await _abApi(`/api/ab/v2/groups/${g._backend_id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name: g.name, color: g.color, note: g._note || "" }),
+        });
+      }
+      setGroupModal({ open: false, group: null });
+      await load();
+      toast(isNew ? "Grupo creado" : "Grupo actualizado", { tone: "success" });
+    } catch {
+      toast("No se pudo guardar el grupo", { tone: "danger" });
+    }
+  };
 
-  const upsertGroup = (_g) => {
-    _abReadOnlyToast();
-    setGroupModal({ open: false, group: null });
+  const upsertContact = async (c) => {
+    const groupBackendId = group?._backend_id;
+    if (!groupBackendId) {
+      toast("Selecciona un grupo primero", { tone: "danger" });
+      return;
+    }
+    const body = {
+      rd_id: c._rd_id || c.email || "",
+      alias: c.name || "",
+      username: c.email || "",
+      platform: c._platform || "",
+      note: c._note || "",
+      tags: Array.isArray(c._tags) ? c._tags : [],
+    };
+    const contactBackendId = c.id && /^\d+$/.test(String(c.id)) ? Number(c.id) : null;
+    try {
+      if (contactBackendId) {
+        await _abApi(`/api/ab/v2/contacts/${contactBackendId}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+      } else {
+        await _abApi(`/api/ab/v2/groups/${groupBackendId}/contacts`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+      }
+      setContactModal({ open: false, contact: null });
+      await load();
+      toast(contactBackendId ? "Contacto actualizado" : "Contacto añadido", { tone: "success" });
+    } catch {
+      toast("No se pudo guardar el contacto", { tone: "danger" });
+    }
   };
-  const upsertContact = (_c) => {
-    _abReadOnlyToast();
-    setContactModal({ open: false, contact: null });
-  };
-  const removeContact = () => {
-    _abReadOnlyToast();
+
+  const removeContact = async () => {
+    if (!deleteContact) return;
+    const cid = deleteContact.id;
     setDeleteContact(null);
+    if (!/^\d+$/.test(String(cid))) {
+      toast("ID de contacto inválido", { tone: "danger" });
+      return;
+    }
+    try {
+      await _abApi(`/api/ab/v2/contacts/${cid}`, { method: "DELETE" });
+      await load();
+      toast("Contacto eliminado", { tone: "success" });
+    } catch {
+      toast("No se pudo eliminar", { tone: "danger" });
+    }
   };
-  const removeGroup = () => {
-    _abReadOnlyToast();
+
+  const removeGroup = async () => {
+    if (!deleteGroup) return;
+    const gid = deleteGroup._backend_id;
     setDeleteGroup(null);
+    if (!gid) {
+      toast("Grupo no persistido", { tone: "danger" });
+      return;
+    }
+    try {
+      await _abApi(`/api/ab/v2/groups/${gid}`, { method: "DELETE" });
+      await load();
+      toast("Grupo eliminado", { tone: "success" });
+    } catch {
+      toast("No se pudo eliminar el grupo", { tone: "danger" });
+    }
   };
 
   return (
