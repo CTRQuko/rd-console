@@ -617,39 +617,94 @@ function NewTokenSecretModal({ open, token, onClose }) {
 }
 
 function ApiTokensSection() {
-  const [tokens, setTokens] = useState([
-    { name: "ci-deploy",      prefix: "rdcp_UD1dz6P\u2026", user: "daniel@casaredes",  used: "hace 3 min", exp: "31 dic 2026" },
-    { name: "backup-runner",  prefix: "rdcp_kP9aQX2\u2026", user: "system",            used: "hace 1 h",   exp: "sin caducidad" },
-    { name: "grafana-scrape", prefix: "rdcp_x7nMt4L\u2026", user: "observability",     used: "hace 12 h",  exp: "15 jun 2026" },
-  ]);
+  // Cableado a /api/auth/tokens (POST/GET/DELETE). Each PAT is scoped to
+  // the current user; the backend doesn't let one user manage another's
+  // tokens via this endpoint.
+  const [tokens, setTokens] = useState([]);
+  const [, setLoading] = useState(true);
   const [revoke, setRevoke] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createdToken, setCreatedToken] = useState(null); // { name, secret, prefix }
   const toast = useToast();
-  const doRevoke = () => {
+
+  const fmtRelative = (iso) => {
+    if (!iso) return "—";
+    const then = new Date(iso);
+    const diff = Math.floor((Date.now() - then.getTime()) / 1000);
+    if (diff < 60) return "ahora";
+    if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
+    if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
+    if (diff < 86400 * 7) return `hace ${Math.floor(diff / 86400)} d`;
+    return then.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+  };
+  const fmtExpiry = (iso) => {
+    if (!iso) return "sin caducidad";
+    return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const adapt = (t) => ({
+    id: t.id,
+    name: t.name,
+    prefix: t.token_prefix + "…",
+    user: "tú",
+    used: fmtRelative(t.last_used_at),
+    exp: fmtExpiry(t.expires_at),
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await _stApi("/api/auth/tokens");
+        if (cancelled) return;
+        const live = (data || []).filter((t) => !t.revoked_at);
+        setTokens(live.map(adapt));
+      } catch {
+        // silent
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const doRevoke = async () => {
     if (!revoke) return;
-    const name = revoke.name;
-    setTokens((ts) => ts.filter((t) => t.prefix !== revoke.prefix));
+    const target = revoke;
     setRevoke(null);
-    toast(`Token «${name}» revocado`, { tone: "success" });
+    try {
+      await _stApi(`/api/auth/tokens/${target.id}`, { method: "DELETE" });
+      setTokens((ts) => ts.filter((t) => t.id !== target.id));
+      toast(`Token «${target.name}» revocado`, { tone: "success" });
+    } catch {
+      toast(`No se pudo revocar «${target.name}»`, { tone: "danger" });
+    }
   };
-  const handleCreate = (form) => {
-    // generar secreto pseudo-aleatorio (mock)
-    const rand = () => Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    const secret = "rdcp_" + (rand() + rand()).replace(/[^a-zA-Z0-9]/g, "").slice(0, 36);
-    const prefix = secret.slice(0, 12) + "\u2026";
-    const expLabel =
-      form.expiry === "never" ? "sin caducidad" :
-      form.expiry === "30"    ? new Date(Date.now() + 30 * 86400000).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" }) :
-      form.expiry === "90"    ? new Date(Date.now() + 90 * 86400000).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" }) :
-      form.expiry === "365"   ? new Date(Date.now() + 365 * 86400000).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-    setTokens((ts) => [
-      { name: form.name, prefix, user: form.user, used: "—", exp: expLabel },
-      ...ts,
-    ]);
-    setCreateOpen(false);
-    setCreatedToken({ name: form.name, secret, prefix });
+
+  const handleCreate = async (form) => {
+    const expiryDays = form.expiry === "never" ? null : Number(form.expiry);
+    const body = { name: form.name };
+    if (expiryDays != null) body.expires_in_minutes = expiryDays * 24 * 60;
+    try {
+      const out = await _stApi("/api/auth/tokens", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const meta = out?.metadata;
+      if (meta) {
+        setTokens((ts) => [adapt(meta), ...ts]);
+      }
+      setCreateOpen(false);
+      setCreatedToken({
+        name: form.name,
+        secret: out?.token || "",
+        prefix: (meta?.token_prefix || "") + "…",
+      });
+    } catch {
+      toast("No se pudo crear el token", { tone: "danger" });
+    }
   };
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 16 }}>
