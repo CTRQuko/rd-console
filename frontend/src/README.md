@@ -60,9 +60,24 @@ dev and prod. The bundle dropped from ~600 KB raw + Babel runtime to
 ~360 KB raw / 100 KB gzipped, HMR works, and tests can stub React
 the same way every other React app does.
 
-`// @ts-nocheck` lives at the top of each ported page. That was the
-cheap way to land the move without typing 9k lines of legacy JSX in
-one go — a follow-up will tighten types page by page.
+`// @ts-nocheck` lived at the top of each ported page during the
+mechanical port. That was the cheap way to land the move without
+typing 9k lines of legacy JSX in one go. The follow-up has been
+tightening types page by page:
+
+- Typed: `Login.tsx`, `DashboardEdit.tsx`, `AddressBook.tsx`,
+  `Logs.tsx`, `JoinTokens.tsx`, `Users.tsx`.
+- Still on `@ts-nocheck`: `Dashboard.tsx`, `Devices.tsx`,
+  `Settings.tsx`. Each removes ~100 implicit-`any` errors at once
+  because of how dense the page is — they'll land in their own
+  dedicated PRs (Dashboard's deferral comment in the file lists the
+  recommended decomposition: Donut/PopHead/PopFoot/CoreBars first,
+  then MetricCard, then the chart components, then the page).
+
+Pages that consume the typed page exports (e.g. `DashboardPage`
+imports `WidgetLayout` from `DashboardEdit`) are wired through
+properly typed boundaries so the future `@ts-nocheck` removals don't
+shake everything else.
 
 ## Common edits
 
@@ -71,6 +86,16 @@ one go — a follow-up will tighten types page by page.
 - New top-level nav item → add it to `NAV` in `src/shell/nav.ts`
   and the breadcrumb titles map in the same file.
 - Shared widget → add to `src/components/primitives.tsx` and export it.
+- Persist a filter in the URL hash → copy the
+  `_readFiltersFromHash` / `_writeFiltersToHash` pair from
+  `pages/Logs.tsx` (or its smaller cousin in `pages/Users.tsx`).
+  Initialise state from the reader, sync with `replaceState` from a
+  `useEffect`. Default values get stripped from the URL so a clean
+  state stays as `#/<page>` rather than `#/<page>?range=7d&…`.
+- Paginate a list → see `pages/Logs.tsx` `loadMore`. The pattern is
+  "ask for `?offset=&limit=` from the backend, append to local
+  state, dedupe by id, expose a 'Cargar N más' button below the
+  table."
 
 ## Hidden gotchas
 
