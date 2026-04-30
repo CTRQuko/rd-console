@@ -1,16 +1,23 @@
-// @ts-nocheck
 // Mechanically ported from public/console/pages/AddressBook.jsx
 // (Etapa 4 ESM migration). React aliases → bare hook names,
-// window.X exports → named ESM exports. ts-nocheck because the
-// legacy code wasn't typed; tightening up types is a follow-up.
+// window.X exports → named ESM exports.
+//
+// Types added in the @ts-nocheck cleanup pass: the page now models
+// the Group/Contact rows that /api/ab/v2 round-trips and converts
+// them to the Member/Group shape the UI consumes (with the four
+// `_rd_id`/`_platform`/`_note`/`_tags` carry-over fields used by the
+// upsertContact PATCH).
 import {
-  useState, useEffect, useMemo, useCallback, useRef,
+  useState, useEffect, useMemo, useRef,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
 } from "react";
 import { Icon } from "../components/Icon";
 import {
-  Tag, Dot, Switch, Tabs, EmptyState, Skeleton, ErrorBanner,
-  Drawer, Modal, ConfirmDialog, PageSizeSelect, PageHeader,
-  ToastProvider, useToast, useHashRoute,
+  Tag, EmptyState,
+  Drawer, Modal, ConfirmDialog, PageHeader,
+  useToast,
 } from "../components/primitives";
 
 // ============================================================
@@ -18,24 +25,95 @@ import {
 // Contactos manuales agrupados, con permisos compartidos.
 // ============================================================
 
+// ─── Tipos compartidos ──────────────────────────────────
+
+type Perm = "view-only" | "view-control" | "control-only";
+type GroupColor = "violet" | "blue" | "green" | "amber" | "rose" | "default";
+
+interface Member {
+  id: string;
+  name: string;
+  email: string;
+  devices: number;
+  perm: Perm;
+  // Backend-side fields kept for save round-trip (only present when
+  // the row originated in /api/ab/v2 — local edits before save lack
+  // them and the upsert path treats `id` as the create discriminator).
+  _rd_id?: string;
+  _platform?: string;
+  _note?: string;
+  _tags?: string[];
+}
+
+interface Group {
+  id: string;
+  name: string;
+  color: GroupColor;
+  members: Member[];
+  _backend_id?: number;
+  _note?: string;
+}
+
+interface BackendGroup {
+  id: number;
+  name: string;
+  color?: GroupColor | null;
+  note?: string | null;
+  contact_count?: number;
+}
+
+interface BackendContact {
+  id: number;
+  group_id: number;
+  rd_id: string;
+  alias: string;
+  username: string;
+  platform: string;
+  note: string;
+  tags?: string[];
+}
+
+interface KebabSeparator {
+  // Sentinel used in `items` arrays to render a divider line.
+  readonly __sep: true;
+}
+
+interface KebabAction {
+  label: string;
+  icon?: string;
+  onClick?: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}
+
+type KebabItem = "sep" | KebabAction;
 
 // ─── Auth-aware fetch (Etapa 3.9) ────────────────────────
-function _abAuthToken() {
+function _abAuthToken(): string | null {
   try {
     const raw = localStorage.getItem("cm-auth");
-    return raw ? (JSON.parse(raw)?.token || null) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { token?: string };
+    return parsed?.token ?? null;
   } catch { return null; }
 }
-async function _abApi(path, init = {}) {
+
+interface ApiInit extends Omit<RequestInit, "headers"> {
+  headers?: Record<string, string>;
+}
+
+async function _abApi<T = unknown>(path: string, init: ApiInit = {}): Promise<T | null> {
   const token = _abAuthToken();
-  const headers = {
+  const headers: Record<string, string> = {
     ...(init.headers || {}),
     ...(token ? { Authorization: "Bearer " + token } : {}),
   };
   if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
-    try { localStorage.removeItem("cm-auth"); } catch {}
+    try { localStorage.removeItem("cm-auth"); } catch {
+      // localStorage might be unavailable — ignore.
+    }
     window.location.hash = "/login";
     throw new Error("unauthenticated");
   }
@@ -44,93 +122,12 @@ async function _abApi(path, init = {}) {
     const body = await res.text().catch(() => "");
     throw new Error(`${init.method || "GET"} ${path} -> ${res.status} ${body.slice(0, 200)}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
-// ─── Blob ↔ {groups: [{name, color, members[]}]} adapter ────────────────
-//
-// The backend stores the address book as a stringified JSON blob in the
-// kingmo888-compat shape RustDesk's Flutter client uses:
-//
-//   { tags: [...], peers: [{id, alias, username, hostname, tags:[...]}],
-//     tag_colors: {tag: "#HEX"} }
-//
-// The Claude Design page expects {groups: [{id, name, color, members[]}]}
-// with manual permissions per member. The mapping derives one group
-// per tag; peers without tags become a "Sin etiqueta" group. There's
-// no source-of-truth for "permission" in the blob → all members
-// default to "view-control" until a backend Group/Contact model exists.
-//
-// Edits done in this page (create group, add contact, change perm,
-// delete) currently DO NOT round-trip — see the TODO comments on
-// each handler.
-const _AB_DEFAULT_PERM = "view-control";
-const _AB_TAG_TO_COLOR = {
-  personal: "violet",
-  design: "amber",
-  servers: "blue",
-  ci: "blue",
-  lab: "green",
-  kiosk: "rose",
-  remote: "violet",
-  legacy: "default",
-};
+const _AB_DEFAULT_PERM: Perm = "view-control";
 
-function _abPickColor(name, tagColors) {
-  if (tagColors && tagColors[name]) {
-    // Map RustDesk hex/legacy colour codes to the design's palette
-    // by hue (cheap heuristic — not exact but close enough).
-    const v = String(tagColors[name]).toLowerCase();
-    if (v.includes("8b5cf6") || v.includes("violet")) return "violet";
-    if (v.includes("3b82f6") || v.includes("blue"))   return "blue";
-    if (v.includes("22c55e") || v.includes("green"))  return "green";
-    if (v.includes("f59e0b") || v.includes("amber"))  return "amber";
-    if (v.includes("e11d48") || v.includes("rose"))   return "rose";
-  }
-  return _AB_TAG_TO_COLOR[name] || "default";
-}
-
-function _abAdaptBlob(raw) {
-  if (!raw || typeof raw !== "string") return [];
-  let parsed;
-  try { parsed = JSON.parse(raw); } catch { return []; }
-  const peers = Array.isArray(parsed?.peers) ? parsed.peers : [];
-  const declaredTags = Array.isArray(parsed?.tags) ? parsed.tags : [];
-  const tagColors = parsed?.tag_colors || {};
-
-  // Bucket peers by tag. A peer with multiple tags lands in each bucket.
-  const buckets = new Map();
-  for (const tag of declaredTags) {
-    buckets.set(tag, []);
-  }
-  for (const p of peers) {
-    const tags = Array.isArray(p.tags) && p.tags.length > 0 ? p.tags : ["__untagged"];
-    for (const tag of tags) {
-      if (!buckets.has(tag)) buckets.set(tag, []);
-      buckets.get(tag).push(p);
-    }
-  }
-
-  const groups = [];
-  for (const [tag, members] of buckets.entries()) {
-    if (tag === "__untagged" && members.length === 0) continue;
-    groups.push({
-      id: tag,
-      name: tag === "__untagged" ? "Sin etiqueta" : tag,
-      color: tag === "__untagged" ? "default" : _abPickColor(tag, tagColors),
-      members: members.map((p, idx) => ({
-        id: `${tag}_${idx}_${p.id}`,
-        name: p.alias || p.hostname || p.id,
-        email: p.username || p.id,
-        devices: 1,
-        perm: _AB_DEFAULT_PERM,
-      })),
-    });
-  }
-  return groups;
-}
-
-const _GROUP_COLORS = [
+const _GROUP_COLORS: Array<{ id: GroupColor; label: string; css: string }> = [
   { id: "violet", label: "Violeta", css: "var(--violet-500)" },
   { id: "blue",   label: "Azul",    css: "var(--blue-500)"   },
   { id: "green",  label: "Verde",   css: "var(--green-500)"  },
@@ -139,69 +136,33 @@ const _GROUP_COLORS = [
   { id: "default",label: "Gris",    css: "var(--zinc-400)"   },
 ];
 
-const _PERM_OPTIONS = [
+const _PERM_OPTIONS: Array<{ id: Perm; label: string; tone: string; desc: string }> = [
   { id: "view-only",     label: "Solo ver",          tone: "default", desc: "Puede ver la pantalla; no controla." },
   { id: "view-control",  label: "Ver y controlar",   tone: "primary", desc: "Acceso completo (ratón + teclado)." },
   { id: "control-only",  label: "Solo controlar",    tone: "amber",   desc: "Sin pantalla — útil para CI." },
 ];
 
-const MOCK_GROUPS_INIT = [
-  {
-    id: "design",
-    name: "Equipo de diseño",
-    color: "violet",
-    members: [
-      { id: "m1", name: "Diana López",    email: "diana@acme.io",    devices: 2, perm: "view-control" },
-      { id: "m2", name: "Hugo Roca",      email: "hugo@acme.io",     devices: 1, perm: "view-only" },
-      { id: "m3", name: "Marta Iglesias", email: "marta@acme.io",    devices: 3, perm: "view-control" },
-    ],
-  },
-  {
-    id: "ci",
-    name: "CI / build servers",
-    color: "amber",
-    members: [
-      { id: "m4", name: "build-srv-eu",   email: "ci@acme.io",       devices: 1, perm: "control-only" },
-      { id: "m5", name: "build-srv-us",   email: "ci@acme.io",       devices: 1, perm: "control-only" },
-    ],
-  },
-  {
-    id: "qa",
-    name: "QA",
-    color: "green",
-    members: [
-      { id: "m6", name: "qa-rig-01",      email: "qa@acme.io",       devices: 1, perm: "view-control" },
-      { id: "m7", name: "qa-rig-02",      email: "qa@acme.io",       devices: 1, perm: "view-control" },
-      { id: "m8", name: "qa-mac-mini",    email: "qa@acme.io",       devices: 1, perm: "view-only" },
-    ],
-  },
-  {
-    id: "kiosk",
-    name: "Kioskos",
-    color: "default",
-    members: [
-      { id: "m9", name: "kiosk-front",    email: "kiosk@acme.io",    devices: 1, perm: "view-only" },
-      { id: "m10",name: "kiosk-lobby",    email: "kiosk@acme.io",    devices: 1, perm: "view-only" },
-    ],
-  },
-];
-
-const _colorCss = (id) => (_GROUP_COLORS.find((c) => c.id === id) || _GROUP_COLORS.at(-1)).css;
-const _permTone = (p) => (_PERM_OPTIONS.find((x) => x.id === p) || _PERM_OPTIONS[0]).tone;
-const _permLabel = (p) => (_PERM_OPTIONS.find((x) => x.id === p) || _PERM_OPTIONS[0]).label;
+const _colorCss = (id: GroupColor | undefined): string => {
+  const found = _GROUP_COLORS.find((c) => c.id === id);
+  return (found ?? _GROUP_COLORS[_GROUP_COLORS.length - 1]).css;
+};
+const _permTone = (p: Perm): string => (_PERM_OPTIONS.find((x) => x.id === p) ?? _PERM_OPTIONS[0]).tone;
+const _permLabel = (p: Perm): string => (_PERM_OPTIONS.find((x) => x.id === p) ?? _PERM_OPTIONS[0]).label;
 
 // ─── Kebab ─────────────────────────────────────────────
-function _AbKebab({ items }) {
+function _AbKebab({ items }: { items: KebabItem[] }) {
   const [open, setOpen] = useState(false);
   const [openUp, setOpenUp] = useState(false);
-  const ref = useRef(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
-  const toggle = (e) => {
+  const toggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!open && ref.current) {
       const r = ref.current.getBoundingClientRect();
@@ -237,8 +198,8 @@ function _AbKebab({ items }) {
                 fontSize: 13, textAlign: "left", cursor: it.disabled ? "not-allowed" : "pointer",
                 opacity: it.disabled ? 0.5 : 1, fontFamily: "inherit",
               }}
-              onMouseEnter={(e) => !it.disabled && (e.currentTarget.style.background = "var(--bg-subtle)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              onMouseEnter={(e) => { if (!it.disabled) e.currentTarget.style.background = "var(--bg-subtle)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               {it.icon && <Icon name={it.icon} size={14} />} {it.label}
             </button>
@@ -250,13 +211,20 @@ function _AbKebab({ items }) {
 }
 
 // ─── Modal: Crear / editar grupo ──────────────────────
-function GroupModal({ open, group, onClose, onSave }) {
+interface GroupModalProps {
+  open: boolean;
+  group: Group | null;
+  onClose: () => void;
+  onSave: (g: Group) => void;
+}
+
+function GroupModal({ open, group, onClose, onSave }: GroupModalProps) {
   const [name, setName]   = useState("");
-  const [color, setColor] = useState("violet");
+  const [color, setColor] = useState<GroupColor>("violet");
   useEffect(() => {
     if (!open) return;
     setName(group?.name || "");
-    setColor(group?.color || "violet");
+    setColor((group?.color as GroupColor) || "violet");
   }, [open, group]);
 
   const submit = () => {
@@ -266,6 +234,8 @@ function GroupModal({ open, group, onClose, onSave }) {
       name: name.trim(),
       color,
       members: group?.members || [],
+      _backend_id: group?._backend_id,
+      _note: group?._note,
     });
   };
   return (
@@ -320,15 +290,23 @@ function GroupModal({ open, group, onClose, onSave }) {
 }
 
 // ─── Modal: Crear / editar contacto ───────────────────
-function ContactModal({ open, contact, groupName, onClose, onSave }) {
+interface ContactModalProps {
+  open: boolean;
+  contact: Member | null;
+  groupName?: string;
+  onClose: () => void;
+  onSave: (c: Member) => void;
+}
+
+function ContactModal({ open, contact, groupName, onClose, onSave }: ContactModalProps) {
   const [name, setName]   = useState("");
   const [email, setEmail] = useState("");
-  const [perm, setPerm]   = useState("view-only");
+  const [perm, setPerm]   = useState<Perm>("view-only");
   useEffect(() => {
     if (!open) return;
     setName(contact?.name || "");
     setEmail(contact?.email || "");
-    setPerm(contact?.perm || "view-only");
+    setPerm((contact?.perm as Perm) || "view-only");
   }, [open, contact]);
 
   const submit = () => {
@@ -337,8 +315,12 @@ function ContactModal({ open, contact, groupName, onClose, onSave }) {
       id: contact?.id || ("m_" + Math.random().toString(36).slice(2, 7)),
       name: name.trim(),
       email: email.trim(),
-      devices: contact?.devices || 0,
+      devices: contact?.devices ?? 0,
       perm,
+      _rd_id: contact?._rd_id,
+      _platform: contact?._platform,
+      _note: contact?._note,
+      _tags: contact?._tags,
     });
   };
 
@@ -397,14 +379,14 @@ function ContactModal({ open, contact, groupName, onClose, onSave }) {
 
 // ─── Página ───────────────────────────────────────────
 export function AddressBookPage() {
-  const [groups, setGroups] = useState([]);
-  const [activeGroupId, setActiveGroupId] = useState(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [q, setQ] = useState("");
 
-  const [groupModal, setGroupModal] = useState({ open: false, group: null });
-  const [contactModal, setContactModal] = useState({ open: false, contact: null });
-  const [deleteContact, setDeleteContact] = useState(null);
-  const [deleteGroup, setDeleteGroup] = useState(null);
+  const [groupModal, setGroupModal] = useState<{ open: boolean; group: Group | null }>({ open: false, group: null });
+  const [contactModal, setContactModal] = useState<{ open: boolean; contact: Member | null }>({ open: false, contact: null });
+  const [deleteContact, setDeleteContact] = useState<Member | null>(null);
+  const [deleteGroup, setDeleteGroup] = useState<Group | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const toast = useToast();
 
@@ -414,14 +396,14 @@ export function AddressBookPage() {
   // /api/ab/v2/groups/{id}/contacts.
   const load = async () => {
     try {
-      const groupRows = await _abApi("/api/ab/v2/groups");
+      const groupRows = await _abApi<BackendGroup[]>("/api/ab/v2/groups");
       if (!groupRows) return;
       // Fetch contacts for every group in parallel.
-      const adapted = await Promise.all(
-        (groupRows || []).map(async (g) => {
-          let members = [];
+      const adapted: Group[] = await Promise.all(
+        groupRows.map(async (g) => {
+          let members: Member[] = [];
           try {
-            const contacts = await _abApi(`/api/ab/v2/groups/${g.id}/contacts`);
+            const contacts = await _abApi<BackendContact[]>(`/api/ab/v2/groups/${g.id}/contacts`);
             members = (contacts || []).map((c) => ({
               id: String(c.id),
               name: c.alias || c.rd_id,
@@ -440,10 +422,10 @@ export function AddressBookPage() {
           return {
             id: String(g.id),
             name: g.name,
-            color: g.color || "blue",
+            color: (g.color as GroupColor) || "blue",
             members,
             _backend_id: g.id,
-            _note: g.note,
+            _note: g.note ?? undefined,
           };
         }),
       );
@@ -464,8 +446,11 @@ export function AddressBookPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const group = useMemo(() => groups.find((g) => g.id === activeGroupId) || groups[0], [groups, activeGroupId]);
-  const filtered = useMemo(() => {
+  const group: Group | undefined = useMemo(
+    () => groups.find((g) => g.id === activeGroupId) || groups[0],
+    [groups, activeGroupId],
+  );
+  const filtered = useMemo<Member[]>(() => {
     if (!group) return [];
     if (!q.trim()) return group.members;
     const ql = q.toLowerCase();
@@ -478,7 +463,7 @@ export function AddressBookPage() {
   // blob endpoints stay around for the kingmo888 sync protocol; this
   // page edits the v2 rows that the first GET auto-imports the blob
   // into.
-  const upsertGroup = async (g) => {
+  const upsertGroup = async (g: Group) => {
     const isNew = !g._backend_id;
     try {
       if (isNew) {
@@ -500,7 +485,7 @@ export function AddressBookPage() {
     }
   };
 
-  const upsertContact = async (c) => {
+  const upsertContact = async (c: Member) => {
     const groupBackendId = group?._backend_id;
     if (!groupBackendId) {
       toast("Selecciona un grupo primero", { tone: "danger" });
@@ -756,4 +741,3 @@ export function AddressBookPage() {
     </div>
   );
 }
-
