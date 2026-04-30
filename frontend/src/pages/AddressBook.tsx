@@ -375,6 +375,37 @@ function ContactModal({ open, contact, groupName, onClose, onSave }: ContactModa
   );
 }
 
+// ─── Filtros persistidos en el hash ───────────────────
+// `?group=<id>&q=<text>` permite enlazar directamente a un grupo
+// concreto y conservar la búsqueda al recargar. El group id es el
+// id local generado al cargar (lo que vive en `Group.id`); si el
+// backend reorganiza, ese id cambia y la deep-link cae a "primer
+// grupo disponible".
+function _abReadFiltersFromHash(): { groupId: string | null; q: string } {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  if (qIdx < 0) return { groupId: null, q: "" };
+  const params = new URLSearchParams(hash.slice(qIdx + 1));
+  return {
+    groupId: params.get("group") || null,
+    q: params.get("q") || "",
+  };
+}
+
+function _abWriteFiltersToHash(groupId: string | null, q: string): void {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  const path = qIdx < 0 ? hash.slice(1) : hash.slice(1, qIdx);
+  const existing = qIdx < 0 ? new URLSearchParams() : new URLSearchParams(hash.slice(qIdx + 1));
+  if (groupId) existing.set("group", groupId); else existing.delete("group");
+  if (q) existing.set("q", q); else existing.delete("q");
+  const qs = existing.toString();
+  const next = qs ? `#${path}?${qs}` : `#${path}`;
+  if (next !== hash) {
+    window.history.replaceState(null, "", next);
+  }
+}
+
 // ─── Página ───────────────────────────────────────────
 // The Router passes `route` and `navigate` to every page; this one
 // doesn't need either yet (no sub-routes, no internal navigation),
@@ -385,9 +416,10 @@ interface AddressBookPageProps {
 }
 
 export function AddressBookPage(_props: AddressBookPageProps = {}) {
+  const _abInitial = _abReadFiltersFromHash();
   const [groups, setGroups] = useState<Group[]>([]);
-  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
-  const [q, setQ] = useState("");
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(_abInitial.groupId);
+  const [q, setQ] = useState(_abInitial.q);
 
   const [groupModal, setGroupModal] = useState<{ open: boolean; group: Group | null }>({ open: false, group: null });
   const [contactModal, setContactModal] = useState<{ open: boolean; contact: Member | null }>({ open: false, contact: null });
@@ -451,6 +483,11 @@ export function AddressBookPage(_props: AddressBookPageProps = {}) {
     return () => { cancelled = true; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sync activeGroupId + q → hash query string.
+  useEffect(() => {
+    _abWriteFiltersToHash(activeGroupId, q);
+  }, [activeGroupId, q]);
 
   const group: Group | undefined = useMemo(
     () => groups.find((g) => g.id === activeGroupId) || groups[0],

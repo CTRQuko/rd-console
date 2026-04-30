@@ -621,6 +621,36 @@ function InviteDetailsModal({ invite, onClose }: { invite: Invite | null; onClos
   );
 }
 
+// ─── Filtro persistido en el hash ─────────────────────
+// Solo `showRevoked`: el estado por defecto es `true` (mostrar todas
+// las invitaciones, incluidas revocadas). El bit se serializa como
+// `?revoked=0` cuando el operador desmarca el checkbox; un refresh
+// conserva la elección.
+function _jtReadShowRevoked(): boolean {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  if (qIdx < 0) return true;
+  const params = new URLSearchParams(hash.slice(qIdx + 1));
+  // Cualquier valor distinto de "0" o "false" se trata como true.
+  const v = params.get("revoked");
+  if (v === null) return true;
+  return v !== "0" && v !== "false";
+}
+
+function _jtWriteShowRevoked(showRevoked: boolean): void {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  const path = qIdx < 0 ? hash.slice(1) : hash.slice(1, qIdx);
+  const existing = qIdx < 0 ? new URLSearchParams() : new URLSearchParams(hash.slice(qIdx + 1));
+  if (!showRevoked) existing.set("revoked", "0");
+  else existing.delete("revoked");
+  const qs = existing.toString();
+  const next = qs ? `#${path}?${qs}` : `#${path}`;
+  if (next !== hash) {
+    window.history.replaceState(null, "", next);
+  }
+}
+
 // ─── Página ────────────────────────────────────────────
 interface JoinTokensPageProps {
   route?: string;
@@ -639,8 +669,13 @@ export function JoinTokensPage(_props: JoinTokensPageProps = {}) {
   const [detailsInvite, setDetailsInvite] = useState<Invite | null>(null);
   const [revokeInvite, setRevokeInvite] = useState<Invite | null>(null);
   const [deleteInvite, setDeleteInvite] = useState<Invite | null>(null);
-  const [showRevoked, setShowRevoked] = useState(true);
+  const [showRevoked, setShowRevoked] = useState<boolean>(_jtReadShowRevoked);
   const toast = useToast();
+
+  // Sync `showRevoked` → hash.
+  useEffect(() => {
+    _jtWriteShowRevoked(showRevoked);
+  }, [showRevoked]);
 
   const _refresh = async (currentPanelUrl?: string) => {
     try {
