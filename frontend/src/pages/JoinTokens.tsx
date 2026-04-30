@@ -16,7 +16,7 @@ import {
   Tag, ConfirmDialog, PageHeader,
   useToast,
 } from "../components/primitives";
-import { readAuthToken, clearAuthToken } from "../shell/auth";
+import { adminApi } from "../shell/api";
 
 // ============================================================
 // Pages — Invitaciones (Join Tokens)
@@ -63,30 +63,9 @@ interface KebabAction {
 type KebabItem = "sep" | KebabAction;
 
 // ─── Auth-aware fetch (Etapa 3.10) ────────────────────
-interface ApiInit extends Omit<RequestInit, "headers"> {
-  headers?: Record<string, string>;
-}
-
-async function _jtApi<T = unknown>(path: string, init: ApiInit = {}): Promise<T | null> {
-  const token = readAuthToken();
-  const headers: Record<string, string> = {
-    ...(init.headers || {}),
-    ...(token ? { Authorization: "Bearer " + token } : {}),
-  };
-  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const res = await fetch(path, { ...init, headers });
-  if (res.status === 401) {
-    clearAuthToken();
-    window.location.hash = "/login";
-    throw new Error("unauthenticated");
-  }
-  if (res.status === 204) return null;
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`${init.method || "GET"} ${path} -> ${res.status} ${body.slice(0, 200)}`);
-  }
-  return res.json() as Promise<T>;
-}
+// `adminApi` (shell/api.ts) handles the JWT attach, 204 returns
+// `null`, and 401 wipes + redirects + throws.
+const _jtApi = adminApi;
 
 function _jtFmtDate(ts: string | null | undefined): string {
   if (!ts) return "—";
