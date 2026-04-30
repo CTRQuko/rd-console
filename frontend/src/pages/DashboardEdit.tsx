@@ -1,11 +1,20 @@
-// @ts-nocheck
 // Mechanically ported from public/console/pages/Dashboard.edit.jsx
 // (Etapa 4 ESM migration). Exports the dashboard editor primitives
 // that Dashboard.tsx consumes.
+//
+// Now strictly typed (PR @ts-nocheck cleanup): the layout entries,
+// catalog entries, and grid event handlers all carry types so the
+// Grafana-style drag/resize/compact engine can be refactored
+// without flying blind.
 import {
-  useState, useEffect, useMemo, useCallback, useRef,
+  useState, useEffect, useMemo, useRef,
+  Children,
+  type CSSProperties,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
-import * as React from "react";
 import { Icon } from "../components/Icon";
 
 // ============================================================
@@ -27,7 +36,35 @@ import { Icon } from "../components/Icon";
 //   El frontend cae a localStorage si el endpoint falla.
 // ============================================================
 
-const _DE = React;
+// ─── Tipos públicos ──────────────────────────────────────────
+
+export interface WidgetLayout {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  hidden?: boolean;
+  pinned?: boolean;
+}
+
+export interface CatalogSize {
+  w: number;
+  h: number;
+}
+
+export type CatalogKind = "metric" | "chart" | "table" | "placeholder";
+
+export interface CatalogEntry {
+  id: string;
+  label: string;
+  icon: string;
+  defaultSize: CatalogSize;
+  kind: CatalogKind;
+  fixedSize?: boolean;
+  minSize?: CatalogSize;
+  future?: boolean;
+}
 
 // Constantes del grid
 const GRID_COLS = 12;
@@ -38,7 +75,7 @@ const STORAGE_KEY = "dashboard.layout.v2";
 // Layout por defecto: 5 metrics en una fila (cada una 2-col, 2 filas alto)
 // + charts grandes (12-col, 2 filas) + tabla recientes (12-col, 2 filas)
 // Total cabe en 12 columnas: 2+2+2+2+4 = 12 (la última coge 4 para acomodar SLA + hueco).
-const DEFAULT_LAYOUT = [
+export const DEFAULT_LAYOUT: WidgetLayout[] = [
   { id: "cpu",        x: 0,  y: 0, w: 2, h: 2 },
   { id: "memory",     x: 2,  y: 0, w: 2, h: 2 },
   { id: "sessions",   x: 4,  y: 0, w: 2, h: 2 },
@@ -49,37 +86,64 @@ const DEFAULT_LAYOUT = [
   { id: "recent",     x: 0,  y: 8, w: 12, h: 4 },
 ];
 
-const loadLayout = () => {
+const loadLayout = (): WidgetLayout[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_LAYOUT;
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as WidgetLayout[];
     if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_LAYOUT;
     return parsed;
   } catch { return DEFAULT_LAYOUT; }
 };
-const saveLayout = (layout) => {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layout)); } catch {}
+const saveLayout = (layout: WidgetLayout[]): void => {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layout)); } catch {
+    // localStorage might be unavailable (quota, private mode, etc.) — ignore.
+  }
 };
 
 // Hook expuesto al DashboardPage
-function useDashboardLayout() {
-  const [layout, setLayout] = useState(loadLayout);
-  const [edit, setEdit] = useState(false);
-  const [draft, setDraft] = useState(null); // copia mientras edita
+export interface UseDashboardLayoutReturn {
+  layout: WidgetLayout[];
+  edit: boolean;
+  startEdit: () => void;
+  cancelEdit: () => void;
+  saveEdit: () => void;
+  resetToDefault: () => void;
+  setDraft: Dispatch<SetStateAction<WidgetLayout[]>>;
+}
 
-  const startEdit = () => { setDraft(layout.map(w => ({...w}))); setEdit(true); };
-  const cancelEdit = () => { setDraft(null); setEdit(false); };
-  const saveEdit = () => { if (draft) { setLayout(draft); saveLayout(draft); } setDraft(null); setEdit(false); };
-  const resetToDefault = () => { setDraft(DEFAULT_LAYOUT.map(w => ({...w}))); };
+export function useDashboardLayout(): UseDashboardLayoutReturn {
+  const [layout, setLayout] = useState<WidgetLayout[]>(loadLayout);
+  const [edit, setEdit] = useState(false);
+  const [draft, setDraftState] = useState<WidgetLayout[]>([]); // copia mientras edita
+
+  const startEdit = () => { setDraftState(layout.map((w) => ({ ...w }))); setEdit(true); };
+  const cancelEdit = () => { setDraftState([]); setEdit(false); };
+  const saveEdit = () => {
+    if (draft.length > 0) {
+      setLayout(draft);
+      saveLayout(draft);
+    }
+    setDraftState([]);
+    setEdit(false);
+  };
+  const resetToDefault = () => { setDraftState(DEFAULT_LAYOUT.map((w) => ({ ...w }))); };
 
   const current = edit ? draft : layout;
 
-  return { layout: current, edit, startEdit, cancelEdit, saveEdit, resetToDefault, setDraft };
+  return {
+    layout: current,
+    edit,
+    startEdit,
+    cancelEdit,
+    saveEdit,
+    resetToDefault,
+    setDraft: setDraftState,
+  };
 }
 
 // ─── Helpers de catálogo ────────────────────
-const CATALOG = [
+export const CATALOG: CatalogEntry[] = [
   { id: "cpu",        label: "CPU",         icon: "cpu",      defaultSize: { w: 2, h: 2 }, kind: "metric", fixedSize: true },
   { id: "memory",     label: "Memoria",     icon: "memory",   defaultSize: { w: 2, h: 2 }, kind: "metric", fixedSize: true },
   { id: "sessions",   label: "Sesiones",    icon: "link",     defaultSize: { w: 2, h: 2 }, kind: "metric", fixedSize: true },
@@ -94,7 +158,16 @@ const CATALOG = [
 ];
 
 // ─── EditModeBar ────────────────────────────
-function EditModeBar({ edit, layout, onCancel, onSave, onReset, dirty }) {
+interface EditModeBarProps {
+  edit: boolean;
+  layout: WidgetLayout[];
+  onCancel: () => void;
+  onSave: () => void;
+  onReset: () => void;
+  dirty?: boolean;
+}
+
+export function EditModeBar({ edit, onCancel, onSave, onReset }: EditModeBarProps) {
   if (!edit) return null;
   return (
     <div style={{
@@ -127,8 +200,13 @@ function EditModeBar({ edit, layout, onCancel, onSave, onReset, dirty }) {
 }
 
 // ─── Catálogo lateral ───────────────────────
-function CatalogPanel({ visibleIds, onAdd }) {
-  const hidden = CATALOG.filter(c => !visibleIds.includes(c.id));
+interface CatalogPanelProps {
+  visibleIds: string[];
+  onAdd: (entry: CatalogEntry) => void;
+}
+
+export function CatalogPanel({ visibleIds, onAdd }: CatalogPanelProps) {
+  const hidden = CATALOG.filter((c) => !visibleIds.includes(c.id));
   if (hidden.length === 0) return null;
   return (
     <aside style={{
@@ -150,7 +228,7 @@ function CatalogPanel({ visibleIds, onAdd }) {
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
-        {hidden.map(c => (
+        {hidden.map((c) => (
           <button
             key={c.id}
             onClick={() => onAdd(c)}
@@ -162,8 +240,8 @@ function CatalogPanel({ visibleIds, onAdd }) {
               fontSize: 13, color: "var(--fg)",
               transition: "background .15s, border-color .15s",
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-subtle)"; e.currentTarget.style.borderColor = "var(--primary)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "var(--border)"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; e.currentTarget.style.borderColor = "var(--primary)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "var(--border)"; }}
           >
             <Icon name={c.icon} size={14} style={{ color: "var(--fg-muted)" }} />
             <div style={{ flex: 1 }}>
@@ -187,20 +265,21 @@ function CatalogPanel({ visibleIds, onAdd }) {
 // 3. Resolución en cascada: si A empuja a B y B pisa a C, C también se empuja
 // 4. Compactación: todas las cards (excepto la draggeada) suben lo máximo posible
 //    sin colisionar entre sí ni con la draggeada
-const overlapsRect = (a, b) => !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+const overlapsRect = (a: WidgetLayout, b: WidgetLayout): boolean =>
+  !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
 
-function resolveCollisions(layout, movedId) {
+function resolveCollisions(layout: WidgetLayout[], movedId: string): WidgetLayout[] {
   // Empuja hacia abajo cualquier card que pise a la movedId,
   // luego cualquier card que pisen las desplazadas, etc.
   // Cards con `pinned: true` NUNCA se mueven — en su lugar, la moved se desplaza.
-  const out = layout.map(w => ({...w}));
-  const moved = out.find(w => w.id === movedId);
+  const out = layout.map((w) => ({ ...w }));
+  const moved = out.find((w) => w.id === movedId);
   if (!moved) return out;
 
   // Paso 1: si moved choca con alguna pinned, empuja moved hasta que no colisione
   let safety = 0;
   while (safety++ < 100) {
-    const blocker = out.find(p => p.id !== movedId && p.pinned && overlapsRect(moved, p));
+    const blocker = out.find((p) => p.id !== movedId && p.pinned && overlapsRect(moved, p));
     if (!blocker) break;
     moved.y = blocker.y + blocker.h;
   }
@@ -244,21 +323,21 @@ function resolveCollisions(layout, movedId) {
   return out;
 }
 
-function compactLayout(layout, pinnedId) {
+function compactLayout(layout: WidgetLayout[], pinnedId: string): WidgetLayout[] {
   // Sube cada card (excepto pinnedId si está draggeando, o pinned=true) lo máximo posible
   // sin colisionar.
   const sorted = [...layout].sort((a, b) => a.y - b.y || a.x - b.x);
-  const placed = [];
+  const placed: WidgetLayout[] = [];
   for (const w of sorted) {
     if (w.id === pinnedId || w.pinned) {
-      placed.push({...w});
+      placed.push({ ...w });
       continue;
     }
     // Buscar la y mínima donde no colisione con ninguna ya colocada
     let y = 0;
     while (true) {
       const test = { ...w, y };
-      const hit = placed.some(p => overlapsRect(test, p));
+      const hit = placed.some((p) => overlapsRect(test, p));
       if (!hit) break;
       y++;
     }
@@ -270,39 +349,84 @@ function compactLayout(layout, pinnedId) {
 // ─── Grid wrapper ───────────────────────────
 // Renderiza children en un grid 12-col. Los hijos deben tener `data-widget-id`
 // y se posicionan con grid-column / grid-row.
-function DashboardGrid({ layout, edit, onChange, children }) {
-  const gridRef = useRef(null);
-  const [drag, setDrag] = useState(null); // { id, mode: 'move'|'resize', startX, startY, original }
+
+interface DragState {
+  id: string;
+  mode: "move" | `resize-${string}`;
+  startX: number;
+  startY: number;
+  offsetX: number;
+  offsetY: number;
+  original: WidgetLayout;
+  snapshot: WidgetLayout[];
+}
+
+interface DashboardGridProps {
+  layout: WidgetLayout[];
+  edit: boolean;
+  onChange: Dispatch<SetStateAction<WidgetLayout[]>>;
+  children: ReactNode;
+}
+
+export function DashboardGrid({ layout, edit, onChange, children }: DashboardGridProps) {
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
 
   const childrenById = useMemo(() => {
-    const map = {};
-    React.Children.forEach(children, ch => {
-      if (ch?.props?.["data-widget-id"]) map[ch.props["data-widget-id"]] = ch;
+    const map: Record<string, ReactNode> = {};
+    Children.forEach(children, (ch) => {
+      // React children may be primitives — only the elements with the
+      // `data-widget-id` prop interest us.
+      if (
+        ch &&
+        typeof ch === "object" &&
+        "props" in ch &&
+        ch.props &&
+        typeof ch.props === "object" &&
+        "data-widget-id" in ch.props &&
+        typeof (ch.props as Record<string, unknown>)["data-widget-id"] === "string"
+      ) {
+        const widgetId = (ch.props as Record<string, unknown>)["data-widget-id"] as string;
+        map[widgetId] = ch;
+      }
     });
     return map;
   }, [children]);
 
-  const onPointerDown = (e, id, mode) => {
+  const onPointerDown = (
+    e: ReactPointerEvent<HTMLElement>,
+    id: string,
+    mode: "move" | `resize-${string}`,
+  ) => {
     if (!edit) return;
-    const w = layout.find(l => l.id === id);
+    const w = layout.find((l) => l.id === id);
     if (!w) return;
     if (w.pinned) return; // pinned cards no se mueven ni redimensionan
-    const catEntry = CATALOG.find(c => c.id === id);
+    const catEntry = CATALOG.find((c) => c.id === id);
     const isResize = mode.startsWith("resize");
     if (isResize && catEntry?.fixedSize) return;
     e.preventDefault();
     e.stopPropagation();
     const targetEl = e.currentTarget;
     const cardEl = isResize ? targetEl.closest('[data-widget-card="true"]') : targetEl;
-    const rect = (cardEl || targetEl).getBoundingClientRect();
+    const rect = (cardEl ?? targetEl).getBoundingClientRect();
     const offsetX = e.clientX - rect.left;
     const offsetY = e.clientY - rect.top;
-    setDrag({ id, mode, startX: e.clientX, startY: e.clientY, offsetX, offsetY, original: { ...w }, snapshot: layout.map(x => ({...x})) });
+    setDrag({
+      id,
+      mode,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX,
+      offsetY,
+      original: { ...w },
+      snapshot: layout.map((x) => ({ ...x })),
+    });
   };
 
   useEffect(() => {
     if (!drag) return;
-    const onMove = (e) => {
+    const onMove = (e: PointerEvent) => {
       const grid = gridRef.current;
       if (!grid) return;
       const rect = grid.getBoundingClientRect();
@@ -312,33 +436,38 @@ function DashboardGrid({ layout, edit, onChange, children }) {
       const dCols = Math.round(dx / (colWidth + GRID_GAP));
       const dRows = Math.round(dy / (ROW_HEIGHT + GRID_GAP));
 
-      onChange(prev => {
-        const baseLayout = drag.snapshot.map(w => ({...w}));
-        const me = baseLayout.find(w => w.id === drag.id);
-        if (!me) return prev;
+      onChange(() => {
+        const baseLayout = drag.snapshot.map((w) => ({ ...w }));
+        const me = baseLayout.find((w) => w.id === drag.id);
+        if (!me) return baseLayout;
 
         if (drag.mode.startsWith("resize")) {
           const dir = drag.mode.slice("resize-".length); // n,s,e,w,ne,nw,se,sw
           const o = drag.original;
-          const dragCat = CATALOG.find(c => c.id === drag.id);
+          const dragCat = CATALOG.find((c) => c.id === drag.id);
           const minW = dragCat?.minSize?.w ?? 1;
           const minH = dragCat?.minSize?.h ?? 1;
-          let newX = o.x, newY = o.y, newW = o.w, newH = o.h;
+          let newX = o.x;
+          let newY = o.y;
+          let newW = o.w;
+          let newH = o.h;
           if (dir.includes("e")) newW = Math.max(minW, Math.min(GRID_COLS - o.x, o.w + dCols));
           if (dir.includes("w")) {
             const maxShrink = o.w - minW;
-            const dx = Math.max(-o.x, Math.min(maxShrink, dCols));
-            newX = o.x + dx;
-            newW = o.w - dx;
+            const dxClamped = Math.max(-o.x, Math.min(maxShrink, dCols));
+            newX = o.x + dxClamped;
+            newW = o.w - dxClamped;
           }
           if (dir.includes("s")) newH = Math.max(minH, Math.min(8, o.h + dRows));
           if (dir.includes("n")) {
             const maxShrinkY = o.h - minH;
-            const dy = Math.max(-o.y, Math.min(maxShrinkY, dRows));
-            newY = o.y + dy;
-            newH = o.h - dy;
+            const dyClamped = Math.max(-o.y, Math.min(maxShrinkY, dRows));
+            newY = o.y + dyClamped;
+            newH = o.h - dyClamped;
           }
-          const next = baseLayout.map(w => w.id === drag.id ? {...w, x:newX, y:newY, w:newW, h:newH} : w);
+          const next = baseLayout.map((w) =>
+            w.id === drag.id ? { ...w, x: newX, y: newY, w: newW, h: newH } : w,
+          );
           const resolved = resolveCollisions(next, drag.id);
           return compactLayout(resolved, drag.id);
         }
@@ -349,7 +478,9 @@ function DashboardGrid({ layout, edit, onChange, children }) {
 
         if (newX === drag.original.x && newY === drag.original.y) return baseLayout;
 
-        const next = baseLayout.map(w => w.id === drag.id ? {...w, x: newX, y: newY} : w);
+        const next = baseLayout.map((w) =>
+          w.id === drag.id ? { ...w, x: newX, y: newY } : w,
+        );
         const resolved = resolveCollisions(next, drag.id);
         return compactLayout(resolved, drag.id);
       });
@@ -364,31 +495,32 @@ function DashboardGrid({ layout, edit, onChange, children }) {
   }, [drag, onChange]);
 
   // Total filas (para el alto del grid)
-  const totalRows = Math.max(...layout.map(w => w.y + w.h), 8);
+  const totalRows = Math.max(...layout.map((w) => w.y + w.h), 8);
 
   // Tamaño del contenedor para calcular celdas en píxeles
   const [containerWidth, setContainerWidth] = useState(0);
   useEffect(() => {
     if (!gridRef.current) return;
+    const el = gridRef.current;
     const ro = new ResizeObserver(() => {
-      if (gridRef.current) setContainerWidth(gridRef.current.clientWidth);
+      setContainerWidth(el.clientWidth);
     });
-    ro.observe(gridRef.current);
-    setContainerWidth(gridRef.current.clientWidth);
+    ro.observe(el);
+    setContainerWidth(el.clientWidth);
     return () => ro.disconnect();
   }, []);
 
   const colWidth = containerWidth > 0 ? (containerWidth - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS : 0;
-  const cellX = (col) => col * (colWidth + GRID_GAP);
-  const cellY = (row) => row * (ROW_HEIGHT + GRID_GAP);
-  const cellW = (w) => w * colWidth + (w - 1) * GRID_GAP;
-  const cellH = (h) => h * ROW_HEIGHT + (h - 1) * GRID_GAP;
+  const cellX = (col: number) => col * (colWidth + GRID_GAP);
+  const cellY = (row: number) => row * (ROW_HEIGHT + GRID_GAP);
+  const cellW = (w: number) => w * colWidth + (w - 1) * GRID_GAP;
+  const cellH = (h: number) => h * ROW_HEIGHT + (h - 1) * GRID_GAP;
 
   // Posición libre del cursor para la card draggeada
-  const [dragCursor, setDragCursor] = useState(null);
+  const [dragCursor, setDragCursor] = useState<{ x: number; y: number } | null>(null);
   useEffect(() => {
     if (!drag || drag.mode !== "move") { setDragCursor(null); return; }
-    const onMove = (e) => {
+    const onMove = (e: PointerEvent) => {
       const grid = gridRef.current;
       if (!grid) return;
       const rect = grid.getBoundingClientRect();
@@ -413,7 +545,7 @@ function DashboardGrid({ layout, edit, onChange, children }) {
     }}>
       {/* Ghost de la celda destino mientras se arrastra */}
       {edit && drag && drag.mode === "move" && (() => {
-        const me = layout.find(l => l.id === drag.id);
+        const me = layout.find((l) => l.id === drag.id);
         if (!me) return null;
         return (
           <div style={{
@@ -430,18 +562,29 @@ function DashboardGrid({ layout, edit, onChange, children }) {
         );
       })()}
 
-      {layout.map(w => {
+      {layout.map((w) => {
         const child = childrenById[w.id];
         if (!child) return null;
-        const catEntry = CATALOG.find(c => c.id === w.id);
+        const catEntry = CATALOG.find((c) => c.id === w.id);
         const fixedSize = catEntry?.fixedSize;
-        const isDragging = drag && drag.id === w.id && drag.mode === "move";
-        const isResizing = drag && drag.id === w.id && drag.mode.startsWith("resize");
+        const isDragging = drag !== null && drag.id === w.id && drag.mode === "move";
+        const isResizing = drag !== null && drag.id === w.id && drag.mode.startsWith("resize");
         const isActive = isDragging || isResizing;
 
         // Posición: si está en drag, sigue al cursor; si no, snap a celda
         const left = isDragging && dragCursor ? dragCursor.x : cellX(w.x);
         const top  = isDragging && dragCursor ? dragCursor.y : cellY(w.y);
+
+        const cursorStyle = (() => {
+          if (!edit) return "default";
+          if (w.pinned) return "default";
+          if (isDragging) return "grabbing";
+          if (isResizing && drag) {
+            const resizeDir = drag.mode.replace("resize-", "");
+            return resizeDir.includes("e") || resizeDir.includes("w") ? "ew-resize" : "ns-resize";
+          }
+          return "grab";
+        })();
 
         return (
           <div
@@ -457,7 +600,7 @@ function DashboardGrid({ layout, edit, onChange, children }) {
                 ? "2px solid var(--primary)"
                 : "2px dashed color-mix(in oklab, var(--primary) 40%, transparent)") : "none",
               outlineOffset: -2,
-              cursor: edit ? (w.pinned ? "default" : (isDragging ? "grabbing" : (isResizing ? drag.mode.replace("resize-","").includes("e") || drag.mode.replace("resize-","").includes("w") ? "ew-resize" : "ns-resize" : "grab"))) : "default",
+              cursor: cursorStyle,
               transition: isActive
                 ? "none"
                 : "left .25s cubic-bezier(.4,0,.2,1), top .25s cubic-bezier(.4,0,.2,1), width .25s ease, height .25s ease, box-shadow .15s, transform .15s",
@@ -488,7 +631,7 @@ function DashboardGrid({ layout, edit, onChange, children }) {
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onChange(prev => prev.map(x => x.id === w.id ? {...x, pinned: !x.pinned} : x));
+                    onChange((prev) => prev.map((x) => x.id === w.id ? { ...x, pinned: !x.pinned } : x));
                   }}
                   style={{
                     position: "absolute", top: 6, left: 6, zIndex: 3,
@@ -507,7 +650,7 @@ function DashboardGrid({ layout, edit, onChange, children }) {
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onChange(prev => prev.filter(x => x.id !== w.id));
+                    onChange((prev) => prev.filter((x) => x.id !== w.id));
                   }}
                   style={{
                     position: "absolute", top: 6, right: 6, zIndex: 3,
@@ -521,7 +664,7 @@ function DashboardGrid({ layout, edit, onChange, children }) {
 
                 {/* Handles de resize en 8 direcciones — solo si no es fixedSize ni pinned */}
                 {!fixedSize && !w.pinned && (() => {
-                  const HANDLES = [
+                  const HANDLES: { dir: string; cursor: string; style: CSSProperties }[] = [
                     { dir: "n",  cursor: "ns-resize",   style: { top: -3, left: 8, right: 8, height: 6 } },
                     { dir: "s",  cursor: "ns-resize",   style: { bottom: -3, left: 8, right: 8, height: 6 } },
                     { dir: "w",  cursor: "ew-resize",   style: { left: -3, top: 8, bottom: 8, width: 6 } },
@@ -531,10 +674,10 @@ function DashboardGrid({ layout, edit, onChange, children }) {
                     { dir: "sw", cursor: "nesw-resize", style: { bottom: -3, left: -3, width: 12, height: 12 } },
                     { dir: "se", cursor: "nwse-resize", style: { bottom: -3, right: -3, width: 12, height: 12 } },
                   ];
-                  return HANDLES.map(h => (
+                  return HANDLES.map((h) => (
                     <div
                       key={h.dir}
-                      onPointerDown={(e) => onPointerDown(e, w.id, "resize-" + h.dir)}
+                      onPointerDown={(e) => onPointerDown(e, w.id, `resize-${h.dir}`)}
                       style={{
                         position: "absolute", zIndex: 4,
                         cursor: h.cursor,
@@ -577,5 +720,3 @@ function DashboardGrid({ layout, edit, onChange, children }) {
     </div>
   );
 }
-
-export { useDashboardLayout, DashboardGrid, EditModeBar, CatalogPanel, CATALOG, DEFAULT_LAYOUT };
