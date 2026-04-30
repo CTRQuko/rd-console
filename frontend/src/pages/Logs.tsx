@@ -1,17 +1,23 @@
-// @ts-nocheck
 // Mechanically ported from public/console/pages/Logs.jsx
 // (Etapa 4 ESM migration). React aliases → bare hook names,
-// window.X exports → named ESM exports. ts-nocheck because the
-// legacy code wasn't typed; tightening up types is a follow-up.
+// window.X exports → named ESM exports.
+//
+// @ts-nocheck cleanup: the audit log row is now typed as `Log` and
+// `BackendLog`. The describe-log switch keeps all its branches but the
+// helper signature is now `(log: Log) => LogDescription`. The export
+// path's `fmt` argument is a literal-string union so the conditional
+// branches inside don't fall through.
 import {
-  useState, useEffect, useMemo, useCallback, useRef,
+  useState, useEffect, useMemo, useRef,
+  cloneElement,
+  type ReactElement,
+  type ReactNode,
 } from "react";
-import * as React from "react";
 import { Icon } from "../components/Icon";
 import {
-  Tag, Dot, Switch, Tabs, EmptyState, Skeleton, ErrorBanner,
-  Drawer, Modal, ConfirmDialog, PageSizeSelect, PageHeader,
-  ToastProvider, useToast, useHashRoute,
+  Tag, EmptyState,
+  Drawer, ConfirmDialog, PageHeader,
+  useToast,
 } from "../components/primitives";
 
 // ============================================================
@@ -19,24 +25,76 @@ import {
 // Filtros, multi-select, Delete (N), Export CSV/NDJSON, drawer detalle
 // ============================================================
 
+// ─── Tipos compartidos ────────────────────────────────
+
+type Level = "info" | "warn" | "error";
+type Category = "auth" | "session" | "user_management" | "config" | "address_book";
+type RangeId = "1h" | "24h" | "7d" | "30d" | "all";
+type ExportFormat = "csv" | "ndjson" | "json";
+
+interface BackendLog {
+  id: number;
+  created_at: string;
+  action: string;
+  actor_user_id?: number | null;
+  actor_username?: string | null;
+  to_id?: string | null;
+  from_id?: string | null;
+  ip?: string | null;
+  payload?: string | null;
+}
+
+interface BackendLogsResponse {
+  items: BackendLog[];
+  total?: number;
+}
+
+interface Log {
+  id: string;
+  rawId: number;
+  ts: number;
+  tsLabel: string;
+  category: Category;
+  action: string;
+  level: Level;
+  actor: string;
+  target: string;
+  ip: string;
+  payload: Record<string, unknown>;
+}
+
+interface LogDescription {
+  headline: string;
+  paragraphs: string[];
+  context: string[];
+}
 
 // ─── Auth-aware fetch (Etapa 3.7) ─────────────────────
-function _lgAuthToken() {
+function _lgAuthToken(): string | null {
   try {
     const raw = localStorage.getItem("cm-auth");
-    return raw ? (JSON.parse(raw)?.token || null) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { token?: string };
+    return parsed?.token ?? null;
   } catch { return null; }
 }
-async function _lgApi(path, init = {}) {
+
+interface ApiInit extends Omit<RequestInit, "headers"> {
+  headers?: Record<string, string>;
+}
+
+async function _lgApi<T = unknown>(path: string, init: ApiInit = {}): Promise<T | null> {
   const token = _lgAuthToken();
-  const headers = {
+  const headers: Record<string, string> = {
     ...(init.headers || {}),
     ...(token ? { Authorization: "Bearer " + token } : {}),
   };
   if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
-    try { localStorage.removeItem("cm-auth"); } catch {}
+    try { localStorage.removeItem("cm-auth"); } catch {
+      // localStorage unavailable — ignore.
+    }
     window.location.hash = "/login";
     throw new Error("unauthenticated");
   }
@@ -45,14 +103,14 @@ async function _lgApi(path, init = {}) {
     const body = await res.text().catch(() => "");
     throw new Error(`${init.method || "GET"} ${path} -> ${res.status} ${body.slice(0, 200)}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 // ─── Catálogo de categorías + acciones (mirror backend AUDIT_CATEGORIES) ──
 // Mantenemos el shape original {category: [actions...]} que el JSX consume,
 // pero los valores son los del enum AuditAction de backend/app/models/audit_log.py.
-const _LOG_CATEGORIES = ["auth", "session", "user_management", "config", "address_book"];
-const _LOG_ACTIONS = {
+const _LOG_CATEGORIES: Category[] = ["auth", "session", "user_management", "config", "address_book"];
+const _LOG_ACTIONS: Record<Category, string[]> = {
   session: [
     "connect", "disconnect", "file_transfer", "close",
   ],
@@ -75,7 +133,7 @@ const _LOG_ACTIONS = {
     "address_book_updated", "address_book_cleared",
   ],
 };
-const _LEVEL_OF = {
+const _LEVEL_OF: Record<string, Level> = {
   login_failed: "error",
   user_disabled: "warn",
   user_deleted: "warn",
@@ -90,13 +148,16 @@ const _LEVEL_OF = {
 // Map an ApiAuditLog row → the JSX log shape. The backend's category is
 // derived server-side from the action via AUDIT_CATEGORIES; we recompute
 // here so the filter dropdown stays decoupled from the response shape.
-function _categoryForAction(action) {
-  for (const [cat, actions] of Object.entries(_LOG_ACTIONS)) {
+function _categoryForAction(action: string): Category {
+  for (const [cat, actions] of Object.entries(_LOG_ACTIONS) as [Category, string[]][]) {
     if (actions.includes(action)) return cat;
   }
   return "config";
 }
-function _lgAdaptLog(api) {
+function _safeParseJson(s: string): Record<string, unknown> {
+  try { return JSON.parse(s) as Record<string, unknown>; } catch { return { raw: s }; }
+}
+function _lgAdaptLog(api: BackendLog): Log {
   const ts = new Date(api.created_at).getTime();
   const action = api.action;
   return {
@@ -116,11 +177,9 @@ function _lgAdaptLog(api) {
     payload: api.payload ? _safeParseJson(api.payload) : {},
   };
 }
-function _safeParseJson(s) {
-  try { return JSON.parse(s); } catch { return { raw: s }; }
-}
 
-const _RANGE_OPTS = [
+interface RangeOption { id: RangeId; label: string; ms: number; }
+const _RANGE_OPTS: RangeOption[] = [
   { id: "1h",  label: "Última hora", ms: 3600_000 },
   { id: "24h", label: "Últimas 24 h", ms: 86_400_000 },
   { id: "7d",  label: "Últimos 7 días", ms: 7 * 86_400_000 },
@@ -128,12 +187,14 @@ const _RANGE_OPTS = [
   { id: "all", label: "Todo el historial", ms: Infinity },
 ];
 
-const _LEVEL_TONE = { info: "default", warn: "amber", error: "red", default: "default" };
+const _LEVEL_TONE: Record<Level | "default", string> = {
+  info: "default", warn: "amber", error: "red", default: "default",
+};
 // Keys must match the backend AUDIT_CATEGORIES enum exactly so the
 // dropdown sends a valid `category` query string. Stale keys ("device",
 // "user", "token", "system") were leftovers from an earlier draft and
 // rendered as empty <option> rows because their labels were undefined.
-const _CATEGORY_LABEL = {
+const _CATEGORY_LABEL: Record<Category, string> = {
   auth: "Autenticación",
   session: "Sesiones",
   user_management: "Usuarios",
@@ -144,19 +205,28 @@ const _CATEGORY_LABEL = {
 // ─── Descripción humana de un evento ──────────────────
 // Devuelve { headline, paragraphs[], context[] } — un texto extendido y legible,
 // para que el operador entienda qué ocurrió sin tener que mirar JSON.
-function _describeLog(log) {
+function _describeLog(log: Log): LogDescription {
   const a = log.actor;
   const t = log.target;
   const ip = log.ip && log.ip !== "—" ? log.ip : null;
   const p = log.payload || {};
-  const fmtBytes = (n) => {
-    if (!Number.isFinite(n)) return String(n);
-    if (n >= 1e9) return (n / 1e9).toFixed(2) + " GB";
-    if (n >= 1e6) return (n / 1e6).toFixed(1) + " MB";
-    if (n >= 1e3) return (n / 1e3).toFixed(1) + " KB";
-    return n + " B";
+  const fmtBytes = (n: unknown): string => {
+    const num = typeof n === "number" ? n : Number(n);
+    if (!Number.isFinite(num)) return String(n);
+    if (num >= 1e9) return (num / 1e9).toFixed(2) + " GB";
+    if (num >= 1e6) return (num / 1e6).toFixed(1) + " MB";
+    if (num >= 1e3) return (num / 1e3).toFixed(1) + " KB";
+    return num + " B";
   };
-  const ctx = [];
+  const pickStr = (key: string): string | undefined => {
+    const v = p[key];
+    return typeof v === "string" ? v : undefined;
+  };
+  const pickNum = (key: string): number | undefined => {
+    const v = p[key];
+    return typeof v === "number" ? v : undefined;
+  };
+  const ctx: string[] = [];
   if (ip) ctx.push(`IP de origen ${ip}.`);
   ctx.push(`Registrado el ${log.tsLabel}.`);
 
@@ -170,15 +240,19 @@ function _describeLog(log) {
         ],
         context: ctx,
       };
-    case "login_failed":
+    case "login_failed": {
+      const attempts = pickNum("attempts");
       return {
         headline: `Intento de inicio de sesión fallido para ${a}.`,
         paragraphs: [
-          `Se rechazó el acceso a la consola. Motivo declarado: ${p.reason || "desconocido"}.`,
-          p.attempts ? `Lleva ${p.attempts} intento${p.attempts === 1 ? "" : "s"} fallido${p.attempts === 1 ? "" : "s"} consecutivo${p.attempts === 1 ? "" : "s"}; tras varios más, la cuenta puede bloquearse automáticamente.` : null,
-        ].filter(Boolean),
+          `Se rechazó el acceso a la consola. Motivo declarado: ${pickStr("reason") || "desconocido"}.`,
+          attempts !== undefined
+            ? `Lleva ${attempts} intento${attempts === 1 ? "" : "s"} fallido${attempts === 1 ? "" : "s"} consecutivo${attempts === 1 ? "" : "s"}; tras varios más, la cuenta puede bloquearse automáticamente.`
+            : null,
+        ].filter((x): x is string => x !== null),
         context: ctx,
       };
+    }
     case "mfa_challenge":
       return {
         headline: `${a} pasó por una verificación adicional (MFA).`,
@@ -200,7 +274,7 @@ function _describeLog(log) {
       return {
         headline: `${a} abrió una sesión remota contra ${t}.`,
         paragraphs: [
-          `Se estableció el túnel mediante ${p.protocol || "el protocolo del relay"}${p.relay ? ` a través del nodo ${p.relay}` : ""}.`,
+          `Se estableció el túnel mediante ${pickStr("protocol") || "el protocolo del relay"}${pickStr("relay") ? ` a través del nodo ${pickStr("relay")}` : ""}.`,
           "A partir de aquí, todo el tráfico de pantalla, ratón y teclado pasa por el servidor. Si la sesión transfiere ficheros, quedará registrada como evento aparte.",
         ],
         context: ctx,
@@ -213,15 +287,18 @@ function _describeLog(log) {
         ],
         context: ctx,
       };
-    case "file_transfer":
+    case "file_transfer": {
+      const files = pickNum("files");
+      const direction = pickStr("direction");
       return {
         headline: `Transferencia de ficheros entre ${a} y ${t}.`,
         paragraphs: [
-          `Se movieron ${p.files ?? "varios"} fichero${p.files === 1 ? "" : "s"} (${fmtBytes(p.bytes ?? 0)} en total) en dirección ${p.direction === "outbound" ? "saliente" : p.direction === "inbound" ? "entrante" : "indeterminada"}.`,
+          `Se movieron ${files ?? "varios"} fichero${files === 1 ? "" : "s"} (${fmtBytes(p.bytes ?? 0)} en total) en dirección ${direction === "outbound" ? "saliente" : direction === "inbound" ? "entrante" : "indeterminada"}.`,
           "El contenido no se almacena en el relay; sólo el resumen del evento queda en auditoría.",
         ],
         context: ctx,
       };
+    }
     case "chat":
       return {
         headline: `Mensaje de chat dentro de la sesión con ${t}.`,
@@ -274,9 +351,9 @@ function _describeLog(log) {
 
     case "user_created":
       return {
-        headline: `${a} creó la cuenta ${p.username || t}.`,
+        headline: `${a} creó la cuenta ${pickStr("username") || t}.`,
         paragraphs: [
-          `Se añadió un nuevo usuario con rol ${p.role || "no especificado"}. La contraseña inicial debe rotarse en el primer login.`,
+          `Se añadió un nuevo usuario con rol ${pickStr("role") || "no especificado"}. La contraseña inicial debe rotarse en el primer login.`,
         ],
         context: ctx,
       };
@@ -376,19 +453,28 @@ function _describeLog(log) {
 }
 
 // ─── Dropdown genérico (anclado al botón) ─────────────
-function _LogDropdown({ trigger, children, align = "right", width = 220 }) {
+interface LogDropdownProps {
+  trigger: ReactElement<{ onClick?: () => void }>;
+  children: ReactNode;
+  align?: "left" | "right";
+  width?: number;
+}
+
+function _LogDropdown({ trigger, children, align = "right", width = 220 }: LogDropdownProps) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
-      {React.cloneElement(trigger, { onClick: () => setOpen((v) => !v) })}
+      {cloneElement(trigger, { onClick: () => setOpen((v) => !v) })}
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 6px)",
@@ -403,7 +489,14 @@ function _LogDropdown({ trigger, children, align = "right", width = 220 }) {
   );
 }
 
-function _DropdownItem({ icon, label, onClick, danger }) {
+interface DropdownItemProps {
+  icon?: string;
+  label: string;
+  onClick?: () => void;
+  danger?: boolean;
+}
+
+function _DropdownItem({ icon, label, onClick, danger }: DropdownItemProps) {
   return (
     <button
       onClick={onClick}
@@ -413,8 +506,8 @@ function _DropdownItem({ icon, label, onClick, danger }) {
         color: danger ? "#e11d48" : "var(--fg)",
         fontSize: 13, textAlign: "left", cursor: "pointer", fontFamily: "inherit",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-subtle)")}
-      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
       {icon && <Icon name={icon} size={14} />} {label}
     </button>
@@ -422,7 +515,7 @@ function _DropdownItem({ icon, label, onClick, danger }) {
 }
 
 // ─── Drawer detalle ───────────────────────────────────
-function LogDetailDrawer({ log, onClose }) {
+function LogDetailDrawer({ log, onClose }: { log: Log | null; onClose: () => void }) {
   if (!log) return null;
   const desc = _describeLog(log);
   return (
@@ -481,13 +574,13 @@ function LogDetailDrawer({ log, onClose }) {
 
 // ─── Página ───────────────────────────────────────────
 export function LogsPage() {
-  const [logs, setLogs] = useState([]);
-  const [range, setRange] = useState("7d");
-  const [category, setCategory] = useState("all");
-  const [action, setAction] = useState("all");
+  const [logs, setLogs] = useState<Log[]>([]);
+  const [range, setRange] = useState<RangeId>("7d");
+  const [category, setCategory] = useState<Category | "all">("all");
+  const [action, setAction] = useState<string>("all");
   const [q, setQ] = useState("");
-  const [selected, setSelected] = useState(new Set());
-  const [detail, setDetail] = useState(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [detail, setDetail] = useState<Log | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const toast = useToast();
@@ -505,13 +598,15 @@ export function LogsPage() {
       params.set("since", new Date(Date.now() - rangeMs).toISOString());
     }
     try {
-      const data = await _lgApi(`/admin/api/logs?${params.toString()}`);
+      const data = await _lgApi<BackendLogsResponse>(`/admin/api/logs?${params.toString()}`);
       setLogs((data?.items || []).map(_lgAdaptLog));
-    } catch {}
+    } catch {
+      // silent — toast on error would be too noisy for a polling re-fetch
+    }
   };
-  useEffect(() => { _refresh(); }, [range, category, action]);
+  useEffect(() => { _refresh(); }, [range, category, action]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const visible = useMemo(() => {
+  const visible = useMemo<Log[]>(() => {
     let arr = logs;
     const rangeMs = _RANGE_OPTS.find((r) => r.id === range)?.ms ?? Infinity;
     if (rangeMs !== Infinity) arr = arr.filter((l) => Date.now() - l.ts < rangeMs);
@@ -543,9 +638,9 @@ export function LogsPage() {
       setSelected(s);
     }
   };
-  const toggleOne = (id) => {
+  const toggleOne = (id: string) => {
     const s = new Set(selected);
-    s.has(id) ? s.delete(id) : s.add(id);
+    if (s.has(id)) s.delete(id); else s.add(id);
     setSelected(s);
   };
   const clearSelection = () => setSelected(new Set());
@@ -562,7 +657,8 @@ export function LogsPage() {
       });
       toast(`${n} ${n === 1 ? "evento eliminado" : "eventos eliminados"}`, { tone: "success" });
     } catch (err) {
-      toast("No se pudo eliminar: " + err.message, { tone: "danger" });
+      const msg = err instanceof Error ? err.message : "error";
+      toast("No se pudo eliminar: " + msg, { tone: "danger" });
     }
     clearSelection();
     setConfirmDelete(false);
@@ -580,7 +676,8 @@ export function LogsPage() {
       });
       toast("Auditoría vaciada — la acción ha quedado registrada", { tone: "success" });
     } catch (err) {
-      toast("No se pudo vaciar: " + err.message, { tone: "danger" });
+      const msg = err instanceof Error ? err.message : "error";
+      toast("No se pudo vaciar: " + msg, { tone: "danger" });
     }
     clearSelection();
     setConfirmClear(false);
@@ -591,13 +688,12 @@ export function LogsPage() {
   // {csv,ndjson} which iterates every matching row (ignoring the 200-row
   // pagination cap) and pushes them as a streaming response. The JSON
   // path stays client-side because there's no equivalent server route.
-  const exportData = async (fmt) => {
+  const exportData = async (fmt: ExportFormat) => {
     if (fmt === "json") {
       _download("audit-logs.json", JSON.stringify(visible, null, 2), "application/json");
       toast(`Exportadas ${visible.length} entradas`, { tone: "success" });
       return;
     }
-    if (fmt !== "csv" && fmt !== "ndjson") return;
 
     const params = new URLSearchParams();
     params.set("format", fmt);
@@ -608,9 +704,12 @@ export function LogsPage() {
       params.set("since", new Date(Date.now() - rangeMs).toISOString());
     }
 
-    const token = (() => {
-      try { return JSON.parse(localStorage.getItem("cm-auth") || "{}").token || ""; }
-      catch { return ""; }
+    const token = ((): string => {
+      try {
+        const raw = localStorage.getItem("cm-auth") || "{}";
+        const parsed = JSON.parse(raw) as { token?: string };
+        return parsed.token || "";
+      } catch { return ""; }
     })();
 
     try {
@@ -630,11 +729,12 @@ export function LogsPage() {
       URL.revokeObjectURL(a.href);
       toast("Exportación descargada", { tone: "success" });
     } catch (err) {
-      toast(`No se pudo exportar: ${err?.message || "error"}`, { tone: "danger" });
+      const msg = err instanceof Error ? err.message : "error";
+      toast(`No se pudo exportar: ${msg}`, { tone: "danger" });
     }
   };
 
-  const actionsForCategory = useMemo(() => {
+  const actionsForCategory = useMemo<string[]>(() => {
     if (category === "all") return [];
     return _LOG_ACTIONS[category] || [];
   }, [category]);
@@ -667,7 +767,7 @@ export function LogsPage() {
         <select
           className="cm-select"
           value={range}
-          onChange={(e) => setRange(e.target.value)}
+          onChange={(e) => setRange(e.target.value as RangeId)}
           style={{ width: "auto", minWidth: 0 }}
           title="Rango temporal"
         >
@@ -676,7 +776,7 @@ export function LogsPage() {
         <select
           className="cm-select"
           value={category}
-          onChange={(e) => { setCategory(e.target.value); setAction("all"); }}
+          onChange={(e) => { setCategory(e.target.value as Category | "all"); setAction("all"); }}
           style={{ width: "auto", minWidth: 0, color: category === "all" ? "var(--fg-muted)" : "var(--fg)" }}
           title="Categoría"
         >
@@ -819,11 +919,10 @@ export function LogsPage() {
   );
 }
 
-function _download(filename, content, mime) {
+function _download(filename: string, content: string, mime: string): void {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 100);
 }
-
