@@ -708,10 +708,53 @@ function CreateDeviceModal({ open, onClose, onSubmit }) {
   );
 }
 
+// ─── Filtros persistidos en el hash ───────────────────
+// `?q=…&filter=online&os=macOS,Linux&tags=ci,prod` permite recargar o
+// compartir un enlace conservando lo que estaba viendo el operador.
+// `state=…` (override de debug que ya consumía el código) se preserva
+// como sub-parámetro independiente.
+function _dvReadFiltersFromHash() {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  if (qIdx < 0) return { q: "", filter: "all", osFilter: [], tagFilter: [] };
+  const params = new URLSearchParams(hash.slice(qIdx + 1));
+  const f = params.get("filter") || "all";
+  const allowed = new Set(["all", "online", "offline"]);
+  return {
+    q: params.get("q") || "",
+    filter: allowed.has(f) ? f : "all",
+    osFilter: (params.get("os") || "").split(",").filter(Boolean),
+    tagFilter: (params.get("tags") || "").split(",").filter(Boolean),
+  };
+}
+
+function _dvWriteFiltersToHash(filters) {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  const path = qIdx < 0 ? hash.slice(1) : hash.slice(1, qIdx);
+  const existing = qIdx < 0 ? new URLSearchParams() : new URLSearchParams(hash.slice(qIdx + 1));
+  // Preserve unrelated debug params (currently just `state`).
+  const preserved = new URLSearchParams();
+  for (const key of ["state"]) {
+    const v = existing.get(key);
+    if (v) preserved.set(key, v);
+  }
+  if (filters.q) preserved.set("q", filters.q);
+  if (filters.filter !== "all") preserved.set("filter", filters.filter);
+  if (filters.osFilter.length) preserved.set("os", filters.osFilter.join(","));
+  if (filters.tagFilter.length) preserved.set("tags", filters.tagFilter.join(","));
+  const qs = preserved.toString();
+  const next = qs ? `#${path}?${qs}` : `#${path}`;
+  if (next !== hash) {
+    window.history.replaceState(null, "", next);
+  }
+}
+
 // ─── Página ──────────────────────────────────────────
 export function DevicesPage({ route }) {
-  const [q, setQ] = useState("");
-  const [filter, setFilter] = useState("all");
+  const _dvInitial = _dvReadFiltersFromHash();
+  const [q, setQ] = useState(_dvInitial.q);
+  const [filter, setFilter] = useState(_dvInitial.filter);
   const [selected, setSelected] = useState(null);
   const [state, setState] = useState("loading");
   const [devices, setDevices] = useState([]);
@@ -720,9 +763,15 @@ export function DevicesPage({ route }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [osFilter, setOsFilter] = useState([]);     // ["macOS","Windows","Linux"]
-  const [tagFilter, setTagFilter] = useState([]);   // tag names
+  const [osFilter, setOsFilter] = useState(_dvInitial.osFilter);     // ["macOS","Windows","Linux"]
+  const [tagFilter, setTagFilter] = useState(_dvInitial.tagFilter);  // tag names
   const filtersBtnRef = useRef(null);
+
+  // Sync filter state → hash query string. `replaceState` avoids the
+  // back-stack growing one entry per keystroke in the search box.
+  useEffect(() => {
+    _dvWriteFiltersToHash({ q, filter, osFilter, tagFilter });
+  }, [q, filter, osFilter, tagFilter]);
 
   // ─── Initial data load (Etapa 3.5) ──────────────────────────────────
   // Pulls devices, tags, and users in parallel so the table can show
