@@ -572,18 +572,84 @@ function LogDetailDrawer({ log, onClose }: { log: Log | null; onClose: () => voi
   );
 }
 
+// ─── Filtros persistidos en el hash ───────────────────
+// Formato `#/logs?range=24h&category=auth&action=login&q=admin`. Permite
+// recargar la página o compartir el enlace conservando los filtros. Se
+// usa `history.replaceState` para no inundar el back-stack del navegador
+// al teclear en el cuadro de búsqueda — y para no disparar `hashchange`
+// en bucle con el listener del router.
+const _RANGE_IDS = new Set<RangeId>(["1h", "24h", "7d", "30d", "all"]);
+const _VALID_CATEGORIES = new Set<string>(_LOG_CATEGORIES);
+
+interface LogsFilters {
+  range: RangeId;
+  category: Category | "all";
+  action: string;
+  q: string;
+}
+
+function _readFiltersFromHash(): LogsFilters {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  if (qIdx < 0) return { range: "7d", category: "all", action: "all", q: "" };
+  const params = new URLSearchParams(hash.slice(qIdx + 1));
+  const rawRange = params.get("range") as RangeId | null;
+  const rawCategory = params.get("category");
+  return {
+    range: rawRange && _RANGE_IDS.has(rawRange) ? rawRange : "7d",
+    category: rawCategory && _VALID_CATEGORIES.has(rawCategory)
+      ? (rawCategory as Category)
+      : "all",
+    action: params.get("action") || "all",
+    q: params.get("q") || "",
+  };
+}
+
+function _writeFiltersToHash(filters: LogsFilters): void {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  const path = qIdx < 0 ? hash.slice(1) : hash.slice(1, qIdx);
+  const params = new URLSearchParams();
+  if (filters.range !== "7d") params.set("range", filters.range);
+  if (filters.category !== "all") params.set("category", filters.category);
+  if (filters.action !== "all") params.set("action", filters.action);
+  if (filters.q) params.set("q", filters.q);
+  const qs = params.toString();
+  const next = qs ? `#${path}?${qs}` : `#${path}`;
+  if (next !== hash) {
+    window.history.replaceState(null, "", next);
+  }
+}
+
 // ─── Página ───────────────────────────────────────────
-export function LogsPage() {
+// Router passes `route` and `navigate` to every page; this one reads
+// its filter state from `window.location.hash` directly so the props
+// are accepted but unused.
+interface LogsPageProps {
+  route?: string;
+  navigate?: (path: string) => void;
+}
+
+export function LogsPage(_props: LogsPageProps = {}) {
+  // Initialise from the hash so a reload (or a shared link) lands on
+  // the same filter set the user left.
+  const _initialFilters = _readFiltersFromHash();
   const [logs, setLogs] = useState<Log[]>([]);
-  const [range, setRange] = useState<RangeId>("7d");
-  const [category, setCategory] = useState<Category | "all">("all");
-  const [action, setAction] = useState<string>("all");
-  const [q, setQ] = useState("");
+  const [range, setRange] = useState<RangeId>(_initialFilters.range);
+  const [category, setCategory] = useState<Category | "all">(_initialFilters.category);
+  const [action, setAction] = useState<string>(_initialFilters.action);
+  const [q, setQ] = useState(_initialFilters.q);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<Log | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const toast = useToast();
+
+  // Sync filter state → hash query string. `replaceState` avoids
+  // building a back-stack entry per keystroke in the search box.
+  useEffect(() => {
+    _writeFiltersToHash({ range, category, action, q });
+  }, [range, category, action, q]);
 
   // Server-side filtering: build the query from the active filters,
   // re-fetch on change. Backend caps `limit` at 200; client-side filtering

@@ -243,7 +243,6 @@ function GroupModal({ open, group, onClose, onSave }: GroupModalProps) {
       open={open}
       onClose={onClose}
       title={group ? `Editar grupo` : "Nuevo grupo"}
-      width={460}
       footer={
         <>
           <button className="cm-btn cm-btn--primary" onClick={submit} disabled={!name.trim()}>
@@ -329,7 +328,6 @@ function ContactModal({ open, contact, groupName, onClose, onSave }: ContactModa
       open={open}
       onClose={onClose}
       title={contact ? "Editar contacto" : "Añadir contacto"}
-      width={500}
       footer={
         <>
           <button className="cm-btn cm-btn--primary" onClick={submit} disabled={!name.trim()}>
@@ -378,7 +376,15 @@ function ContactModal({ open, contact, groupName, onClose, onSave }: ContactModa
 }
 
 // ─── Página ───────────────────────────────────────────
-export function AddressBookPage() {
+// The Router passes `route` and `navigate` to every page; this one
+// doesn't need either yet (no sub-routes, no internal navigation),
+// but the typed signature accepts them so Router.tsx typechecks.
+interface AddressBookPageProps {
+  route?: string;
+  navigate?: (path: string) => void;
+}
+
+export function AddressBookPage(_props: AddressBookPageProps = {}) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [q, setQ] = useState("");
