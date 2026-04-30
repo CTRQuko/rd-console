@@ -34,6 +34,7 @@ from .routers import (
     settings_,
     system as system_router,
     tags,
+    updates as updates_router,
     users,
 )
 from .security import hash_password
@@ -420,6 +421,7 @@ def create_app() -> FastAPI:
     # /admin/api routers; no migration of older endpoints implied.
     app.include_router(system_router.router)
     app.include_router(health_router.router)
+    app.include_router(updates_router.router)
 
     # Public
     app.include_router(join.router)

@@ -900,23 +900,70 @@ function StoragePanel() {
 
 // ─── Updates ─────────────────────────────────────────
 function UpdatesPanel() {
-  const [status, setStatus] = useState("uptodate"); // checking | uptodate | available | error
-  const [lastChecked, setLastChecked] = useState("hace 2 h");
+  // Cableado a /admin/api/updates/status. The backend caches GitHub
+  // results for 1 h; passing force=true on the manual button bypasses
+  // the cache so the operator's click feels actionable.
+  const [info, setInfo] = useState(null);
+  const [status, setStatus] = useState("checking"); // checking | uptodate | available | error
+  const [lastChecked, setLastChecked] = useState("");
   const toast = useToast();
-  const checkNow = () => {
-    setStatus("checking");
-    setTimeout(() => {
-      // mock: 70% al día, 25% hay update, 5% error
-      const r = Math.random();
-      if (r < 0.7) { setStatus("uptodate"); setLastChecked("ahora mismo"); toast("No hay actualizaciones disponibles", { tone: "success" }); }
-      else if (r < 0.95) { setStatus("available"); setLastChecked("ahora mismo"); toast("Hay una nueva versión disponible: v2.5.0"); }
-      else { setStatus("error"); toast("No se pudo contactar con el repositorio", { tone: "error" }); }
-    }, 1100);
+
+  const fmtRelative = (iso) => {
+    if (!iso) return "";
+    const then = new Date(iso);
+    const diff = Math.floor((Date.now() - then.getTime()) / 1000);
+    if (diff < 60) return "hace unos segundos";
+    if (diff < 3600) return ;
+    if (diff < 86400) return ;
+    return then.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
   };
+
+  const apply = (data, isManual) => {
+    setInfo(data);
+    setLastChecked(fmtRelative(data.last_checked_at));
+    if (data.error) {
+      setStatus("error");
+      if (isManual) toast("No se pudo contactar con el repositorio", { tone: "danger" });
+    } else if (data.update_available) {
+      setStatus("available");
+      if (isManual) toast();
+    } else {
+      setStatus("uptodate");
+      if (isManual) toast("No hay actualizaciones disponibles", { tone: "success" });
+    }
+  };
+
+  // Initial fetch on mount (cache hit usually — instant).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await _stApi("/admin/api/updates/status");
+        if (!cancelled) apply(data, false);
+      } catch {
+        if (!cancelled) {
+          setStatus("error");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const checkNow = async () => {
+    setStatus("checking");
+    try {
+      const data = await _stApi("/admin/api/updates/status?force=true");
+      apply(data, true);
+    } catch {
+      setStatus("error");
+      toast("No se pudo contactar con el repositorio", { tone: "danger" });
+    }
+  };
+
   const isChecking = status === "checking";
   const statusTag =
     status === "checking" ? <Tag tone="default">Comprobando…</Tag> :
-    status === "available" ? <Tag tone="primary"><Icon name="alert" size={12} /> v2.5.0 disponible</Tag> :
+    status === "available" ? <Tag tone="primary"><Icon name="alert" size={12} /> v{info?.latest_version} disponible</Tag> :
     status === "error" ? <Tag tone="rose"><Icon name="x" size={12} /> Error</Tag> :
     <Tag tone="green"><Icon name="check" size={12} /> Al día</Tag>;
   return (
@@ -929,9 +976,9 @@ function UpdatesPanel() {
         <div style={{ display: "flex", alignItems: "center", gap: 16, padding: 20, border: "1px solid var(--border)", borderRadius: 12, background: "var(--bg-subtle)" }}>
           <div style={{ width: 56, height: 56, borderRadius: 14, background: "linear-gradient(135deg, var(--blue-500), var(--blue-700))", display: "grid", placeItems: "center", color: "#fff", fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 700 }}>RD</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 600 }}>rd-console v2.4.1</div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 600 }}>rd-console v{info?.current_version || "…"}</div>
             <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>Build 8821 · canal stable · MIT</div>
-            <div style={{ color: "var(--fg-muted)", fontSize: 11, marginTop: 4 }}>Última comprobación: {lastChecked} · origen: <code style={{ fontFamily: "var(--font-mono)" }}>github.com/rustdesk/rustdesk</code></div>
+            <div style={{ color: "var(--fg-muted)", fontSize: 11, marginTop: 4 }}>Última comprobación: {lastChecked} · origen: <code style={{ fontFamily: "var(--font-mono)" }}>github.com/CTRQuko/rd-console</code></div>
           </div>
           {statusTag}
           <button
@@ -954,9 +1001,9 @@ function UpdatesPanel() {
           <div style={{ marginTop: 12, padding: 14, border: "1px solid color-mix(in oklab, var(--primary) 35%, var(--border))", background: "color-mix(in oklab, var(--primary) 5%, transparent)", borderRadius: 10, display: "flex", alignItems: "center", gap: 12 }}>
             <Icon name="download" size={16} />
             <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>
-              <strong>v2.5.0</strong> está disponible — incluye reescritura del File Transfer y permisos por grupo refinados.
+              <strong>v{info?.latest_version}</strong> está disponible. {info?.latest_url && <a href={info.latest_url} target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>Ver release notes →</a>}
             </div>
-            <button className="cm-btn cm-btn--primary" onClick={() => toast("Descargando actualización…")}><Icon name="download" size={14} /> Instalar</button>
+            <a className="cm-btn cm-btn--primary" href={info?.latest_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon name="download" size={14} /> Ver en GitHub</a>
           </div>
         )}
         <style>{`
