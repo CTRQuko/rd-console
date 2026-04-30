@@ -1,17 +1,22 @@
-// @ts-nocheck
 // Mechanically ported from public/console/pages/Users.jsx
 // (Etapa 4 ESM migration). React aliases → bare hook names,
-// window.X exports → named ESM exports. ts-nocheck because the
-// legacy code wasn't typed; tightening up types is a follow-up.
+// window.X exports → named ESM exports.
+//
+// @ts-nocheck cleanup pass: BackendUser mirrors the ApiUser the backend
+// returns from /admin/api/users; the page-level User shape adds the
+// derived `status` (active / invited / disabled), pretty-printed
+// last-seen, and the rawId we use for PATCH/DELETE round-trips.
 import {
-  useState, useEffect, useMemo, useCallback, useRef,
+  useState, useEffect, useMemo, useRef,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
 } from "react";
-import * as React from "react";
 import { Icon } from "../components/Icon";
 import {
-  Tag, Dot, Switch, Tabs, EmptyState, Skeleton, ErrorBanner,
-  Drawer, ConfirmDialog, PageSizeSelect, PageHeader,
-  ToastProvider, useToast, useHashRoute,
+  Tag, PageHeader,
+  Drawer,
+  useToast,
 } from "../components/primitives";
 
 // ============================================================
@@ -20,24 +25,91 @@ import {
 // Soporta props.embedded para uso dentro de Ajustes → Usuarios.
 // ============================================================
 
+// ─── Tipos compartidos ────────────────────────────────
 
-// ─── Auth-aware fetch + adapters (Etapa 3.6) ───────────────────────────
-function _usAuthToken() {
+type Status = "active" | "invited" | "disabled";
+
+interface BackendUser {
+  id: number;
+  username: string;
+  email?: string | null;
+  role: string;
+  is_active: boolean;
+  last_login_at?: string | null;
+  created_at: string;
+}
+
+interface BackendMe {
+  id: number;
+  username: string;
+  email?: string | null;
+  role: string;
+}
+
+interface User {
+  id: string;
+  rawId: number;
+  username: string;
+  email: string;
+  role: string;
+  status: Status;
+  last: string;
+  created: string;
+  is_active: boolean;
+}
+
+interface RoleOption {
+  id: string;
+  name: string;
+  description?: string;
+  builtin?: boolean;
+}
+
+interface KebabAction {
+  label: string;
+  icon?: string;
+  onClick?: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}
+type KebabItem = "sep" | KebabAction;
+
+// `window.RD_AVAILABLE_ROLES` is set by the Settings/Roles panel when it
+// loads — that page caches the catalogue so other pages can render
+// the role picker without re-fetching. The fallback covers the case
+// where Users opens before Settings has run.
+declare global {
+  interface Window {
+    RD_AVAILABLE_ROLES?: RoleOption[];
+  }
+}
+
+// ─── Auth-aware fetch + adapters (Etapa 3.6) ──────────
+function _usAuthToken(): string | null {
   try {
     const raw = localStorage.getItem("cm-auth");
-    return raw ? (JSON.parse(raw)?.token || null) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { token?: string };
+    return parsed?.token ?? null;
   } catch { return null; }
 }
-async function _usApi(path, init = {}) {
+
+interface ApiInit extends Omit<RequestInit, "headers"> {
+  headers?: Record<string, string>;
+}
+
+async function _usApi<T = unknown>(path: string, init: ApiInit = {}): Promise<T | null> {
   const token = _usAuthToken();
-  const headers = {
+  const headers: Record<string, string> = {
     ...(init.headers || {}),
     ...(token ? { Authorization: "Bearer " + token } : {}),
   };
   if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
-    try { localStorage.removeItem("cm-auth"); } catch {}
+    try { localStorage.removeItem("cm-auth"); } catch {
+      // localStorage unavailable — ignore.
+    }
     window.location.hash = "/login";
     throw new Error("unauthenticated");
   }
@@ -46,10 +118,10 @@ async function _usApi(path, init = {}) {
     const body = await res.text().catch(() => "");
     throw new Error(`${init.method || "GET"} ${path} -> ${res.status} ${body.slice(0, 200)}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
-function _usFmtRelative(ts) {
+function _usFmtRelative(ts: string | null | undefined): string {
   if (!ts) return "—";
   const t = new Date(ts).getTime();
   if (!Number.isFinite(t)) return "—";
@@ -61,7 +133,7 @@ function _usFmtRelative(ts) {
   if (days < 14) return `Hace ${days} d`;
   return `Hace ${Math.floor(days / 7)} sem`;
 }
-function _usFmtDate(ts) {
+function _usFmtDate(ts: string | null | undefined): string {
   if (!ts) return "—";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "—";
@@ -70,8 +142,8 @@ function _usFmtDate(ts) {
 
 // ApiUser → JSX shape: status derives from is_active and last_login_at.
 // "invited" means the account was created but never logged in.
-function _usAdapt(api) {
-  const status = !api.is_active
+function _usAdapt(api: BackendUser): User {
+  const status: Status = !api.is_active
     ? "disabled"
     : (api.last_login_at ? "active" : "invited");
   return {
@@ -88,13 +160,16 @@ function _usAdapt(api) {
 }
 
 // ─── Pequeño dropdown menu ─────────────────────────────────
-function MenuKebab({ items, align = "right" }) {
+interface MenuKebabProps { items: KebabItem[]; align?: "left" | "right"; }
+function MenuKebab({ items, align = "right" }: MenuKebabProps) {
   const [open, setOpen] = useState(false);
   const [openUp, setOpenUp] = useState(false);
-  const ref = useRef(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
@@ -135,8 +210,8 @@ function MenuKebab({ items, align = "right" }) {
                 fontSize: 13, textAlign: "left", cursor: it.disabled ? "not-allowed" : "pointer",
                 opacity: it.disabled ? 0.5 : 1,
               }}
-              onMouseEnter={(e) => !it.disabled && (e.currentTarget.style.background = "var(--bg-subtle)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              onMouseEnter={(e) => { if (!it.disabled) e.currentTarget.style.background = "var(--bg-subtle)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               {it.icon && <Icon name={it.icon} size={14} />} {it.label}
             </button>
@@ -148,10 +223,20 @@ function MenuKebab({ items, align = "right" }) {
 }
 
 // ─── Modal genérico ────────────────────────────────────────
-function Modal({ open, onClose, title, subtitle, children, footer, width = 480 }) {
+interface ModalProps {
+  open: boolean;
+  onClose?: () => void;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  children?: ReactNode;
+  footer?: ReactNode;
+  width?: number;
+}
+
+function Modal({ open, onClose, title, subtitle, children, footer, width = 480 }: ModalProps) {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => e.key === "Escape" && onClose?.();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose?.(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
@@ -189,7 +274,14 @@ function Modal({ open, onClose, title, subtitle, children, footer, width = 480 }
 }
 
 // ─── Form fields ─────────────────────────────────────────
-function Field({ label, hint, error, children }) {
+interface FieldProps {
+  label: ReactNode;
+  hint?: ReactNode;
+  error?: string;
+  children: ReactNode;
+}
+
+function Field({ label, hint, error, children }: FieldProps) {
   return (
     <div style={{ marginBottom: 16 }}>
       <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{label}</label>
@@ -201,18 +293,35 @@ function Field({ label, hint, error, children }) {
 }
 
 // ─── Modal crear / editar ──────────────────────────────────
-function UserFormModal({ open, mode, user, onClose, onSubmit, currentUserId }) {
+interface UserForm {
+  username: string;
+  email: string;
+  role: string;
+  password: string;
+  confirm: string;
+}
+
+interface UserFormModalProps {
+  open: boolean;
+  mode: "create" | "edit";
+  user?: User | null;
+  onClose: () => void;
+  onSubmit: (form: UserForm) => void;
+  currentUserId: string | null;
+}
+
+function UserFormModal({ open, mode, user, onClose, onSubmit, currentUserId }: UserFormModalProps) {
   const isEdit = mode === "edit";
   const isSelf = user?.id === currentUserId;
-  const [form, setForm] = useState({ username: "", email: "", role: "user", password: "", confirm: "" });
-  const [errors, setErrors] = useState({});
+  const [form, setForm] = useState<UserForm>({ username: "", email: "", role: "user", password: "", confirm: "" });
+  const [errors, setErrors] = useState<Partial<Record<keyof UserForm, string>>>({});
   const [showPass, setShowPass] = useState(false);
 
   useEffect(() => {
     if (open) {
       setForm({
         username: user?.username || "",
-        email: user?.email || "",
+        email: user?.email && user.email !== "—" ? user.email : "",
         role: user?.role || "user",
         password: "",
         confirm: "",
@@ -221,8 +330,8 @@ function UserFormModal({ open, mode, user, onClose, onSubmit, currentUserId }) {
     }
   }, [open, user]);
 
-  const validate = () => {
-    const e = {};
+  const validate = (): boolean => {
+    const e: Partial<Record<keyof UserForm, string>> = {};
     if (!form.username.trim()) e.username = "Requerido";
     if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) e.email = "Email inválido";
     if (!isEdit) {
@@ -241,10 +350,9 @@ function UserFormModal({ open, mode, user, onClose, onSubmit, currentUserId }) {
       open={open}
       onClose={onClose}
       title={isEdit ? `Editar ${user?.username || "operador"}` : "Nuevo operador"}
-      width={520}
       footer={
         <>
-          <button className="cm-btn cm-btn--primary" onClick={() => validate() && onSubmit(form)}>
+          <button className="cm-btn cm-btn--primary" onClick={() => { if (validate()) onSubmit(form); }}>
             {isEdit ? "Guardar cambios" : "Crear operador"}
           </button>
           <button className="cm-btn" onClick={onClose} style={{ marginLeft: "auto" }}>Cancelar</button>
@@ -325,7 +433,14 @@ function UserFormModal({ open, mode, user, onClose, onSubmit, currentUserId }) {
 }
 
 // ─── Confirm delete ────────────────────────────────────────
-function DeleteUserModal({ open, user, onClose, onConfirm }) {
+interface DeleteUserModalProps {
+  open: boolean;
+  user: User | null;
+  onClose: () => void;
+  onConfirm: (u: User) => void;
+}
+
+function DeleteUserModal({ open, user, onClose, onConfirm }: DeleteUserModalProps) {
   const [confirmText, setConfirmText] = useState("");
   useEffect(() => { if (open) setConfirmText(""); }, [open]);
   if (!user) return null;
@@ -377,13 +492,26 @@ function DeleteUserModal({ open, user, onClose, onConfirm }) {
 }
 
 // ─── Assign role ────────────────────────────────────────────
-function RoleAssignModal({ open, user, onClose, onConfirm, currentUserId }) {
-  const availableRoles = (typeof window !== "undefined" && window.RD_AVAILABLE_ROLES) || [
-    { id: "admin", name: "admin", description: "Acceso total." },
-    { id: "user", name: "user", description: "Acceso de solo lectura." },
-  ];
-  const [pick, setPick] = useState(user?.role || availableRoles[0]?.id);
-  useEffect(() => { if (open) setPick(user?.role || availableRoles[0]?.id); }, [open, user?.id]);
+const _DEFAULT_ROLES: RoleOption[] = [
+  { id: "admin", name: "admin", description: "Acceso total." },
+  { id: "user", name: "user", description: "Acceso de solo lectura." },
+];
+
+interface RoleAssignModalProps {
+  open: boolean;
+  user: User | null;
+  onClose: () => void;
+  onConfirm: (u: User, role: string) => void;
+  currentUserId: string | null;
+}
+
+function RoleAssignModal({ open, user, onClose, onConfirm, currentUserId }: RoleAssignModalProps) {
+  const availableRoles: RoleOption[] =
+    (typeof window !== "undefined" && window.RD_AVAILABLE_ROLES) || _DEFAULT_ROLES;
+  const [pick, setPick] = useState<string>(user?.role || availableRoles[0]?.id || "user");
+  useEffect(() => {
+    if (open) setPick(user?.role || availableRoles[0]?.id || "user");
+  }, [open, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!user) return null;
   const isSelf = user.id === currentUserId;
   const changed = pick !== user.role;
@@ -455,7 +583,14 @@ function RoleAssignModal({ open, user, onClose, onConfirm, currentUserId }) {
 }
 
 // ─── Confirm enable / disable ──────────────────────────────
-function StatusConfirmModal({ open, user, onClose, onConfirm }) {
+interface StatusConfirmModalProps {
+  open: boolean;
+  user: User | null;
+  onClose: () => void;
+  onConfirm: (u: User) => void;
+}
+
+function StatusConfirmModal({ open, user, onClose, onConfirm }: StatusConfirmModalProps) {
   if (!user) return null;
   const willEnable = user.status === "disabled";
   const action = willEnable ? "Activar" : "Deshabilitar";
@@ -492,16 +627,24 @@ function StatusConfirmModal({ open, user, onClose, onConfirm }) {
 }
 
 // ─── Página ────────────────────────────────────────────────
-export function UsersPage({ embedded = false } = {}) {
+export interface UsersPageProps {
+  embedded?: boolean;
+  // Router passes these but the Users page doesn't read them directly.
+  route?: string;
+  navigate?: (path: string) => void;
+}
+
+export function UsersPage({ embedded = false }: UsersPageProps = {}) {
   const [q, setQ] = useState("");
-  const [users, setUsers] = useState([]);
-  const [me, setMe] = useState(null);
-  const [selected, setSelected] = useState(new Set());
+  const [users, setUsers] = useState<User[]>([]);
+  const [me, setMe] = useState<BackendMe | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
-  const [editUser, setEditUser] = useState(null);
-  const [deleteUser, setDeleteUser] = useState(null);
-  const [statusUser, setStatusUser] = useState(null);
-  const [roleUser, setRoleUser] = useState(null);
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [deleteUser, setDeleteUser] = useState<User | null>(null);
+  const [statusUser, setStatusUser] = useState<User | null>(null);
+  const [roleUser, setRoleUser] = useState<User | null>(null);
+  const toast = useToast();
 
   // Identify the logged-in user so the UI prevents self-disable / self-role-change
   // (the backend also enforces both — see users.py _assert_not_last_admin_gone).
@@ -513,8 +656,8 @@ export function UsersPage({ embedded = false } = {}) {
     const load = async () => {
       try {
         const [list, whoami] = await Promise.all([
-          _usApi("/admin/api/users"),
-          _usApi("/api/auth/me").catch(() => null),
+          _usApi<BackendUser[]>("/admin/api/users"),
+          _usApi<BackendMe>("/api/auth/me").catch(() => null),
         ]);
         if (cancelled) return;
         setUsers((list || []).map(_usAdapt));
@@ -528,10 +671,12 @@ export function UsersPage({ embedded = false } = {}) {
     return () => { cancelled = true; clearInterval(id); };
   }, []);
 
-  const items = useMemo(() => {
+  const items = useMemo<User[]>(() => {
     if (!q.trim()) return users;
     const ql = q.toLowerCase();
-    return users.filter((u) => u.username.toLowerCase().includes(ql) || (u.email || "").toLowerCase().includes(ql));
+    return users.filter((u) =>
+      u.username.toLowerCase().includes(ql) || (u.email || "").toLowerCase().includes(ql),
+    );
   }, [q, users]);
 
   const allSelected = items.length > 0 && items.every((u) => selected.has(u.id));
@@ -544,20 +689,22 @@ export function UsersPage({ embedded = false } = {}) {
       setSelected(new Set([...selected, ...items.map((u) => u.id)]));
     }
   };
-  const toggleOne = (id) => {
+  const toggleOne: Dispatch<string> = (id) => {
     const s = new Set(selected);
-    s.has(id) ? s.delete(id) : s.add(id);
+    if (s.has(id)) s.delete(id); else s.add(id);
     setSelected(s);
   };
 
   const _refresh = async () => {
     try {
-      const list = await _usApi("/admin/api/users");
+      const list = await _usApi<BackendUser[]>("/admin/api/users");
       setUsers((list || []).map(_usAdapt));
-    } catch {}
+    } catch {
+      // silent
+    }
   };
 
-  const bulkAction = async (action) => {
+  const bulkAction = async (action: "enable" | "disable" | "delete") => {
     const ids = [...selected]
       .filter((id) => id !== CURRENT_USER_ID || action === "enable")
       .map((id) => Number(id))
@@ -568,12 +715,14 @@ export function UsersPage({ embedded = false } = {}) {
         method: "POST",
         body: JSON.stringify({ ids, action }),
       });
-    } catch {}
+    } catch {
+      // silent
+    }
     setSelected(new Set());
     _refresh();
   };
 
-  const handleCreate = async (form) => {
+  const handleCreate = async (form: UserForm) => {
     try {
       await _usApi("/admin/api/users", {
         method: "POST",
@@ -587,12 +736,13 @@ export function UsersPage({ embedded = false } = {}) {
       setCreateOpen(false);
       _refresh();
     } catch (err) {
-      alert("No se pudo crear el usuario: " + err.message);
+      const msg = err instanceof Error ? err.message : "error";
+      toast(`No se pudo crear el usuario: ${msg}`, { tone: "danger" });
     }
   };
-  const handleEdit = async (form) => {
+  const handleEdit = async (form: UserForm) => {
     if (!editUser) return;
-    const body = {};
+    const body: Record<string, unknown> = {};
     if (form.email !== undefined) body.email = form.email || null;
     if (form.role !== undefined && editUser.id !== CURRENT_USER_ID) body.role = form.role;
     if (form.password) body.password = form.password;
@@ -604,24 +754,26 @@ export function UsersPage({ embedded = false } = {}) {
       setEditUser(null);
       _refresh();
     } catch (err) {
-      alert("No se pudo guardar: " + err.message);
+      const msg = err instanceof Error ? err.message : "error";
+      toast(`No se pudo guardar: ${msg}`, { tone: "danger" });
     }
   };
-  const handleDelete = async (u) => {
+  const handleDelete = async (u: User) => {
     try {
       await _usApi(`/admin/api/users/${u.rawId}`, { method: "DELETE" });
       _refresh();
     } catch (err) {
-      alert("No se pudo eliminar: " + err.message);
+      const msg = err instanceof Error ? err.message : "error";
+      toast(`No se pudo eliminar: ${msg}`, { tone: "danger" });
     } finally {
       setDeleteUser(null);
     }
   };
-  const toggleStatus = (u) => {
+  const toggleStatus = (u: User) => {
     if (u.id === CURRENT_USER_ID && u.status !== "disabled") return;
     setStatusUser(u);
   };
-  const confirmStatus = async (u) => {
+  const confirmStatus = async (u: User) => {
     const next = u.status === "disabled";  // currently disabled => enable next
     try {
       await _usApi(`/admin/api/users/${u.rawId}`, {
@@ -630,12 +782,13 @@ export function UsersPage({ embedded = false } = {}) {
       });
       _refresh();
     } catch (err) {
-      alert("No se pudo cambiar el estado: " + err.message);
+      const msg = err instanceof Error ? err.message : "error";
+      toast(`No se pudo cambiar el estado: ${msg}`, { tone: "danger" });
     } finally {
       setStatusUser(null);
     }
   };
-  const confirmRole = async (u, newRole) => {
+  const confirmRole = async (u: User, newRole: string) => {
     try {
       await _usApi(`/admin/api/users/${u.rawId}`, {
         method: "PATCH",
@@ -643,12 +796,13 @@ export function UsersPage({ embedded = false } = {}) {
       });
       _refresh();
     } catch (err) {
-      alert("No se pudo cambiar el rol: " + err.message);
+      const msg = err instanceof Error ? err.message : "error";
+      toast(`No se pudo cambiar el rol: ${msg}`, { tone: "danger" });
     } finally {
       setRoleUser(null);
     }
   };
-  const resetPass = async (u) => {
+  const resetPass = async (u: User) => {
     const newp = window.prompt(`Nueva contraseña para ${u.username} (mín. 8):`);
     if (!newp || newp.length < 8) return;
     try {
@@ -656,14 +810,15 @@ export function UsersPage({ embedded = false } = {}) {
         method: "PATCH",
         body: JSON.stringify({ password: newp }),
       });
-      alert(`Contraseña actualizada para ${u.username}.`);
+      toast(`Contraseña actualizada para ${u.username}.`, { tone: "success" });
     } catch (err) {
-      alert("No se pudo resetear: " + err.message);
+      const msg = err instanceof Error ? err.message : "error";
+      toast(`No se pudo resetear: ${msg}`, { tone: "danger" });
     }
   };
 
-  const roleTone = (r) => r === "admin" ? "primary" : "default";
-  const statusTone = (s) => s === "active" ? "green" : s === "invited" ? "primary" : "default";
+  const roleTone = (r: string): string => r === "admin" ? "primary" : "default";
+  const statusTone = (s: Status): string => s === "active" ? "green" : s === "invited" ? "primary" : "default";
 
   const Header = embedded ? null : (
     <PageHeader
@@ -714,7 +869,12 @@ export function UsersPage({ embedded = false } = {}) {
           <thead>
             <tr>
               <th style={{ width: 32 }}>
-                <input type="checkbox" checked={allSelected} ref={(el) => el && (el.indeterminate = someSelected)} onChange={toggleAll} />
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                  onChange={toggleAll}
+                />
               </th>
               <th>Usuario</th>
               <th>Email</th>
@@ -731,7 +891,7 @@ export function UsersPage({ embedded = false } = {}) {
                 key={u.id}
                 onClick={(e) => {
                   // Ignore clicks on interactive elements (checkbox, kebab menu, buttons)
-                  if (e.target.closest('input, button, [role="button"], a, .cm-menu, .cm-kebab')) return;
+                  if ((e.target as HTMLElement).closest('input, button, [role="button"], a, .cm-menu, .cm-kebab')) return;
                   setEditUser(u);
                 }}
                 style={{
@@ -757,7 +917,7 @@ export function UsersPage({ embedded = false } = {}) {
                     </div>
                   </div>
                 </td>
-                <td style={{ color: "var(--fg-muted)" }}>{u.email || <em style={{ opacity: 0.6 }}>—</em>}</td>
+                <td style={{ color: "var(--fg-muted)" }}>{u.email && u.email !== "—" ? u.email : <em style={{ opacity: 0.6 }}>—</em>}</td>
                 <td
                   onDoubleClick={(e) => {
                     e.stopPropagation();
@@ -848,3 +1008,7 @@ export function UsersPage({ embedded = false } = {}) {
   return <div className="cm-page">{body}</div>;
 }
 
+// SetStateAction is imported but not used here; re-export keeps the
+// generic Dispatch<SetStateAction<...>> shape available for callers
+// that compose this page with their own state setters.
+export type { SetStateAction };
