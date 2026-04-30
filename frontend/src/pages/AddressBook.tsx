@@ -19,6 +19,7 @@ import {
   Drawer, Modal, ConfirmDialog, PageHeader,
   useToast,
 } from "../components/primitives";
+import { readAuthToken, clearAuthToken } from "../shell/auth";
 
 // ============================================================
 // Pages — Address Book (Agenda)
@@ -89,21 +90,12 @@ interface KebabAction {
 type KebabItem = "sep" | KebabAction;
 
 // ─── Auth-aware fetch (Etapa 3.9) ────────────────────────
-function _abAuthToken(): string | null {
-  try {
-    const raw = localStorage.getItem("cm-auth");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { token?: string };
-    return parsed?.token ?? null;
-  } catch { return null; }
-}
-
 interface ApiInit extends Omit<RequestInit, "headers"> {
   headers?: Record<string, string>;
 }
 
 async function _abApi<T = unknown>(path: string, init: ApiInit = {}): Promise<T | null> {
-  const token = _abAuthToken();
+  const token = readAuthToken();
   const headers: Record<string, string> = {
     ...(init.headers || {}),
     ...(token ? { Authorization: "Bearer " + token } : {}),
@@ -111,9 +103,7 @@ async function _abApi<T = unknown>(path: string, init: ApiInit = {}): Promise<T 
   if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
-    try { localStorage.removeItem("cm-auth"); } catch {
-      // localStorage might be unavailable — ignore.
-    }
+    clearAuthToken();
     window.location.hash = "/login";
     throw new Error("unauthenticated");
   }

@@ -19,6 +19,7 @@ import {
   Drawer, ConfirmDialog, PageHeader,
   useToast,
 } from "../components/primitives";
+import { readAuthToken, clearAuthToken } from "../shell/auth";
 
 // ============================================================
 // Pages — Logs / Auditoría
@@ -70,21 +71,12 @@ interface LogDescription {
 }
 
 // ─── Auth-aware fetch (Etapa 3.7) ─────────────────────
-function _lgAuthToken(): string | null {
-  try {
-    const raw = localStorage.getItem("cm-auth");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { token?: string };
-    return parsed?.token ?? null;
-  } catch { return null; }
-}
-
 interface ApiInit extends Omit<RequestInit, "headers"> {
   headers?: Record<string, string>;
 }
 
 async function _lgApi<T = unknown>(path: string, init: ApiInit = {}): Promise<T | null> {
-  const token = _lgAuthToken();
+  const token = readAuthToken();
   const headers: Record<string, string> = {
     ...(init.headers || {}),
     ...(token ? { Authorization: "Bearer " + token } : {}),
@@ -92,9 +84,7 @@ async function _lgApi<T = unknown>(path: string, init: ApiInit = {}): Promise<T 
   if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
-    try { localStorage.removeItem("cm-auth"); } catch {
-      // localStorage unavailable — ignore.
-    }
+    clearAuthToken();
     window.location.hash = "/login";
     throw new Error("unauthenticated");
   }
@@ -815,13 +805,7 @@ export function LogsPage(_props: LogsPageProps = {}) {
       params.set("since", new Date(Date.now() - rangeMs).toISOString());
     }
 
-    const token = ((): string => {
-      try {
-        const raw = localStorage.getItem("cm-auth") || "{}";
-        const parsed = JSON.parse(raw) as { token?: string };
-        return parsed.token || "";
-      } catch { return ""; }
-    })();
+    const token = readAuthToken() || "";
 
     try {
       const r = await fetch(`/admin/api/logs?${params.toString()}`, {
