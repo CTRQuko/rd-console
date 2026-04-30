@@ -123,3 +123,76 @@ def test_ws_stats_pushes_first_payload(client, admin_token):
     assert "sessions_active" in payload
     assert "bandwidth_bps" in payload
     assert isinstance(payload["cpu"]["pct"], (int, float))
+
+
+# ─── /api/v1/ws/notifications — live WebSocket push ─────────────────────────
+
+
+def test_ws_notifications_rejects_missing_token(client):
+    """No `?token=…` query param → close 4001 before accept."""
+    from starlette.websockets import WebSocketDisconnect
+    import pytest as _pytest
+    with _pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect("/api/v1/ws/notifications"):
+            pass
+    assert exc.value.code == 4001
+
+
+def test_ws_notifications_rejects_invalid_token(client):
+    """Garbled JWT → 4001."""
+    from starlette.websockets import WebSocketDisconnect
+    import pytest as _pytest
+    with _pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(
+            "/api/v1/ws/notifications?token=not-a-jwt"
+        ):
+            pass
+    assert exc.value.code == 4001
+
+
+def test_ws_notifications_pushes_first_payload(client, admin_token):
+    """Happy path: a valid token receives a notifications payload
+    immediately on connect (the loop sends one frame before the first
+    sleep). The payload shape mirrors GET /notifications/recent."""
+    with client.websocket_connect(
+        f"/api/v1/ws/notifications?token={admin_token}"
+    ) as ws:
+        payload = ws.receive_json()
+    assert "items" in payload
+    assert "unread_count" in payload
+    assert isinstance(payload["items"], list)
+    assert isinstance(payload["unread_count"], int)
+
+
+def test_ws_notifications_payload_matches_http(client, admin_token, session):
+    """The WS payload should match what GET /notifications/recent returns
+    at the same instant — both call compute_notifications under the hood,
+    so any drift here means the helper isn't being shared correctly."""
+    # Generate a couple of audit rows so the payload isn't empty.
+    from app.models.audit_log import AuditLog, AuditAction
+    from datetime import datetime
+    session.add(
+        AuditLog(
+            actor_user_id=None,
+            action=AuditAction.LOGIN_FAILED,
+            ip="1.2.3.4",
+            created_at=datetime.utcnow(),
+        )
+    )
+    session.commit()
+
+    http = client.get(
+        "/api/v1/notifications/recent?limit=20",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()
+
+    with client.websocket_connect(
+        f"/api/v1/ws/notifications?token={admin_token}"
+    ) as ws:
+        ws_payload = ws.receive_json()
+
+    # Same shape; ids should match the most recent items.
+    assert ws_payload["unread_count"] == http["unread_count"]
+    http_ids = [item["id"] for item in http["items"]]
+    ws_ids = [item["id"] for item in ws_payload["items"]]
+    assert http_ids == ws_ids

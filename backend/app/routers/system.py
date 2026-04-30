@@ -422,25 +422,12 @@ def _get_read_until(session, user_id: int) -> int:
         return 0
 
 
-@router.get(
-    "/notifications/recent",
-    response_model=NotificationsResponse,
-    summary="Recent operator-relevant events for the topbar bell",
-)
-def notifications_recent(
-    session: SessionDep,
-    admin: AdminUser,
-    limit: int = Query(default=20, ge=1, le=100),
-) -> NotificationsResponse:
-    """Latest audit_log rows mapped to notification kinds.
+def compute_notifications(session, user_id: int, limit: int = 20) -> NotificationsResponse:
+    """Build the notifications payload for `user_id`.
 
-    Filters by the keys of `_NOTIFICATION_KINDS` so peer-to-peer connect /
-    disconnect / file-transfer events don't drown out the panel-side
-    actions an operator actually cares about.
-
-    Per-user "read" state is tracked by storing the highest audit_log id
-    the user has marked as read (`notifications_read_until_<uid>` in
-    runtime_settings). Items with id > that pointer are unread.
+    Used by both the HTTP endpoint (60 s polling) and the WebSocket
+    broadcaster (push every 30 s) so they share filter logic, payload
+    shape, and read-pointer reconciliation.
     """
     audit_actions = list(_NOTIFICATION_KINDS.keys())
     rows = session.exec(
@@ -459,7 +446,7 @@ def notifications_recent(
         for u in session.exec(select(_User).where(_User.id.in_(actor_ids))).all():
             actors_by_id[u.id] = u.username
 
-    read_until = _get_read_until(session, admin.id)
+    read_until = _get_read_until(session, user_id)
     items: list[NotificationItem] = []
     unread = 0
     for r in rows:
@@ -495,6 +482,21 @@ def notifications_recent(
         ))
 
     return NotificationsResponse(items=items, unread_count=unread)
+
+
+@router.get(
+    "/notifications/recent",
+    response_model=NotificationsResponse,
+    summary="Recent operator-relevant events for the topbar bell",
+)
+def notifications_recent(
+    session: SessionDep,
+    admin: AdminUser,
+    limit: int = Query(default=20, ge=1, le=100),
+) -> NotificationsResponse:
+    """HTTP wrapper around compute_notifications — see the helper for
+    details on filtering + read-pointer behaviour."""
+    return compute_notifications(session, admin.id, limit)
 
 
 class MarkReadBody(BaseModel):
@@ -598,6 +600,59 @@ async def ws_stats(websocket: WebSocket) -> None:
     except Exception:  # noqa: BLE001 — log + close, don't crash the worker
         import logging
         logging.getLogger("rd_console.ws").exception("ws/stats loop crashed")
+        try:
+            await websocket.close(code=1011, reason="internal error")
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@router.websocket("/ws/notifications")
+async def ws_notifications(websocket: WebSocket) -> None:
+    """Push the notifications payload every 30 s.
+
+    Same auth model as /ws/stats: JWT in the `?token=…` query param,
+    close 4001 on missing/invalid, 4003 on inactive user. Cadence is
+    intentionally slower than /ws/stats — a 30 s update window is
+    plenty for an operator-facing bell, and the audit log isn't
+    gaining rows fast enough to justify per-second pushes.
+    """
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="missing token")
+        return
+
+    payload_jwt = decode_access_token(token)
+    if not payload_jwt:
+        await websocket.close(code=4001, reason="invalid token")
+        return
+
+    sub = payload_jwt.get("sub")
+    try:
+        user_id = int(sub) if sub is not None else None
+    except (TypeError, ValueError):
+        user_id = None
+    if user_id is None:
+        await websocket.close(code=4001, reason="invalid token subject")
+        return
+
+    with Session(_db_module.engine) as session:
+        user = session.get(_User, user_id)
+        if user is None or not user.is_active:
+            await websocket.close(code=4003, reason="user inactive")
+            return
+
+    await websocket.accept()
+    try:
+        while True:
+            with Session(_db_module.engine) as session:
+                payload = compute_notifications(session, user_id, 20)
+            await websocket.send_json(payload.model_dump(mode="json"))
+            await _asyncio.sleep(30)
+    except WebSocketDisconnect:
+        return
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger("rd_console.ws").exception("ws/notifications loop crashed")
         try:
             await websocket.close(code=1011, reason="internal error")
         except Exception:  # noqa: BLE001

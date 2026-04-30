@@ -8,6 +8,7 @@ import { readAuthToken, clearAuthToken } from "./auth";
 import { meInitials, ROLE_LABEL_ES, type MeUser } from "./identity";
 import { NotificationsPopover, type NotificationItem } from "./NotificationsPopover";
 import { UserMenuPopover } from "./UserMenuPopover";
+import { useNotificationsWebSocket } from "./useNotificationsWebSocket";
 import type { ThemeState } from "./theme";
 
 interface NotificationsPayload {
@@ -89,6 +90,15 @@ export function Topbar({
       window.clearInterval(t);
     };
   }, []);
+
+  // WebSocket /api/v1/ws/notifications pushes the same payload every
+  // 30 s without an HTTP round-trip. When the socket is connected the
+  // pushed data overrides the polling state — polling stays as the
+  // initial paint + fallback if the socket drops with auth codes.
+  const wsNoti = useNotificationsWebSocket();
+  useEffect(() => {
+    if (wsNoti) setNotiData(wsNoti);
+  }, [wsNoti]);
 
   const markAllRead = async () => {
     const token = readAuthToken();
