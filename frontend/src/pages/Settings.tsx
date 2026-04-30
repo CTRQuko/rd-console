@@ -779,27 +779,92 @@ function ApiTokensSection() {
 }
 
 function ActiveSessionsSection() {
-  const sessions = [
-    { who: "admin@casaredes",   ip: "83.45.12.7",    ua: "Chrome 130 / macOS",    started: "hoy, 09:14",  current: true },
-    { who: "daniel@casaredes",  ip: "83.45.12.140",  ua: "Firefox 132 / Windows", started: "hoy, 08:02",  current: false },
-    { who: "ci-deploy (token)", ip: "10.0.4.18",     ua: "curl/8.4 (CI runner)",  started: "ayer, 22:40", current: false },
-  ];
+  // Cableado a /api/auth/sessions. Each row is one non-revoked,
+  // non-expired JWT that the backend has issued for the current user.
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const toast = useToast();
+
+  const fmtRelative = (iso) => {
+    if (!iso) return "—";
+    const then = new Date(iso);
+    const diff = Math.floor((Date.now() - then.getTime()) / 1000);
+    if (diff < 60) return "ahora";
+    if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
+    if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
+    if (diff < 86400 * 7) return `hace ${Math.floor(diff / 86400)} d`;
+    return then.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const reload = async () => {
+    try {
+      const data = await _stApi("/api/auth/sessions");
+      setSessions(data || []);
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await _stApi("/api/auth/sessions");
+        if (!cancelled) setSessions(data || []);
+      } catch {
+        // silent
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const closeSession = async (s) => {
+    if (s.is_current) return;
+    try {
+      await _stApi(`/api/auth/sessions/${encodeURIComponent(s.jti)}`, { method: "DELETE" });
+      setSessions((rows) => rows.filter((r) => r.jti !== s.jti));
+      toast("Sesión cerrada", { tone: "success" });
+    } catch {
+      toast("No se pudo cerrar la sesión", { tone: "danger" });
+      reload();
+    }
+  };
+
   return (
     <>
       <p style={{ color: "var(--fg-muted)", fontSize: 13, margin: "0 0 16px" }}>
-        Sesiones de la consola actualmente abiertas. Puedes cerrar cualquiera salvo la actual.
+        Sesiones JWT que el backend ha emitido para tu cuenta y siguen
+        activas. Puedes cerrar cualquiera salvo la actual; cerrar la
+        actual equivale a "Cerrar sesión".
       </p>
       <table className="cm-table" style={{ width: "100%" }}>
-        <thead><tr><th>Operador</th><th>IP</th><th>Navegador</th><th>Iniciada</th><th></th></tr></thead>
+        <thead><tr><th>Iniciada</th><th>IP</th><th>Navegador / cliente</th><th>Caduca</th><th></th></tr></thead>
         <tbody>
-          {sessions.map((s, i) => (
-            <tr key={i}>
-              <td style={{ fontWeight: 500 }}>{s.who} {s.current && <Tag tone="blue" style={{ marginLeft: 8 }}>actual</Tag>}</td>
-              <td><code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{s.ip}</code></td>
-              <td style={{ color: "var(--fg-muted)" }}>{s.ua}</td>
-              <td style={{ color: "var(--fg-muted)" }}>{s.started}</td>
+          {sessions.length === 0 && !loading && (
+            <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--fg-muted)", padding: 32 }}>
+              No hay sesiones activas registradas.
+            </td></tr>
+          )}
+          {sessions.map((s) => (
+            <tr key={s.jti}>
+              <td style={{ fontWeight: 500 }}>
+                {fmtRelative(s.created_at)} {s.is_current && <Tag tone="primary">actual</Tag>}
+              </td>
+              <td><code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{s.ip || "—"}</code></td>
+              <td style={{ color: "var(--fg-muted)", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.user_agent || ""}>
+                {s.user_agent || "—"}
+              </td>
+              <td style={{ color: "var(--fg-muted)" }}>{fmtRelative(s.expires_at).replace("hace", "en")}</td>
               <td style={{ textAlign: "right" }}>
-                <button className="cm-btn cm-btn--ghost" disabled={s.current}>
+                <button
+                  className="cm-btn cm-btn--ghost"
+                  disabled={s.is_current}
+                  onClick={() => closeSession(s)}
+                >
                   <Icon name="x" size={14} /> Cerrar
                 </button>
               </td>

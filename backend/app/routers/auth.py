@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
 from ..deps import CurrentUser, SessionDep
 from ..models.audit_log import AuditAction, AuditLog
 from ..models.jwt_revocation import JwtRevocation
+from ..models.jwt_session import JwtSession
 from ..models.user import User
 from ..security import (
     create_access_token,
@@ -62,7 +63,7 @@ class ChangePasswordRequest(BaseModel):
     dependencies=[Depends(_login_limiter)],
     summary="Panel login — exchange username/password for a JWT",
 )
-def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
+def login(body: LoginRequest, session: SessionDep, request: Request) -> LoginResponse:
     """Authenticate a panel user and return a short-lived JWT.
 
     On invalid credentials this endpoint emits a `LOGIN_FAILED` audit entry
@@ -70,6 +71,9 @@ def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
     timing leaks. The returned `access_token` must be sent in the
     `Authorization: Bearer …` header on every subsequent call to
     `/admin/api/**`.
+
+    On success a JwtSession row is recorded so Settings → Sesiones
+    activas can show every device the operator is logged in from.
     """
     # Dual lookup: email if the field contains "@", username otherwise.
     if "@" in body.username:
@@ -99,6 +103,32 @@ def login(body: LoginRequest, session: SessionDep) -> LoginResponse:
     session.refresh(user)
 
     token = create_access_token(subject=user.id, extra_claims={"role": user.role.value})
+
+    # Record the session so the operator can later see + revoke it
+    # from Settings → Sesiones activas. Pulls jti + exp directly from
+    # the token we just minted so the row matches what the JWT will
+    # carry on subsequent requests.
+    claims = decode_access_token(token) or {}
+    jti = claims.get("jti")
+    exp = claims.get("exp")
+    if jti and exp:
+        try:
+            ua = request.headers.get("user-agent", "")[:512] or None
+            ip = request.client.host if request.client else None
+            session.add(JwtSession(
+                jti=jti,
+                user_id=user.id,
+                created_at=utcnow_naive(),
+                expires_at=datetime.fromtimestamp(int(exp)),
+                user_agent=ua,
+                ip=ip,
+            ))
+            session.commit()
+        except Exception:  # noqa: BLE001
+            # Tracking is best-effort — never block login on a session
+            # row insert.
+            session.rollback()
+
     return LoginResponse(access_token=token)
 
 
@@ -174,4 +204,82 @@ def change_password(body: ChangePasswordRequest, user: CurrentUser, session: Ses
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "New password must differ")
     user.password_hash = hash_password(body.new_password)
     session.add(user)
+    session.commit()
+
+
+# ─── Sessions list / revoke (Settings → Seguridad → Sesiones activas) ───
+
+
+class SessionOut(BaseModel):
+    jti: str
+    created_at: datetime
+    expires_at: datetime
+    user_agent: str | None = None
+    ip: str | None = None
+    is_current: bool = False
+
+
+@router.get("/sessions", response_model=list[SessionOut])
+def list_sessions(
+    user: CurrentUser,
+    session: SessionDep,
+    authorization: str | None = Header(default=None),
+) -> list[SessionOut]:
+    """Return every non-revoked, non-expired JWT session for the caller.
+
+    The session that's making this call is flagged with `is_current: true`
+    so the UI can render it differently (typically: hide the revoke
+    button, since revoking your own current session is the same as
+    logging out and is handled by /logout).
+    """
+    current_jti: str | None = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1]
+        claims = decode_access_token(token)
+        if claims:
+            current_jti = claims.get("jti")
+
+    now = utcnow_naive()
+    rows = session.exec(
+        select(JwtSession)
+        .where(JwtSession.user_id == user.id)
+        .where(JwtSession.revoked_at.is_(None))  # type: ignore[union-attr]
+        .where(JwtSession.expires_at > now)
+        .order_by(JwtSession.created_at.desc())  # type: ignore[attr-defined]
+    ).all()
+
+    return [
+        SessionOut(
+            jti=row.jti,
+            created_at=row.created_at,
+            expires_at=row.expires_at,
+            user_agent=row.user_agent,
+            ip=row.ip,
+            is_current=(row.jti == current_jti),
+        )
+        for row in rows
+    ]
+
+
+@router.delete("/sessions/{jti}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_session(
+    jti: str,
+    user: CurrentUser,
+    session: SessionDep,
+) -> None:
+    """Revoke one specific session by jti. Both the JwtSession row and
+    the JwtRevocation row are written so subsequent decodes reject the
+    token immediately.
+
+    A user can only revoke their own sessions; passing someone else's
+    jti returns 404 (avoids confirming the existence of unknown jtis).
+    """
+    row = session.get(JwtSession, jti)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    if row.revoked_at is None:
+        row.revoked_at = utcnow_naive()
+        session.add(row)
+    if session.get(JwtRevocation, jti) is None:
+        session.add(JwtRevocation(jti=jti, user_id=user.id, expires_at=row.expires_at))
     session.commit()

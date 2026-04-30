@@ -97,3 +97,71 @@ def test_change_password_rejects_short_pw(client, auth_headers):
     )
     # 422 from pydantic (min_length=8 on the schema).
     assert r.status_code == 422
+
+
+# ─── /api/auth/sessions — active JWT sessions list/revoke ───────────────────
+
+
+def test_sessions_lists_only_caller_jwt(client, make_user):
+    """The caller's login row should appear; another user's shouldn't."""
+    # Create two users + log them both in.
+    make_user(username="carla", password="correct-horse-battery")
+    make_user(username="dario", password="correct-horse-battery")
+
+    r1 = client.post("/api/auth/login", json={"username": "carla", "password": "correct-horse-battery"})
+    r2 = client.post("/api/auth/login", json={"username": "dario", "password": "correct-horse-battery"})
+    t1 = r1.json()["access_token"]
+    _t2 = r2.json()["access_token"]
+
+    sessions = client.get("/api/auth/sessions", headers={"Authorization": f"Bearer {t1}"}).json()
+    assert len(sessions) == 1
+    assert sessions[0]["is_current"] is True
+
+
+def test_revoke_session_blocks_subsequent_calls(client, make_user):
+    make_user(username="elena", password="correct-horse-battery")
+    r1 = client.post("/api/auth/login", json={"username": "elena", "password": "correct-horse-battery"})
+    t1 = r1.json()["access_token"]
+    r2 = client.post("/api/auth/login", json={"username": "elena", "password": "correct-horse-battery"})
+    t2 = r2.json()["access_token"]
+
+    # Use t1 to revoke the session associated with t2.
+    sessions = client.get("/api/auth/sessions", headers={"Authorization": f"Bearer {t1}"}).json()
+    other = next(s for s in sessions if not s["is_current"])
+    r = client.delete(
+        f"/api/auth/sessions/{other['jti']}",
+        headers={"Authorization": f"Bearer {t1}"},
+    )
+    assert r.status_code == 204
+
+    # t2 should now be rejected.
+    r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {t2}"})
+    assert r.status_code == 401
+
+
+def test_revoke_unknown_session_404(client, admin_token):
+    r = client.delete(
+        "/api/auth/sessions/not-a-real-jti",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert r.status_code == 404
+
+
+def test_cannot_revoke_other_users_session(client, make_user):
+    """A user who knows another user's jti still gets a 404 — keeps the
+    presence of the jti unrevealed."""
+    make_user(username="franco", password="correct-horse-battery")
+    make_user(username="gloria", password="correct-horse-battery")
+    f_login = client.post("/api/auth/login", json={"username": "franco", "password": "correct-horse-battery"}).json()
+    g_login = client.post("/api/auth/login", json={"username": "gloria", "password": "correct-horse-battery"}).json()
+    f_sessions = client.get(
+        "/api/auth/sessions",
+        headers={"Authorization": f"Bearer {f_login['access_token']}"},
+    ).json()
+    f_jti = f_sessions[0]["jti"]
+    # Gloria tries to revoke Franco's jti.
+    r = client.delete(
+        f"/api/auth/sessions/{f_jti}",
+        headers={"Authorization": f"Bearer {g_login['access_token']}"},
+    )
+    assert r.status_code == 404
