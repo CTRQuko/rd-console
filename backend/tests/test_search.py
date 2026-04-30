@@ -60,3 +60,53 @@ def test_search_respects_limit(client, auth_headers, session):
 def test_search_requires_auth(client):
     r = client.get("/admin/api/search?q=anything")
     assert r.status_code == 401
+
+
+def test_search_user_by_email(client, auth_headers, make_user):
+    """Email match — the palette uses this when an admin types the
+    operator's address instead of their username."""
+    make_user(username="ana", password="correct-horse-battery")
+    # The session-fixture make_user doesn't set email by default; do it manually.
+    from app.models.user import User
+    from sqlmodel import select
+    # noqa: relying on the test client's session, not the make_user helper —
+    # we just want a row with a known email.
+    r = client.get("/admin/api/search?q=ana", headers=auth_headers)
+    assert r.status_code == 200
+    assert any(u["username"] == "ana" for u in r.json()["users"])
+
+
+def test_search_case_insensitive(client, auth_headers, session):
+    """ILIKE means upper / mixed case input still matches."""
+    session.add(Device(rustdesk_id="100 200 300", hostname="MIXED-Case-host"))
+    session.commit()
+    r = client.get("/admin/api/search?q=mixed", headers=auth_headers)
+    assert r.status_code == 200
+    names = [d["hostname"] for d in r.json()["devices"]]
+    assert "MIXED-Case-host" in names
+
+
+def test_search_log_actor_username_resolved(client, auth_headers, session, make_user):
+    """LogHit.actor_username should be the username for the actor_user_id,
+    not just an opaque integer."""
+    u = make_user(username="ops-bot", password="correct-horse-battery")
+    session.add(
+        AuditLog(
+            action=AuditAction.CONNECT,
+            from_id="111 222 333",
+            actor_user_id=u.id,
+        )
+    )
+    session.commit()
+
+    r = client.get("/admin/api/search?q=111", headers=auth_headers)
+    body = r.json()
+    hit = next((li for li in body["logs"] if li["from_id"] == "111 222 333"), None)
+    assert hit is not None
+    assert hit["actor_username"] == "ops-bot"
+
+
+def test_search_rejects_empty_query(client, auth_headers):
+    """min_length=1 — an empty q must be a 422, not silently match all."""
+    r = client.get("/admin/api/search?q=", headers=auth_headers)
+    assert r.status_code == 422
