@@ -626,6 +626,33 @@ function StatusConfirmModal({ open, user, onClose, onConfirm }: StatusConfirmMod
   );
 }
 
+// ─── Filtros persistidos en el hash ───────────────────
+// Misma idea que en Logs/Devices: el cuadro de búsqueda se sincroniza
+// con `?q=…` en el hash via `replaceState`, así un refresh o un enlace
+// compartido conserva la query. La página embedded (Settings → Usuarios)
+// no toca la URL — vive bajo `#/settings/...` y comparte query string
+// con el sub-panel.
+function _usReadQ(): string {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  if (qIdx < 0) return "";
+  const params = new URLSearchParams(hash.slice(qIdx + 1));
+  return params.get("q") || "";
+}
+
+function _usWriteQ(q: string): void {
+  const hash = window.location.hash || "";
+  const qIdx = hash.indexOf("?");
+  const path = qIdx < 0 ? hash.slice(1) : hash.slice(1, qIdx);
+  const existing = qIdx < 0 ? new URLSearchParams() : new URLSearchParams(hash.slice(qIdx + 1));
+  if (q) existing.set("q", q); else existing.delete("q");
+  const qs = existing.toString();
+  const next = qs ? `#${path}?${qs}` : `#${path}`;
+  if (next !== hash) {
+    window.history.replaceState(null, "", next);
+  }
+}
+
 // ─── Página ────────────────────────────────────────────────
 export interface UsersPageProps {
   embedded?: boolean;
@@ -635,7 +662,7 @@ export interface UsersPageProps {
 }
 
 export function UsersPage({ embedded = false }: UsersPageProps = {}) {
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(() => embedded ? "" : _usReadQ());
   const [users, setUsers] = useState<User[]>([]);
   const [me, setMe] = useState<BackendMe | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -649,6 +676,13 @@ export function UsersPage({ embedded = false }: UsersPageProps = {}) {
   // Identify the logged-in user so the UI prevents self-disable / self-role-change
   // (the backend also enforces both — see users.py _assert_not_last_admin_gone).
   const CURRENT_USER_ID = me ? String(me.id) : null;
+
+  // Sync `q` → hash. Skipped in embedded mode because the Settings
+  // panel owns the URL and shouldn't share a `q` namespace.
+  useEffect(() => {
+    if (embedded) return;
+    _usWriteQ(q);
+  }, [q, embedded]);
 
   // Initial load + 30 s poll keeps last_login_at fresh.
   useEffect(() => {
