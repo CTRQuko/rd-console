@@ -3,11 +3,10 @@
   "private": true,
   "version": "3.0.0",
   "type": "module",
-  "description": "rd-console frontend — Claude Design System v3 (1:1 transplant from backend/rd-console Design System.zip).",
+  "description": "rd-console frontend \u2014 Claude Design System v3 (1:1 transplant from backend/rd-console Design System.zip).",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:prod": "node scripts/build-prod.mjs",
     "preview": "vite preview",
     "lint": "eslint ."
   },
