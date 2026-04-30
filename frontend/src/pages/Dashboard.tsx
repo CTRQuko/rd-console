@@ -3,6 +3,18 @@
 // (Etapa 4 ESM migration). React aliases → bare hook names,
 // window.X exports → named ESM exports. ts-nocheck because the
 // legacy code wasn't typed; tightening up types is a follow-up.
+//
+// Why this file still rides on @ts-nocheck (DashboardEdit, AddressBook,
+// Logs, JoinTokens and Users were typed in the same pass): Dashboard
+// is the densest page in the app — five MetricCard donuts each with
+// a bespoke popout, ConnectionsHistogram24h, ThroughputChart, an
+// UptimeBar30d sparkline, the recent-connections drawer, and the
+// DashboardEdit grid integration all share implicit-any binding
+// elements. A clean removal surfaces ~100 type errors that need to
+// be threaded through every helper at once. Better landed as a
+// dedicated PR (extracting the leaf helpers — Donut, PopHead,
+// PopFoot, CoreBars — into typed sub-files first, then MetricCard,
+// then the chart components) than crammed in here.
 import {
   useState, useEffect, useMemo, useCallback, useRef,
 } from "react";
