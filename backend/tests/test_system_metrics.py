@@ -86,3 +86,40 @@ def test_throughput_requires_admin(client):
     """Anonymous request is rejected (401), not just empty."""
     r = client.get("/api/v1/system/throughput?window=60m")
     assert r.status_code == 401
+
+
+# ─── /api/v1/ws/stats — live WebSocket push ─────────────────────────────────
+
+
+def test_ws_stats_rejects_missing_token(client):
+    """No `?token=…` query param → close with code 4001 before accept."""
+    from starlette.websockets import WebSocketDisconnect
+    import pytest as _pytest
+    with _pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect("/api/v1/ws/stats"):
+            pass
+    assert exc.value.code == 4001
+
+
+def test_ws_stats_rejects_invalid_token(client):
+    """Garbled JWT → 4001."""
+    from starlette.websockets import WebSocketDisconnect
+    import pytest as _pytest
+    with _pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect("/api/v1/ws/stats?token=not-a-jwt"):
+            pass
+    assert exc.value.code == 4001
+
+
+def test_ws_stats_pushes_first_payload(client, admin_token):
+    """Happy path: a valid token receives a metrics payload immediately
+    on connect (the loop sends one frame before the first sleep)."""
+    with client.websocket_connect(
+        f"/api/v1/ws/stats?token={admin_token}"
+    ) as ws:
+        payload = ws.receive_json()
+    assert "cpu" in payload
+    assert "memory" in payload
+    assert "sessions_active" in payload
+    assert "bandwidth_bps" in payload
+    assert isinstance(payload["cpu"]["pct"], (int, float))

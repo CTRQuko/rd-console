@@ -13,6 +13,7 @@ import {
   Drawer, Modal, ConfirmDialog, PageSizeSelect, PageHeader,
   ToastProvider, useToast, useHashRoute,
 } from "../components/primitives";
+import { useStatsWebSocket } from "../shell/useStatsWebSocket";
 import { useDashboardLayout, DashboardGrid, EditModeBar, CatalogPanel, CATALOG } from "./DashboardEdit";
 
 // ============================================================
@@ -631,11 +632,19 @@ function RecentConnections({ rows }) {
 export function DashboardPage() {
   // Live polling per the BACKEND CONTRACT comment at the top of this file.
   // Cadences: 5 s metrics + throughput, 10 s recent, 60 s histogram + uptime.
-  const { data: metrics } = _dsUsePolledFetch("/api/v1/system/metrics", 5000);
+  const { data: pollMetrics } = _dsUsePolledFetch("/api/v1/system/metrics", 5000);
   const { data: connections24h } = _dsUsePolledFetch("/api/v1/system/connections-24h", 60000);
   const { data: throughput } = _dsUsePolledFetch("/api/v1/system/throughput?window=60m", 5000);
   const { data: uptime } = _dsUsePolledFetch("/api/v1/system/uptime?days=30", 60000);
   const { data: recent } = _dsUsePolledFetch("/api/v1/connections/recent?limit=20", 10000);
+
+  // WebSocket /api/v1/ws/stats pushes the same payload every 5 s with no
+  // round-trip cost. When the socket is connected we prefer its data;
+  // polling stays as a fallback for the first ~250 ms before the socket
+  // warms up and for the case where the socket drops with auth codes
+  // (4001/4003) and we don't reconnect.
+  const wsMetrics = useStatsWebSocket();
+  const metrics = wsMetrics || pollMetrics;
 
   // Derive each MetricCard's headline value from the live payload.
   // Falls back to 0 / dashes while the first poll is in flight so the

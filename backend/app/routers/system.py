@@ -145,27 +145,17 @@ class RecentConnectionsResponse(BaseModel):
 # ─── Endpoints ────────────────────────────────────────────────────────────
 
 
-@router.get(
-    "/system/metrics",
-    response_model=SystemMetricsResponse,
-    summary="Live host metrics for the Dashboard top row (5s polling)",
-)
-def system_metrics(session: SessionDep, admin: AdminUser) -> SystemMetricsResponse:
-    """CPU pct + loadavg, RAM usage, active sessions, current bandwidth.
+def compute_system_metrics(session) -> SystemMetricsResponse:
+    """Sample psutil + DB once and assemble the metrics response.
 
-    Numbers come straight from psutil. Sessions count = devices with
-    `last_seen_at` in the last 15 min (same window used by the device
-    OnlineBadge tier).
+    Used by both the HTTP endpoint (5 s polling) and the WebSocket
+    broadcaster (push every 5 s). Kept here as a plain helper so the
+    WebSocket route doesn't need to fake a FastAPI dependency tree.
     """
-    # cpu_percent(interval=None) compares to the previous call. The first
-    # call returns 0.0; subsequent calls reflect real usage. The 5s polling
-    # cadence on the frontend means subsequent calls are accurate.
     cpu_pct = psutil.cpu_percent(interval=None)
     try:
         load1, load5, load15 = psutil.getloadavg()
     except (AttributeError, OSError):
-        # getloadavg is Unix-only; on Windows psutil emulates it but may
-        # raise on first call before its smoothing kicks in.
         load1 = load5 = load15 = 0.0
 
     mem = psutil.virtual_memory()
@@ -188,10 +178,23 @@ def system_metrics(session: SessionDep, admin: AdminUser) -> SystemMetricsRespon
         ),
         sessions_active=_online_session_count(session),
         bandwidth_bps=_sample_bandwidth_bps(),
-        # TODO: requires hour-bucketed aggregate of historical bandwidth.
-        # Stub at 0 until we add a background sampler with persistence.
         bandwidth_delta_pct_vs_prev_hour=0.0,
     )
+
+
+@router.get(
+    "/system/metrics",
+    response_model=SystemMetricsResponse,
+    summary="Live host metrics for the Dashboard top row (5s polling)",
+)
+def system_metrics(session: SessionDep, admin: AdminUser) -> SystemMetricsResponse:
+    """CPU pct + loadavg, RAM usage, active sessions, current bandwidth.
+
+    Numbers come straight from psutil. Sessions count = devices with
+    `last_seen_at` in the last 15 min (same window used by the device
+    OnlineBadge tier).
+    """
+    return compute_system_metrics(session)
 
 
 @router.get(
@@ -530,3 +533,72 @@ def notifications_mark_read(
         session.add(row)
     session.commit()
     return {"read_until": new_until, "changed": True}
+
+
+# ─── WebSocket: live metrics push (Dashboard) ───────────────────────────────
+
+import asyncio as _asyncio  # noqa: E402  (deferred import; only the WS uses it)
+
+from fastapi import WebSocket, WebSocketDisconnect  # noqa: E402
+from sqlmodel import Session  # noqa: E402
+
+from .. import db as _db_module  # noqa: E402
+from ..models.user import User as _User  # noqa: E402
+from ..security import decode_access_token  # noqa: E402
+
+
+@router.websocket("/ws/stats")
+async def ws_stats(websocket: WebSocket) -> None:
+    """Push system metrics every 5 s over a WebSocket.
+
+    Auth: the JWT travels in the `?token=…` query param because the
+    browser's WebSocket constructor doesn't accept custom headers.
+    Same shape as the HTTP `/api/v1/system/metrics` payload — clients
+    can swap polling for the socket without changing their adapter.
+
+    Closes 4001 if the token is missing/invalid; 4003 if the user the
+    token claims to represent has been disabled or deleted.
+    """
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="missing token")
+        return
+
+    payload = decode_access_token(token)
+    if not payload:
+        await websocket.close(code=4001, reason="invalid token")
+        return
+
+    sub = payload.get("sub")
+    try:
+        user_id = int(sub) if sub is not None else None
+    except (TypeError, ValueError):
+        user_id = None
+    if user_id is None:
+        await websocket.close(code=4001, reason="invalid token subject")
+        return
+
+    # Confirm the user still exists and is active. We resolve the engine
+    # dynamically so test fixtures that swap db.engine still work.
+    with Session(_db_module.engine) as session:
+        user = session.get(_User, user_id)
+        if user is None or not user.is_active:
+            await websocket.close(code=4003, reason="user inactive")
+            return
+
+    await websocket.accept()
+    try:
+        while True:
+            with Session(_db_module.engine) as session:
+                metrics = compute_system_metrics(session)
+            await websocket.send_json(metrics.model_dump(by_alias=True, mode="json"))
+            await _asyncio.sleep(5)
+    except WebSocketDisconnect:
+        return
+    except Exception:  # noqa: BLE001 — log + close, don't crash the worker
+        import logging
+        logging.getLogger("rd_console.ws").exception("ws/stats loop crashed")
+        try:
+            await websocket.close(code=1011, reason="internal error")
+        except Exception:  # noqa: BLE001
+            pass
