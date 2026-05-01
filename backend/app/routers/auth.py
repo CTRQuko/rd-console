@@ -195,8 +195,10 @@ def change_password(body: ChangePasswordRequest, user: CurrentUser, session: Ses
     """Rotate the password of the authenticated user.
 
     Requires the current password to confirm. Rejects no-op rotations
-    (same password in and out). Does not revoke existing JWTs — the
-    caller's token remains valid until natural expiry.
+    (same password in and out). Tras el cambio se revocan TODAS las
+    sesiones activas del usuario (incluida la que hizo la llamada) —
+    cierra VULN-05 del audit 2026-05-01. La UX equivale a "logout
+    universal", consistente con Google/GitHub al rotar credenciales.
     """
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
@@ -204,6 +206,24 @@ def change_password(body: ChangePasswordRequest, user: CurrentUser, session: Ses
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "New password must differ")
     user.password_hash = hash_password(body.new_password)
     session.add(user)
+
+    # Revocar todas las sesiones JWT activas del usuario.
+    now = utcnow_naive()
+    active = session.exec(
+        select(JwtSession)
+        .where(JwtSession.user_id == user.id)
+        .where(JwtSession.revoked_at.is_(None))  # type: ignore[union-attr]
+        .where(JwtSession.expires_at > now)
+    ).all()
+    for sess in active:
+        sess.revoked_at = now
+        session.add(sess)
+        if session.get(JwtRevocation, sess.jti) is None:
+            session.add(JwtRevocation(
+                jti=sess.jti,
+                user_id=user.id,
+                expires_at=sess.expires_at,
+            ))
     session.commit()
 
 

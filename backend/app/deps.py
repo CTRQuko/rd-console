@@ -14,11 +14,18 @@ from .models.api_token import ApiToken
 from .models.jwt_revocation import JwtRevocation
 from .models.user import User, UserRole
 from .security import (
+    constant_time_equals,
     decode_access_token,
     hash_api_token,
     looks_like_api_token,
     utcnow_naive,
 )
+
+# VULN-09: throttle del bumpeado de `last_used_at` en cada request con
+# PAT. Antes hacíamos `session.commit()` por petición — sobre SQLite
+# eso serializa todo. 30s es la ventana mínima útil para detectar
+# tokens abandonados sin trashear el WAL.
+_PAT_LAST_USED_THROTTLE_SECS = 30
 
 _oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
@@ -49,9 +56,16 @@ def _resolve_api_token(session: Session, plaintext: str) -> User:
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")
 
-    row.last_used_at = now
-    session.add(row)
-    session.commit()
+    # Throttle de last_used_at: cierra VULN-09. Antes commiteábamos en
+    # cada petición; un agente que pollee cada segundo generaba 1
+    # tx/s solo para este timestamp.
+    if (
+        row.last_used_at is None
+        or (now - row.last_used_at).total_seconds() > _PAT_LAST_USED_THROTTLE_SECS
+    ):
+        row.last_used_at = now
+        session.add(row)
+        session.commit()
     return user
 
 
@@ -74,20 +88,13 @@ def get_current_user(
         user_id = int(claims["sub"])
     except (KeyError, ValueError, TypeError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Malformed token") from None
-    # Revocation check. Decode already passed, so the token is syntactically
-    # valid and not expired — we just need to verify the jti isn't denied.
-    # Same generic 401 message as the other failure modes: never tell the
-    # caller WHY their token was rejected.
-    #
-    # Pre-v8 tokens minted before the jti rollout don't carry the claim. We
-    # observed in prod that python-jose's `require=["jti"]` option doesn't
-    # actually reject those (jose only enforces `require` for a fixed set of
-    # standard claims, not custom ones), so they reach this code path. Treat
-    # missing jti as "no revocation entry possible" rather than crashing —
-    # the alternative is forcing every operator to log out + back in across
-    # the upgrade, which the brief explicitly avoids.
-    jti = claims.get("jti")
-    if jti is not None and session.get(JwtRevocation, jti) is not None:
+    # Revocation check. Decode already passed, so el token es sintácticamente
+    # válido + no expirado. PyJWT con `options={"require": ["jti", ...]}`
+    # rechaza tokens sin jti antes de llegar aquí (cierra VULN-07; el
+    # fallback histórico para tokens pre-v8 sin jti era código muerto bajo
+    # PyJWT y se eliminó).
+    jti = claims["jti"]  # PyJWT garantiza que existe (require= en decode)
+    if session.get(JwtRevocation, jti) is not None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
     user = session.get(User, user_id)
     if not user or not user.is_active:
@@ -118,7 +125,10 @@ def require_client_secret(
     s = get_settings()
     if not s.client_shared_secret:
         return
-    if x_rd_secret != s.client_shared_secret:
+    # constant_time_equals cierra VULN-08: el `!=` previo terminaba en
+    # el primer byte distinto y filtraba el secreto byte-por-byte vía
+    # timing en redes locales. hmac.compare_digest es time-constant.
+    if not constant_time_equals(x_rd_secret or "", s.client_shared_secret):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid client secret")
 
 
