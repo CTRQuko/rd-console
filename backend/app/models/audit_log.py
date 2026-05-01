@@ -106,6 +106,29 @@ AUDIT_CATEGORIES: dict[str, tuple[AuditAction, ...]] = {
 
 
 class AuditLog(SQLModel, table=True):
+    """Append-only-ish audit trail.
+
+    **Threat model — limitación documentada como VULN-13 del audit
+    2026-05-01:** la tabla admite soft-delete (`deleted_at`) y purge
+    admin-controlado vía `DELETE /admin/api/logs` (con un retention
+    floor de 30 días que impide vaciar logs frescos). Esto es resistente
+    a usuarios autenticados pero **NO** a un admin malicioso ni a
+    alguien con acceso al filesystem de la BD: el audit log puede ser
+    silenciado por el propio admin.
+
+    Para integridad real frente a admin malicioso se necesita un sink
+    externo append-only. Hoy el deployment no exige eso porque el modelo
+    de amenazas asumido es "homelab single-admin". Si rd-console se
+    despliega multi-tenant o con varios admins, considerar:
+
+      1. Mirror de cada AuditLog row a syslog/journald/Loki en el
+         commit hook (drop-in, sin esquema nuevo).
+      2. Hash chain: cada fila incluye `prev_hash = H(prev_row)` y la
+         BD verifica integridad en startup.
+      3. Drop del soft-delete y mover purge a un proceso fuera del
+         backend con permisos elevados.
+    """
+
     __tablename__ = "audit_logs"
 
     id: int | None = Field(default=None, primary_key=True)
