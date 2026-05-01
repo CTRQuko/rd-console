@@ -87,19 +87,21 @@ def check(
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP. Matches the helper in routers/rustdesk.py
-    but kept local so this module has no intra-app dep cycles. ``unknown``
-    is used as a last-resort key so un-IP-ed requests still get rate
-    limited collectively rather than bypassing the check.
+    """Best-effort client IP que respeta `RD_TRUSTED_PROXIES`.
+
+    Cierra VULN-01 del audit 2026-05-01: la versión anterior leía
+    `X-Forwarded-For` sin validar el origen, y un atacante rotaba el
+    header para evadir el limit de 10 logins/min. Ahora delega en
+    `services.trusted_ip` que solo honra XFF si la conexión directa
+    viene de una red listada en `trusted_proxies` (lista vacía por
+    defecto = XFF ignorado).
+
+    `unknown` es el fallback para peticiones sin `request.client`
+    (sintéticas, tests) — comparten bucket en lugar de saltarse el limit.
     """
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        first = xff.split(",")[0].strip()[:45]
-        if first:
-            return first
-    if request.client and request.client.host:
-        return request.client.host[:45]
-    return "unknown"
+    from .trusted_ip import real_client_ip
+
+    return real_client_ip(request) or "unknown"
 
 
 def rate_limit_dep(

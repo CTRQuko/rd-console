@@ -35,7 +35,18 @@ def test_heartbeat_allowed_with_correct_secret(client, with_client_secret):
 def test_heartbeat_uses_xff_as_last_ip(client, session, with_client_secret):
     """The hbbs-watcher sidecar forwards the real peer IP via
     X-Forwarded-For (the raw socket is the sidecar itself). Verify we honor
-    XFF and store the upstream IP on the device row."""
+    XFF and store the upstream IP on the device row.
+
+    Tras VULN-10 / VULN-01: XFF solo se honra si la IP directa está en
+    `RD_TRUSTED_PROXIES`. El TestClient se identifica como ``testclient``
+    (string, no IP), así que extendemos la lista para reproducir el
+    escenario "sidecar local en confianza".
+    """
+    from app.config import get_settings
+    from app.services.trusted_ip import reset_cache_for_tests
+    s = get_settings()
+    s.trusted_proxies = ["testclient", "127.0.0.1", "::1"]
+    reset_cache_for_tests()
     r = client.post(
         "/api/heartbeat",
         json={"id": "xff-peer-01"},
@@ -61,7 +72,13 @@ def test_heartbeat_uses_xff_as_last_ip(client, session, with_client_secret):
 
 def test_heartbeat_xff_takes_first_hop(client, session, with_client_secret):
     """XFF may be a comma-list when multiple proxies chain. We only trust
-    the leftmost (the original client)."""
+    the leftmost (the original client). Mismo setup de trusted_proxies
+    que el test anterior — sin él, XFF se ignora por el fix VULN-01."""
+    from app.config import get_settings
+    from app.services.trusted_ip import reset_cache_for_tests
+    s = get_settings()
+    s.trusted_proxies = ["testclient", "127.0.0.1", "::1"]
+    reset_cache_for_tests()
     r = client.post(
         "/api/heartbeat",
         json={"id": "xff-chain"},

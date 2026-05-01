@@ -67,15 +67,17 @@ def _truncated_payload(payload: dict) -> str:
 
 
 def _client_ip(request: Request) -> str | None:
-    # In Docker/behind-proxy we expose X-Forwarded-For; trust it only if a
-    # reverse proxy is in front (operator's responsibility). Fall back to the
-    # direct socket.
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()[:45] or None
-    if request.client:
-        return request.client.host[:45]
-    return None
+    """Real client IP, honoring `RD_TRUSTED_PROXIES`.
+
+    Cierra VULN-10 del audit 2026-05-01: previamente leía XFF sin
+    validar el proxy, así un atacante podía falsificar el `last_ip` que
+    persistimos en Device. Ahora `services.trusted_ip.real_client_ip`
+    solo acepta XFF si la conexión directa viene de un proxy de
+    confianza configurado.
+    """
+    from ..services.trusted_ip import real_client_ip
+
+    return real_client_ip(request)
 
 
 @router.post(
