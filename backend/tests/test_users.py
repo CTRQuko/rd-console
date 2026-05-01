@@ -81,7 +81,15 @@ def test_hard_delete_removes_user_and_cascades(
     ))
     session.add(AddressBook(user_id=victim_id, payload="{}"))
     session.add(Device(rustdesk_id="DEVICEOWNED", owner_user_id=victim_id))
-    session.add(JoinToken(label="by-victim", created_by_user_id=victim_id))
+    # JoinToken post VULN-04: hash + prefix obligatorios.
+    from app.models.join_token import generate_join_token
+    _, _jt_hash, _jt_prefix = generate_join_token()
+    session.add(JoinToken(
+        token_hash=_jt_hash,
+        token_prefix=_jt_prefix,
+        label="by-victim",
+        created_by_user_id=victim_id,
+    ))
     session.commit()
 
     r = client.delete(

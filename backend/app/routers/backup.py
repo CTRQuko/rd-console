@@ -129,7 +129,7 @@ def _build_bundle(session) -> BackupBundle:
         ],
         join_tokens=[
             BackupJoinTokenMeta(
-                token_prefix=jt.token[:8],
+                token_prefix=jt.token_prefix,  # campo persistido tras VULN-04
                 label=jt.label,
                 created_at=jt.created_at,
                 expires_at=jt.expires_at,
@@ -144,7 +144,7 @@ def _compute_diff(bundle: BackupBundle, session) -> RestoreDiff:
     existing_tags = {t.name.lower() for t in session.exec(select(Tag)).all()}
     existing_settings = {s.key for s in session.exec(select(RuntimeSetting)).all()}
     existing_token_prefixes = {t.token_prefix for t in session.exec(select(ApiToken)).all()}
-    existing_jt_prefixes = {jt.token[:8] for jt in session.exec(select(JoinToken)).all()}
+    existing_jt_prefixes = {jt.token_prefix for jt in session.exec(select(JoinToken)).all()}
 
     u_add = sum(1 for u in bundle.users if u.username not in existing_users)
     u_update = sum(1 for u in bundle.users if u.username in existing_users)

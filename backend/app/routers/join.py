@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlmodel import select
 
 from ..deps import SessionDep
-from ..models.join_token import JoinToken
+from ..models.join_token import JoinToken, hash_join_token
 from ..security import utcnow_naive
 from ..services.rate_limit import rate_limit_dep
 from ..services.server_info import get_server_info
@@ -46,7 +46,10 @@ def get_join_config(token: str, session: SessionDep) -> JoinConfig:
     if not token or len(token) > 64:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invalid or revoked token")
 
-    row = session.exec(select(JoinToken).where(JoinToken.token == token)).first()
+    # Lookup por hash (cierra VULN-04): el plaintext nunca toca la BD.
+    row = session.exec(
+        select(JoinToken).where(JoinToken.token_hash == hash_join_token(token))
+    ).first()
     if not row or row.revoked:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invalid or revoked token")
 

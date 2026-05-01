@@ -7,8 +7,19 @@ from datetime import timedelta
 from sqlmodel import select
 
 from app.models.audit_log import AuditAction, AuditLog
-from app.models.join_token import JoinToken
+from app.models.join_token import JoinToken, generate_join_token
 from app.security import utcnow_naive
+
+
+def _make_jt(**overrides) -> JoinToken:
+    """Helper para crear un JoinToken directamente en BD post VULN-04
+    (token_hash + token_prefix obligatorios; el plaintext no se persiste)."""
+    plaintext, token_hash, token_prefix = generate_join_token()
+    return JoinToken(
+        token_hash=token_hash,
+        token_prefix=token_prefix,
+        **overrides,
+    )
 
 
 def test_create_join_token_minimal(client, auth_headers, session):
@@ -31,7 +42,12 @@ def test_create_join_token_minimal(client, auth_headers, session):
         select(JoinToken).where(JoinToken.id == body["id"])
     ).first()
     assert row is not None
-    assert row.token == body["token"]
+    # Tras VULN-04, la fila SOLO tiene `token_hash` + `token_prefix` —
+    # el plaintext (`body["token"]`) no se persiste. Verificamos la
+    # integridad cruzando hash y prefix.
+    from app.models.join_token import hash_join_token
+    assert row.token_hash == hash_join_token(body["token"])
+    assert row.token_prefix == body["token"][:8]
     # Audit entry stamped
     audit = session.exec(
         select(AuditLog).where(AuditLog.action == AuditAction.JOIN_TOKEN_CREATED)
@@ -88,12 +104,12 @@ def test_list_join_tokens_returns_status(client, auth_headers, session):
     duplicate the expiry/used/revoked priority logic."""
     now = utcnow_naive()
     # One of each status
-    session.add(JoinToken(label="active"))
-    session.add(JoinToken(label="expired", expires_at=now - timedelta(minutes=1)))
-    session.add(JoinToken(label="used", used_at=now))
-    session.add(JoinToken(label="revoked", revoked=True))
+    session.add(_make_jt(label="active"))
+    session.add(_make_jt(label="expired", expires_at=now - timedelta(minutes=1)))
+    session.add(_make_jt(label="used", used_at=now))
+    session.add(_make_jt(label="revoked", revoked=True))
     # Revoked-after-use → "revoked" wins (forensics: the revoke was intentional)
-    session.add(JoinToken(label="used-then-revoked", used_at=now, revoked=True))
+    session.add(_make_jt(label="used-then-revoked", used_at=now, revoked=True))
     session.commit()
 
     # Default hides revoked (per UX feedback: revoke = out of sight).
