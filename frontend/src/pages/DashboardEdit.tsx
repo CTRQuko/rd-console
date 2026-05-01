@@ -68,31 +68,65 @@ export interface CatalogEntry {
 
 // Constantes del grid
 const GRID_COLS = 12;
-const ROW_HEIGHT = 90;     // px por fila
+const ROW_HEIGHT = 75;     // px por fila — calibrado para que h:3 (slot
+                           // 3*75+32=257px) ajuste al contenido natural
+                           // del MetricCard (donut 140 + chip + padding ≈
+                           // 226px), eliminando el whitespace vertical
+                           // sobrante que aparecía con ROW_HEIGHT=90 (302).
 const GRID_GAP = 16;       // px gap (coincide con CSS)
 const STORAGE_KEY = "dashboard.layout.v2";
 
 // Layout por defecto: 5 metrics en una fila (cada una 2-col, 2 filas alto)
 // + charts grandes (12-col, 2 filas) + tabla recientes (12-col, 2 filas)
 // Total cabe en 12 columnas: 2+2+2+2+4 = 12 (la última coge 4 para acomodar SLA + hueco).
+// h:3 (no h:2) en las 5 metric cards: el donut declarado a 140 CSS
+// se aplastaba a 120 dentro del slot de 2*90+16=196 px (padding 40 +
+// chip 32 + gaps no dejan los 140 que el donut necesita). Con h:3 el
+// slot pasa a 3*90+2*16=302 px y el donut respira.
 export const DEFAULT_LAYOUT: WidgetLayout[] = [
-  { id: "cpu",        x: 0,  y: 0, w: 2, h: 2 },
-  { id: "memory",     x: 2,  y: 0, w: 2, h: 2 },
-  { id: "sessions",   x: 4,  y: 0, w: 2, h: 2 },
-  { id: "network",    x: 6,  y: 0, w: 2, h: 2 },
-  { id: "sla",        x: 8,  y: 0, w: 2, h: 2 },
-  { id: "histogram",  x: 0,  y: 2, w: 12, h: 3 },
-  { id: "throughput", x: 0,  y: 5, w: 12, h: 3 },
-  { id: "recent",     x: 0,  y: 8, w: 12, h: 4 },
+  { id: "cpu",        x: 0,  y: 0, w: 2, h: 3 },
+  { id: "memory",     x: 2,  y: 0, w: 2, h: 3 },
+  { id: "sessions",   x: 4,  y: 0, w: 2, h: 3 },
+  { id: "network",    x: 6,  y: 0, w: 2, h: 3 },
+  { id: "sla",        x: 8,  y: 0, w: 2, h: 3 },
+  { id: "histogram",  x: 0,  y: 3, w: 12, h: 3 },
+  { id: "throughput", x: 0,  y: 6, w: 12, h: 3 },
+  { id: "recent",     x: 0,  y: 9, w: 12, h: 4 },
 ];
+
+// Whitelist de IDs de widget que el grid sabe renderizar. Si el blob
+// de localStorage trae un id desconocido (corrupción, payload XSS,
+// version drift), lo descartamos. Cierra VULN-12 del audit 2026-05-01.
+const KNOWN_WIDGET_IDS = new Set<string>([
+  "cpu", "memory", "sessions", "network", "sla",
+  "histogram", "throughput", "recent",
+]);
+
+const _isValidLayoutEntry = (entry: unknown): entry is WidgetLayout => {
+  if (!entry || typeof entry !== "object") return false;
+  const e = entry as Record<string, unknown>;
+  return (
+    typeof e.id === "string" && KNOWN_WIDGET_IDS.has(e.id) &&
+    typeof e.x === "number" && Number.isFinite(e.x) && e.x >= 0 && e.x <= 12 &&
+    typeof e.y === "number" && Number.isFinite(e.y) && e.y >= 0 && e.y <= 100 &&
+    typeof e.w === "number" && Number.isFinite(e.w) && e.w >= 1 && e.w <= 12 &&
+    typeof e.h === "number" && Number.isFinite(e.h) && e.h >= 1 && e.h <= 12 &&
+    (e.hidden === undefined || typeof e.hidden === "boolean") &&
+    (e.pinned === undefined || typeof e.pinned === "boolean")
+  );
+};
 
 const loadLayout = (): WidgetLayout[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_LAYOUT;
-    const parsed = JSON.parse(raw) as WidgetLayout[];
+    const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_LAYOUT;
-    return parsed;
+    // Schema-validate cada entrada antes de aceptarla. Si una sola está
+    // mal, descartamos todo el blob y volvemos al default — más seguro
+    // que renderizar un layout corrupto.
+    if (!parsed.every(_isValidLayoutEntry)) return DEFAULT_LAYOUT;
+    return parsed as WidgetLayout[];
   } catch { return DEFAULT_LAYOUT; }
 };
 const saveLayout = (layout: WidgetLayout[]): void => {
@@ -144,11 +178,11 @@ export function useDashboardLayout(): UseDashboardLayoutReturn {
 
 // ─── Helpers de catálogo ────────────────────
 export const CATALOG: CatalogEntry[] = [
-  { id: "cpu",        label: "CPU",         icon: "cpu",      defaultSize: { w: 2, h: 2 }, kind: "metric", fixedSize: true },
-  { id: "memory",     label: "Memoria",     icon: "memory",   defaultSize: { w: 2, h: 2 }, kind: "metric", fixedSize: true },
-  { id: "sessions",   label: "Sesiones",    icon: "link",     defaultSize: { w: 2, h: 2 }, kind: "metric", fixedSize: true },
-  { id: "network",    label: "Red",         icon: "zap",      defaultSize: { w: 2, h: 2 }, kind: "metric", fixedSize: true },
-  { id: "sla",        label: "SLA",         icon: "activity", defaultSize: { w: 2, h: 2 }, kind: "metric", fixedSize: true },
+  { id: "cpu",        label: "CPU",         icon: "cpu",      defaultSize: { w: 2, h: 3 }, kind: "metric", fixedSize: true },
+  { id: "memory",     label: "Memoria",     icon: "memory",   defaultSize: { w: 2, h: 3 }, kind: "metric", fixedSize: true },
+  { id: "sessions",   label: "Sesiones",    icon: "link",     defaultSize: { w: 2, h: 3 }, kind: "metric", fixedSize: true },
+  { id: "network",    label: "Red",         icon: "zap",      defaultSize: { w: 2, h: 3 }, kind: "metric", fixedSize: true },
+  { id: "sla",        label: "SLA",         icon: "activity", defaultSize: { w: 2, h: 3 }, kind: "metric", fixedSize: true },
   { id: "histogram",  label: "Conexiones 24h", icon: "bar-chart", defaultSize: { w: 12, h: 3 }, kind: "chart", minSize: { w: 4, h: 3 } },
   { id: "throughput", label: "Tráfico de red", icon: "activity",  defaultSize: { w: 12, h: 3 }, kind: "chart", minSize: { w: 4, h: 3 } },
   { id: "recent",     label: "Conexiones recientes", icon: "list", defaultSize: { w: 12, h: 4 }, kind: "table" },
