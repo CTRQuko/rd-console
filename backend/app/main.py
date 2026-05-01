@@ -76,13 +76,29 @@ def _bootstrap_admin() -> None:
 
 
 def _warn_startup(s) -> None:
-    """Log hard warnings for weak/unset security knobs."""
+    """Validate weak/unset security knobs.
+
+    En `prod` aborta el startup si `RD_CLIENT_SHARED_SECRET` está vacío.
+    Cierra VULN-02 del audit 2026-05-01: el comportamiento anterior era
+    loguear un warning y dejar `/api/heartbeat`, `/api/sysinfo` y
+    `/api/audit/conn` ABIERTOS, permitiendo a cualquiera en la red del
+    relay inyectar dispositivos fantasma o eventos en el audit log.
+
+    Para deshabilitar conscientemente la gate (caso: panel sin clientes
+    RustDesk reales conectados, solo cara admin) hay que setear
+    `RD_CLIENT_SHARED_SECRET=disabled` (o cualquier valor placeholder
+    no vacío); el operador queda con responsabilidad documentada.
+    """
     if s.environment != "prod":
         return
     if not s.client_shared_secret:
-        log.warning(
-            "RD_CLIENT_SHARED_SECRET is empty — /api/heartbeat, /api/sysinfo "
-            "and /api/audit/* are OPEN to the internet."
+        raise RuntimeError(
+            "RD_CLIENT_SHARED_SECRET is empty in prod. "
+            "/api/heartbeat, /api/sysinfo and /api/audit/conn would be open "
+            "to anyone on the network. Set a 32+ char random secret (e.g. "
+            "`openssl rand -hex 32`), or set the variable to a placeholder "
+            "like 'disabled' if you have no RustDesk clients posting to "
+            "this panel."
         )
 
 
@@ -375,6 +391,45 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-RD-Secret"],
     )
+
+    # Security headers — cierra VULN-03 del audit 2026-05-01.
+    # Aplica defense-in-depth para los vectores de XSS / clickjacking /
+    # MIME-sniff / HSTS. CSP es el más sensible: lista solo lo que la
+    # SPA necesita. Si una nueva integración rompe el CSP, ajustar
+    # aquí en lugar de aflojar globalmente.
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    _CSP_VALUE = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "  # styled-jsx + design tokens
+        "img-src 'self' data: https://api.qrserver.com; "  # QR codes en JoinTokens
+        "font-src 'self' data:; "
+        "connect-src 'self' ws: wss: https://api.github.com; "  # WS notif + updates check
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
+    class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            response.headers.setdefault("X-Content-Type-Options", "nosniff")
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+            response.headers.setdefault(
+                "Permissions-Policy",
+                "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
+            )
+            response.headers.setdefault("Content-Security-Policy", _CSP_VALUE)
+            if s.environment == "prod":
+                response.headers.setdefault(
+                    "Strict-Transport-Security",
+                    "max-age=31536000; includeSubDomains",
+                )
+            return response
+
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.get("/health", tags=["meta"], summary="Liveness probe")
     def health() -> dict:

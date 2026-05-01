@@ -92,6 +92,14 @@ class Settings(BaseSettings):
         ]
     )
 
+    # Lista de proxies de confianza (IPs literales o redes CIDR). Solo se
+    # honra `X-Forwarded-For` cuando la conexión TCP directa viene de una
+    # de estas redes. Vacío por defecto = NO se confía en XFF y el rate
+    # limiter / audit log usan siempre la IP del socket directo. Cierra
+    # VULN-01 / VULN-10 del audit 2026-05-01.
+    # Ejemplos: ["127.0.0.1", "10.0.0.0/8", "fd00::/8"].
+    trusted_proxies: list[str] = Field(default_factory=list)
+
     # ─── Validators ───
     @field_validator("secret_key")
     @classmethod
@@ -104,6 +112,26 @@ class Settings(BaseSettings):
                 )
             if len(v) < 32:
                 raise ValueError("RD_SECRET_KEY must be at least 32 characters long")
+        return v
+
+    @field_validator("admin_password")
+    @classmethod
+    def _validate_admin_password(cls, v: str, info) -> str:
+        """En `prod`, si se setea bootstrap admin password debe ser
+        sólido. Cierra VULN-11 del audit 2026-05-01: previamente se
+        aceptaba cualquier valor no-vacío incluyendo `admin`/`123456`."""
+        env = (info.data or {}).get("environment", "dev")
+        if env == "prod" and v:
+            if len(v) < 12:
+                raise ValueError(
+                    "RD_ADMIN_PASSWORD must be ≥ 12 characters in production"
+                )
+            common = {"admin", "password", "12345678", "qwerty12", "letmein1", "changeme"}
+            if v.lower() in common or v.lower() in {"admin1234567", "password1234"}:
+                raise ValueError(
+                    "RD_ADMIN_PASSWORD is in the common-passwords list — "
+                    "use a unique value (e.g. `openssl rand -base64 24`)"
+                )
         return v
 
     @field_validator("cors_origins")
