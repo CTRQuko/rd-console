@@ -4,7 +4,7 @@
 # Differences vs run-e2e-server.sh:
 # - Persists the DB at backend/data/rd_console.dev.db (NOT wiped on each
 #   start) so the user stays logged in across restarts.
-# - Bootstraps a known admin (admin/adminadmin) on first launch only —
+# - Bootstraps an admin on first launch only (RD_ADMIN_PASSWORD is required) —
 #   if a User row already exists, the env password is ignored.
 #
 # Run from the repo root:
@@ -18,7 +18,7 @@ mkdir -p data
 
 export RD_DB_PATH="${RD_DB_PATH:-$(pwd)/data/rd_console.dev.db}"
 export RD_ADMIN_USERNAME="${RD_ADMIN_USERNAME:-admin}"
-export RD_ADMIN_PASSWORD="${RD_ADMIN_PASSWORD:-adminadmin}"
+export RD_ADMIN_PASSWORD="${RD_ADMIN_PASSWORD:?set RD_ADMIN_PASSWORD (no default: it used to be hardcoded here)}"
 export RD_DISABLE_FRONTEND="true"
 export RD_SECRET_KEY="${RD_SECRET_KEY:-dev-local-secret-must-be-32-chars-or-more}"
 export RD_ENVIRONMENT="dev"
@@ -38,7 +38,7 @@ else
 fi
 
 echo "→ DB:    $RD_DB_PATH"
-echo "→ Admin: $RD_ADMIN_USERNAME / $RD_ADMIN_PASSWORD (only on first run)"
+echo "→ Admin: $RD_ADMIN_USERNAME (password from RD_ADMIN_PASSWORD, only on first run)"
 echo "→ Bind:  http://127.0.0.1:8080"
 echo
 
